@@ -38,7 +38,8 @@
       "NEXT_EVENT_DELTA",
       "COMPLICATION_1",
       "COMPLICATION_2",
-      "COMPLICATION_3"
+      "COMPLICATION_3",
+      "TEMPERATURE_UNIT"
     ],
     "resources": {
       "media": [

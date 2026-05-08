@@ -22,16 +22,18 @@
 #define PERSIST_KEY_COMP_SLOT_1    111
 #define PERSIST_KEY_COMP_SLOT_2    112
 #define PERSIST_KEY_COMP_SLOT_3    113
+#define PERSIST_KEY_TEMP_UNIT      114
 
 #define SCREEN_W 200
 #define SCREEN_H 228
-#define TIME_FRAME_Y 64
+#define DATE_FRAME_Y 36
+#define TIME_FRAME_Y 69
 #define TIME_FRAME_H 60
-#define TIME_VISUAL_BOTTOM 106
+#define TIME_VISUAL_BOTTOM 111
 #define EVENT_SEPARATOR_Y 200
 #define COMPLICATION_RADIUS 24
 #define COMPLICATION_COUNT 3
-#define COMPLICATION_CENTER_Y ((TIME_VISUAL_BOTTOM + EVENT_SEPARATOR_Y) / 2)
+#define COMPLICATION_CENTER_Y 163
 
 typedef enum {
   ComplicationTemperature = 0,
@@ -45,6 +47,7 @@ typedef enum {
   ComplicationWindSpeed = 8,
   ComplicationUvIndex = 9,
   ComplicationNextEvent = 10,
+  ComplicationWeather = 11,
 } ComplicationType;
 
 static Window *s_window;
@@ -96,9 +99,10 @@ static bool s_wind_known = false;
 static uint8_t s_uv_index = 0;
 static bool s_uv_known = false;
 static bool s_w800_steps_top_enabled = true;
+static bool s_temperature_unit_celsius = false;
 static int s_steps_count = 0;
 static ComplicationType s_complication_slots[COMPLICATION_COUNT] = {
-  ComplicationTemperature,
+  ComplicationWeather,
   ComplicationRainChance,
   ComplicationHeartRate,
 };
@@ -121,7 +125,7 @@ static void draw_text(GContext *ctx, const char *text, GFont font, GRect frame,
 }
 
 static ComplicationType sanitize_complication(int value, ComplicationType fallback) {
-  return value >= ComplicationTemperature && value <= ComplicationNextEvent
+  return value >= ComplicationTemperature && value <= ComplicationWeather
       ? (ComplicationType)value
       : fallback;
 }
@@ -351,12 +355,97 @@ static void draw_sun_icon(GContext *ctx, GPoint origin) {
   draw_icon_block(ctx, origin, 5, 5, 6, 6);
 }
 
-static void draw_thermometer_icon_centered(GContext *ctx, GPoint center) {
+static void draw_weather_sun_icon_centered(GContext *ctx, GPoint center) {
+  GPoint origin = GPoint(center.x - 7, center.y - 7);
   graphics_context_set_fill_color(ctx, GColorWhite);
-  draw_icon_block(ctx, GPoint(center.x - 6, center.y - 9), 5, 0, 3, 10);
-  draw_icon_block(ctx, GPoint(center.x - 6, center.y - 9), 4, 10, 5, 2);
-  draw_icon_block(ctx, GPoint(center.x - 6, center.y - 9), 3, 12, 7, 4);
-  draw_icon_block(ctx, GPoint(center.x - 6, center.y - 9), 4, 16, 5, 1);
+  draw_icon_block(ctx, origin, 6, 0, 2, 3);
+  draw_icon_block(ctx, origin, 6, 11, 2, 3);
+  draw_icon_block(ctx, origin, 0, 6, 3, 2);
+  draw_icon_block(ctx, origin, 11, 6, 3, 2);
+  draw_icon_block(ctx, origin, 4, 4, 6, 6);
+}
+
+static void draw_weather_cloud_shape(GContext *ctx, GPoint origin) {
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  draw_icon_block(ctx, origin, 5, 1, 5, 2);
+  draw_icon_block(ctx, origin, 3, 3, 10, 2);
+  draw_icon_block(ctx, origin, 1, 5, 14, 4);
+  draw_icon_block(ctx, origin, 2, 9, 12, 1);
+}
+
+static void draw_weather_cloud_icon_centered(GContext *ctx, GPoint center) {
+  draw_weather_cloud_shape(ctx, GPoint(center.x - 8, center.y - 5));
+}
+
+static void draw_weather_rain_icon_centered(GContext *ctx, GPoint center) {
+  draw_weather_cloud_shape(ctx, GPoint(center.x - 8, center.y - 8));
+  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_line(ctx, GPoint(center.x - 5, center.y + 3), GPoint(center.x - 6, center.y + 6));
+  graphics_draw_line(ctx, GPoint(center.x, center.y + 3), GPoint(center.x - 1, center.y + 6));
+  graphics_draw_line(ctx, GPoint(center.x + 5, center.y + 3), GPoint(center.x + 4, center.y + 6));
+}
+
+static void draw_weather_snow_icon_centered(GContext *ctx, GPoint center) {
+  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_line(ctx, GPoint(center.x, center.y - 7), GPoint(center.x, center.y + 7));
+  graphics_draw_line(ctx, GPoint(center.x - 6, center.y - 3), GPoint(center.x + 6, center.y + 3));
+  graphics_draw_line(ctx, GPoint(center.x - 6, center.y + 3), GPoint(center.x + 6, center.y - 3));
+}
+
+static void draw_weather_storm_icon_centered(GContext *ctx, GPoint center) {
+  draw_weather_cloud_shape(ctx, GPoint(center.x - 8, center.y - 8));
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  draw_icon_block(ctx, GPoint(center.x - 1, center.y + 2), 0, 0, 4, 2);
+  draw_icon_block(ctx, GPoint(center.x - 1, center.y + 2), 2, 2, 2, 3);
+  draw_icon_block(ctx, GPoint(center.x - 1, center.y + 2), -2, 4, 4, 2);
+}
+
+static void draw_weather_fog_icon_centered(GContext *ctx, GPoint center) {
+  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_stroke_width(ctx, 2);
+  graphics_draw_line(ctx, GPoint(center.x - 7, center.y - 5), GPoint(center.x + 7, center.y - 5));
+  graphics_draw_line(ctx, GPoint(center.x - 5, center.y), GPoint(center.x + 5, center.y));
+  graphics_draw_line(ctx, GPoint(center.x - 7, center.y + 5), GPoint(center.x + 7, center.y + 5));
+}
+
+static void draw_weather_icon_centered(GContext *ctx, GPoint center) {
+  if (!s_weather_known) {
+    draw_weather_cloud_icon_centered(ctx, center);
+  } else if (s_weather_code == 0) {
+    draw_weather_sun_icon_centered(ctx, center);
+  } else if (s_weather_code == 45 || s_weather_code == 48) {
+    draw_weather_fog_icon_centered(ctx, center);
+  } else if ((s_weather_code >= 51 && s_weather_code <= 67) ||
+             (s_weather_code >= 80 && s_weather_code <= 82)) {
+    draw_weather_rain_icon_centered(ctx, center);
+  } else if ((s_weather_code >= 71 && s_weather_code <= 77) ||
+             (s_weather_code >= 85 && s_weather_code <= 86)) {
+    draw_weather_snow_icon_centered(ctx, center);
+  } else if (s_weather_code >= 95 && s_weather_code <= 99) {
+    draw_weather_storm_icon_centered(ctx, center);
+  } else {
+    draw_weather_cloud_icon_centered(ctx, center);
+  }
+}
+
+static void draw_temp_unit_icon_centered(GContext *ctx, GPoint center) {
+  GPoint origin = GPoint(center.x - 7, center.y - 5);
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_circle(ctx, GPoint(origin.x + 2, origin.y + 2), 2);
+
+  if (s_temperature_unit_celsius) {
+    draw_icon_block(ctx, origin, 8, 0, 7, 2);
+    draw_icon_block(ctx, origin, 7, 1, 2, 8);
+    draw_icon_block(ctx, origin, 8, 8, 7, 2);
+  } else {
+    draw_icon_block(ctx, origin, 7, 0, 8, 2);
+    draw_icon_block(ctx, origin, 7, 0, 2, 10);
+    draw_icon_block(ctx, origin, 7, 4, 7, 2);
+  }
 }
 
 static void draw_drop_icon(GContext *ctx, GPoint origin) {
@@ -371,7 +460,7 @@ static void draw_drop_icon(GContext *ctx, GPoint origin) {
 }
 
 static void draw_drop_icon_centered(GContext *ctx, GPoint center) {
-  draw_drop_icon(ctx, GPoint(center.x - 8, center.y - 8));
+  draw_drop_icon(ctx, GPoint(center.x - 7, center.y - 8));
 }
 
 static void draw_heart_icon(GContext *ctx, GPoint origin) {
@@ -417,20 +506,13 @@ static void draw_calendar_icon_centered(GContext *ctx, GPoint center) {
   draw_icon_block(ctx, GPoint(center.x - 7, center.y - 8), 8, 7, 2, 2);
 }
 
-static void draw_high_temp_icon_centered(GContext *ctx, GPoint center) {
-  draw_thermometer_icon_centered(ctx, GPoint(center.x - 3, center.y));
-  graphics_context_set_stroke_color(ctx, GColorWhite);
-  graphics_context_set_stroke_width(ctx, 1);
-  graphics_draw_line(ctx, GPoint(center.x + 8, center.y + 5), GPoint(center.x + 8, center.y - 6));
-  graphics_draw_line(ctx, GPoint(center.x + 8, center.y - 6), GPoint(center.x + 5, center.y - 3));
-  graphics_draw_line(ctx, GPoint(center.x + 8, center.y - 6), GPoint(center.x + 11, center.y - 3));
-}
-
 static void draw_complication_icon(GContext *ctx, ComplicationType type, GPoint center) {
   if (type == ComplicationSteps) {
     draw_step_icon_centered(ctx, center);
-  } else if (type == ComplicationTemperature || type == ComplicationFeelsLike) {
-    draw_thermometer_icon_centered(ctx, center);
+  } else if (type == ComplicationTemperature ||
+             type == ComplicationFeelsLike ||
+             type == ComplicationHighTemp) {
+    draw_temp_unit_icon_centered(ctx, center);
   } else if (type == ComplicationRainChance) {
     draw_drop_icon_centered(ctx, center);
   } else if (type == ComplicationHeartRate) {
@@ -439,14 +521,14 @@ static void draw_complication_icon(GContext *ctx, ComplicationType type, GPoint 
     draw_watch_icon_centered(ctx, center);
   } else if (type == ComplicationPhoneBattery) {
     draw_phone_icon_centered(ctx, center);
-  } else if (type == ComplicationHighTemp) {
-    draw_high_temp_icon_centered(ctx, center);
   } else if (type == ComplicationWindSpeed) {
     draw_wind_icon_centered(ctx, center);
   } else if (type == ComplicationUvIndex) {
     draw_sun_icon(ctx, GPoint(center.x - 8, center.y - 8));
   } else if (type == ComplicationNextEvent) {
     draw_calendar_icon_centered(ctx, center);
+  } else if (type == ComplicationWeather) {
+    draw_weather_icon_centered(ctx, center);
   }
 }
 
@@ -473,6 +555,8 @@ static const char *value_for_complication(ComplicationType type) {
     return s_uv_buf;
   } else if (type == ComplicationNextEvent) {
     return s_event_delta_buf;
+  } else if (type == ComplicationWeather) {
+    return s_temp_buf;
   }
   return "--";
 }
@@ -484,7 +568,7 @@ static void draw_complication(GContext *ctx, GPoint center, ComplicationType typ
   graphics_context_set_stroke_width(ctx, 2);
   graphics_draw_circle(ctx, center, COMPLICATION_RADIUS);
 
-  draw_complication_icon(ctx, type, GPoint(center.x, center.y - 15));
+  draw_complication_icon(ctx, type, GPoint(center.x, center.y - 12));
 
   GFont value_font = strlen(value) > 2
       ? fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD)
@@ -506,7 +590,7 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   }
   draw_bt_icon(ctx, GPoint(181, 7));
 
-  draw_text(ctx, s_date_buf, s_font_date, GRect(0, 31, SCREEN_W, 29),
+  draw_text(ctx, s_date_buf, s_font_date, GRect(0, DATE_FRAME_Y, SCREEN_W, 29),
             GColorWhite, GTextAlignmentCenter);
 
   draw_time_row(ctx);
@@ -571,7 +655,7 @@ static void update_event(const char *title) {
     strncpy(s_event_buf, title, sizeof(s_event_buf) - 1);
     s_event_buf[sizeof(s_event_buf) - 1] = '\0';
   } else {
-    strncpy(s_event_buf, "No event", sizeof(s_event_buf));
+    strncpy(s_event_buf, "[None]", sizeof(s_event_buf));
     s_event_buf[sizeof(s_event_buf) - 1] = '\0';
   }
   mark_face_dirty();
@@ -719,6 +803,12 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_bool(PERSIST_KEY_TOP_STEPS, s_w800_steps_top_enabled);
   }
 
+  t = dict_find(iter, MESSAGE_KEY_TEMPERATURE_UNIT);
+  if (t) {
+    s_temperature_unit_celsius = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_TEMP_UNIT, s_temperature_unit_celsius);
+  }
+
   t = dict_find(iter, MESSAGE_KEY_COMPLICATION_1);
   if (t) {
     s_complication_slots[0] = sanitize_complication(t->value->int32, ComplicationTemperature);
@@ -781,6 +871,9 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_TOP_STEPS)) {
     s_w800_steps_top_enabled = persist_read_bool(PERSIST_KEY_TOP_STEPS);
   }
+  if (persist_exists(PERSIST_KEY_TEMP_UNIT)) {
+    s_temperature_unit_celsius = persist_read_bool(PERSIST_KEY_TEMP_UNIT);
+  }
   if (persist_exists(PERSIST_KEY_EVENT)) {
     persist_read_string(PERSIST_KEY_EVENT, s_event_buf, sizeof(s_event_buf));
     s_event_buf[sizeof(s_event_buf) - 1] = '\0';
@@ -791,7 +884,7 @@ static void load_persisted(void) {
   }
   if (persist_exists(PERSIST_KEY_COMP_SLOT_1)) {
     s_complication_slots[0] = sanitize_complication(
-        persist_read_int(PERSIST_KEY_COMP_SLOT_1), ComplicationTemperature);
+        persist_read_int(PERSIST_KEY_COMP_SLOT_1), ComplicationWeather);
   }
   if (persist_exists(PERSIST_KEY_COMP_SLOT_2)) {
     s_complication_slots[1] = sanitize_complication(

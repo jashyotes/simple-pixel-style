@@ -21,9 +21,10 @@
         "type": "select",
         "messageKey": "COMPLICATION_1",
         "label": "Left circle",
-        "defaultValue": "temperature",
+        "defaultValue": "weather",
         "options": [
           { "label": "Temperature", "value": "temperature" },
+          { "label": "Weather", "value": "weather" },
           { "label": "Rain chance", "value": "rain" },
           { "label": "Heart rate", "value": "heart_rate" },
           { "label": "Steps", "value": "steps" },
@@ -43,6 +44,7 @@
         "defaultValue": "rain",
         "options": [
           { "label": "Temperature", "value": "temperature" },
+          { "label": "Weather", "value": "weather" },
           { "label": "Rain chance", "value": "rain" },
           { "label": "Heart rate", "value": "heart_rate" },
           { "label": "Steps", "value": "steps" },
@@ -62,6 +64,7 @@
         "defaultValue": "heart_rate",
         "options": [
           { "label": "Temperature", "value": "temperature" },
+          { "label": "Weather", "value": "weather" },
           { "label": "Rain chance", "value": "rain" },
           { "label": "Heart rate", "value": "heart_rate" },
           { "label": "Steps", "value": "steps" },
@@ -125,6 +128,22 @@
           "type": "text",
           "placeholder": "-87.700"
         }
+      },
+      {
+        "type": "select",
+        "messageKey": "TEMPERATURE_UNIT",
+        "label": "Temperature unit",
+        "defaultValue": "fahrenheit",
+        "options": [
+          {
+            "label": "Fahrenheit",
+            "value": "fahrenheit"
+          },
+          {
+            "label": "Celsius",
+            "value": "celsius"
+          }
+        ]
       },
       {
         "type": "select",

@@ -10,13 +10,14 @@ var calendarTimer = null;
 
 var DEFAULT_SETTINGS = {
   TOP_STEPS: true,
-  COMPLICATION_1: 'temperature',
+  COMPLICATION_1: 'weather',
   COMPLICATION_2: 'rain',
   COMPLICATION_3: 'heart_rate',
   WEATHER_ENABLED: true,
   WEATHER_SOURCE: 'gps',
   WEATHER_LAT: '',
   WEATHER_LON: '',
+  TEMPERATURE_UNIT: 'fahrenheit',
   WEATHER_REFRESH_MIN: '30',
   CALENDAR_ENABLED: false,
   CALENDAR_ICS_URL: '',
@@ -34,7 +35,8 @@ var COMPLICATION_IDS = {
   high_temp: 7,
   wind: 8,
   uv: 9,
-  next_event: 10
+  next_event: 10,
+  weather: 11
 };
 
 function clamp(value, min, max) {
@@ -49,6 +51,10 @@ function complicationId(value, fallback) {
   return typeof COMPLICATION_IDS[value] !== 'undefined'
       ? COMPLICATION_IDS[value]
       : fallback;
+}
+
+function temperatureUnit(settings) {
+  return settings.TEMPERATURE_UNIT === 'celsius' ? 'celsius' : 'fahrenheit';
 }
 
 function readSettings() {
@@ -77,9 +83,10 @@ function sendToWatch(dict, label) {
 function sendLayoutSetting(settings) {
   var dict = {};
   dict[keys.TOP_STEPS] = settings.TOP_STEPS ? 1 : 0;
-  dict[keys.COMPLICATION_1] = complicationId(settings.COMPLICATION_1, COMPLICATION_IDS.temperature);
+  dict[keys.COMPLICATION_1] = complicationId(settings.COMPLICATION_1, COMPLICATION_IDS.weather);
   dict[keys.COMPLICATION_2] = complicationId(settings.COMPLICATION_2, COMPLICATION_IDS.rain);
   dict[keys.COMPLICATION_3] = complicationId(settings.COMPLICATION_3, COMPLICATION_IDS.heart_rate);
+  dict[keys.TEMPERATURE_UNIT] = temperatureUnit(settings) === 'celsius' ? 1 : 0;
   sendToWatch(dict, 'Layout setting');
 }
 
@@ -116,14 +123,15 @@ function addRounded(dict, key, value, min, max) {
   }
 }
 
-function fetchWeatherForCoordinates(lat, lon) {
+function fetchWeatherForCoordinates(lat, lon, unit) {
+  var unitParam = unit === 'celsius' ? 'celsius' : 'fahrenheit';
   var url = 'https://api.open-meteo.com/v1/forecast'
       + '?latitude=' + encodeURIComponent(lat)
       + '&longitude=' + encodeURIComponent(lon)
       + '&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m'
       + '&hourly=precipitation_probability'
       + '&daily=temperature_2m_max,uv_index_max'
-      + '&temperature_unit=fahrenheit'
+      + '&temperature_unit=' + encodeURIComponent(unitParam)
       + '&wind_speed_unit=mph'
       + '&forecast_days=1'
       + '&timezone=auto';
@@ -165,18 +173,19 @@ function refreshWeather() {
   var manualLat = parseFloat(settings.WEATHER_LAT);
   var manualLon = parseFloat(settings.WEATHER_LON);
   var hasManual = isFinite(manualLat) && isFinite(manualLon);
+  var unit = temperatureUnit(settings);
 
   if (settings.WEATHER_SOURCE === 'manual' && hasManual) {
-    fetchWeatherForCoordinates(manualLat, manualLon);
+    fetchWeatherForCoordinates(manualLat, manualLon, unit);
     return;
   }
 
   navigator.geolocation.getCurrentPosition(function(position) {
-    fetchWeatherForCoordinates(position.coords.latitude, position.coords.longitude);
+    fetchWeatherForCoordinates(position.coords.latitude, position.coords.longitude, unit);
   }, function(error) {
     console.log('Location failed: ' + JSON.stringify(error));
     if (hasManual) {
-      fetchWeatherForCoordinates(manualLat, manualLon);
+      fetchWeatherForCoordinates(manualLat, manualLon, unit);
     }
   }, {
     enableHighAccuracy: false,
@@ -276,7 +285,7 @@ function formatHour(date) {
 
 function formatEvent(event) {
   if (!event) {
-    return 'No event';
+    return '[None]';
   }
 
   var now = new Date();
