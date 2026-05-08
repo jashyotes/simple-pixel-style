@@ -1,0 +1,923 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JY Time Direction Mockups</title>
+<style>
+  @font-face {
+    font-family: "W800Hour";
+    src: url("vendor/w800/fonts/FONT_HOUR_BIG_42.TTF") format("truetype");
+  }
+  @font-face {
+    font-family: "W800HourSmall";
+    src: url("vendor/w800/fonts/FONT_HOUR_35.TTF") format("truetype");
+  }
+  @font-face {
+    font-family: "W800Second";
+    src: url("vendor/w800/fonts/FONT_SECOND_25.TTF") format("truetype");
+  }
+  @font-face {
+    font-family: "W800Info";
+    src: url("vendor/w800/fonts/FONT_INFO_BIG_16.TTF") format("truetype");
+  }
+  @font-face {
+    font-family: "W800InfoSmall";
+    src: url("vendor/w800/fonts/FONT_INFO_SMALL_16.TTF") format("truetype");
+  }
+  @font-face {
+    font-family: "W800FourChar";
+    src: url("vendor/w800/fonts/FONT_FOURCHAR_16.TTF") format("truetype");
+  }
+  @font-face {
+    font-family: "W800Battery";
+    src: url("vendor/w800/fonts/FONT_BAT_5.TTF") format("truetype");
+  }
+  @font-face {
+    font-family: "DSEG14Mini";
+    src: url("vendor/royale/fonts/dseg14.ttf") format("truetype");
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: #1b1b1b;
+    color: #f4f4ee;
+    font-family: Inter, Arial, Helvetica, sans-serif;
+  }
+  .wrap {
+    display: flex;
+    gap: 44px;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 32px;
+  }
+  .mock {
+    display: grid;
+    gap: 12px;
+    justify-items: center;
+    width: 600px;
+  }
+  .label {
+    font: 700 13px/1.2 Arial, sans-serif;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: #c9b56a;
+  }
+  .icon-choices {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #d8d8d2;
+    font: 700 9px/1 Arial, sans-serif;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .icon-choice {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 6px;
+    border: 1px solid #555;
+    color: #f7f7f0;
+  }
+  .icon-choice.selected {
+    border-color: #f7f7f0;
+    background: rgba(255,255,255,.08);
+  }
+  .icon-choice svg,
+  .battery-watch {
+    width: 12px;
+    height: 14px;
+    color: currentColor;
+  }
+  .watch {
+    position: relative;
+    width: 200px;
+    height: 228px;
+    overflow: hidden;
+    transform: scale(3);
+    transform-origin: top center;
+    image-rendering: pixelated;
+    box-shadow: 0 0 0 1px #555, 0 16px 42px rgba(0,0,0,.45);
+  }
+  .spacer { height: 456px; }
+
+  /* Option 1: Samsung hierarchy, Pebble-readable */
+  .samsung {
+    background: #050505;
+    color: #f7f7f0;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+  .s-top {
+    position: absolute;
+    top: 5px;
+    left: 8px;
+    right: 8px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: none;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .02em;
+  }
+  .s-top > div {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .s-top .right {
+    justify-content: flex-end;
+    min-width: 66px;
+    color: #d9d9d4;
+  }
+  .bt-status {
+    position: relative;
+    width: 11px;
+    height: 13px;
+    display: grid;
+    place-items: center;
+  }
+  .bt-status svg {
+    width: 9px;
+    height: 12px;
+    color: #f7f7f0;
+  }
+  .bt-status .bt-x {
+    display: none;
+    color: #e13737;
+    font-size: 13px;
+    line-height: 1;
+    font-weight: 900;
+  }
+  .bt-status.disconnected svg {
+    display: none;
+  }
+  .bt-status.disconnected .bt-x {
+    display: block;
+  }
+  .watch-icon {
+    width: 11px;
+    height: 15px;
+    border: 2px solid currentColor;
+    border-radius: 2px;
+    position: relative;
+  }
+  .watch-icon::before,
+  .watch-icon::after {
+    content: "";
+    position: absolute;
+    left: 2px;
+    width: 3px;
+    height: 3px;
+    background: currentColor;
+  }
+  .watch-icon::before { top: -5px; }
+  .watch-icon::after { bottom: -5px; }
+  .s-date {
+    position: absolute;
+    top: 31px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 0;
+  }
+  .s-time {
+    position: absolute;
+    top: 55px;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 7px;
+  }
+  .s-ampm {
+    margin-bottom: 2px;
+    color: #d0d0ca;
+    font-size: 20px;
+    font-weight: 800;
+  }
+  .s-clock {
+    font-size: 76px;
+    line-height: .9;
+    font-weight: 850;
+    letter-spacing: -3px;
+  }
+  .s-grid {
+    position: absolute;
+    top: 125px;
+    left: 8px;
+    right: 8px;
+    height: 62px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: none;
+    border-bottom: none;
+  }
+  .s-grid::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -7px;
+    height: 1px;
+    background: #f5f5f0;
+  }
+  .s-cell {
+    position: relative;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 2px;
+    width: 41px;
+    height: 41px;
+    border: 1.5px solid #f5f5f0;
+    border-radius: 50%;
+    font-weight: 700;
+  }
+  .s-ico {
+    height: 15px;
+    color: #f7f7f0;
+  }
+  .step-icon {
+    width: 27px;
+    height: 18px;
+  }
+  .s-num {
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 800;
+  }
+  .s-small {
+    color: #d0d0ca;
+    font-size: 9px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .s-event {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    height: 25px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  /* Option 2: Casio quartz / LCD language */
+  .casio {
+    background: #050505;
+    color: #0b101b;
+    font-family: Arial, Helvetica, sans-serif;
+    padding: 0;
+  }
+  .c-shell {
+    position: absolute;
+    inset: 2px;
+    background: #030303;
+    border: 2px solid #4d4d49;
+    border-radius: 17px;
+    box-shadow:
+      inset 0 0 0 3px #11110f,
+      inset 0 0 0 6px #050505,
+      inset 0 0 0 8px #252520;
+  }
+  .c-topbar {
+    position: absolute;
+    top: 7px;
+    left: 12px;
+    right: 12px;
+    height: 19px;
+    background: #070707;
+    color: #f4f4ed;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 6px;
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    border-bottom: 2px solid #c8232c;
+  }
+  .c-red { color: #c8232c; }
+  .c-blue { color: #00a7d9; }
+  .c-gold { color: #d0b83f; }
+  .c-instructions {
+    position: absolute;
+    top: 27px;
+    left: 12px;
+    right: 12px;
+    height: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #f4f4ed;
+    font-size: 6px;
+    font-weight: 900;
+    letter-spacing: .05em;
+  }
+  .c-instructions .brand {
+    color: #d8ca2f;
+    font-size: 9px;
+    letter-spacing: 0;
+  }
+  .c-lcd {
+    position: absolute;
+    top: 43px;
+    left: 7px;
+    right: 7px;
+    height: 123px;
+    background: #c9cebd;
+    border: 2px solid #f4f1dc;
+    border-radius: 11px;
+    box-shadow:
+      inset 0 0 0 3px #050505,
+      inset 0 0 0 5px #e4e5d2,
+      0 0 0 1px #050505;
+  }
+  .c-topdata {
+    position: absolute;
+    top: 50px;
+    left: 17px;
+    right: 17px;
+    display: grid;
+    grid-template-columns: 1fr 1px 1fr;
+    align-items: center;
+    color: #10172b;
+    font-size: 10px;
+    font-weight: 900;
+  }
+  .c-topdata div {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+  }
+  .c-topdata .rule { width: 1px; height: 13px; background: #111; }
+  .c-date {
+    position: absolute;
+    top: 67px;
+    left: 17px;
+    right: 17px;
+    border-top: 2px solid #111;
+    border-bottom: 2px solid #111;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 6px;
+    color: #10172b;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .03em;
+  }
+  .c-date .active { color: #c8232c; }
+  .c-time {
+    position: absolute;
+    top: 87px;
+    left: 15px;
+    right: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .c-ampm {
+    align-self: flex-end;
+    margin-bottom: 5px;
+    color: #c8232c;
+    font-size: 13px;
+    font-weight: 900;
+  }
+  .lcd-time {
+    width: 122px;
+    height: 54px;
+  }
+  .lcd-time .off {
+    fill: rgba(58, 70, 145, .24);
+  }
+  .lcd-time .on,
+  .lcd-time .colon-on {
+    fill: #080909;
+  }
+  .c-subgrid {
+    position: absolute;
+    top: 135px;
+    left: 17px;
+    right: 17px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    text-align: center;
+    color: #10172b;
+  }
+  .c-subgrid div {
+    border-top: 3px solid #111;
+    padding-top: 3px;
+    font-size: 10px;
+    font-weight: 900;
+  }
+  .c-subgrid span {
+    display: block;
+    color: #c8232c;
+    font-size: 7px;
+    letter-spacing: .08em;
+  }
+  .c-weather {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    top: 172px;
+    height: 22px;
+    background: #111;
+    color: #f4f1dc;
+    border-top: 3px solid #c8232c;
+    border-bottom: 3px solid #c8232c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+    font-size: 10px;
+    font-weight: 900;
+  }
+  .c-event {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 8px;
+    height: 23px;
+    background: #111;
+    color: #d0b83f;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    font-weight: 900;
+    white-space: nowrap;
+  }
+
+  /* Current Casio pass: qt-dork frame reference + W800 digit texture */
+  .casio {
+    background: #020202;
+    color: #f4f4ee;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  .c-frame {
+    position: absolute;
+    inset: 0;
+    color: #d12a31;
+  }
+  .c-brand {
+    position: absolute;
+    top: 5px;
+    left: 8px;
+    right: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #f8f8ef;
+    font: 900 8px/1 Arial, sans-serif;
+    letter-spacing: .02em;
+  }
+  .c-brand strong {
+    color: #f8f8ef;
+    font-weight: 900;
+  }
+  .c-brand .time2 {
+    color: #62cfff;
+    font: 900 9px/1 Arial, sans-serif;
+    letter-spacing: .02em;
+  }
+  .c-side {
+    position: absolute;
+    top: 31px;
+    width: 8px;
+    height: 159px;
+    color: #f4f4ed;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    font: 900 7px/1 Arial, sans-serif;
+    letter-spacing: .08em;
+  }
+  .c-side.left {
+    left: 1px;
+    transform: rotate(180deg);
+  }
+  .c-side.right {
+    right: 1px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .c-face {
+    position: absolute;
+    top: 27px;
+    left: 14px;
+    right: 14px;
+    bottom: 22px;
+    background: #080808;
+    border: 2px solid #f0f0e8;
+    border-radius: 7px;
+    box-shadow: inset 0 0 0 2px #020202;
+  }
+  .c-face-top {
+    position: absolute;
+    top: 5px;
+    left: 8px;
+    right: 8px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    color: #f2f2ec;
+    font: 900 6px/1 Arial, sans-serif;
+  }
+  .c-dial {
+    position: absolute;
+    top: 16px;
+    left: 8px;
+    width: 56px;
+    height: 56px;
+    border: 2px solid #f4f4ee;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 50% 50%, #050505 0 8px, transparent 9px),
+      repeating-conic-gradient(#f4f4ee 0deg 10deg, #050505 10deg 20deg);
+    box-shadow: inset 0 0 0 10px #050505, inset 0 0 0 12px #f4f4ee;
+  }
+  .c-dial::before,
+  .c-dial::after {
+    content: "";
+    position: absolute;
+    background: #050505;
+  }
+  .c-dial::before {
+    left: 26px;
+    top: 9px;
+    width: 4px;
+    height: 32px;
+    transform: rotate(48deg);
+  }
+  .c-dial::after {
+    left: 10px;
+    top: 26px;
+    width: 36px;
+    height: 4px;
+  }
+  .c-right-stack {
+    position: absolute;
+    top: 16px;
+    right: 8px;
+    width: 84px;
+    display: grid;
+    gap: 6px;
+  }
+  .c-battery {
+    height: 18px;
+    padding: 3px 5px;
+    border: 2px solid #f4f4ee;
+    background: #151515;
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 2px;
+  }
+  .c-battery span {
+    background: #baf0b4;
+    transform: skew(-13deg);
+  }
+  .c-map {
+    height: 38px;
+    border: 2px solid #f4f4ee;
+    background: #d4d8cc;
+    color: #565656;
+    display: grid;
+    place-items: center;
+    font: 900 16px/1 Arial, sans-serif;
+    letter-spacing: -2px;
+  }
+  .c-date-strip {
+    position: absolute;
+    top: 80px;
+    left: 10px;
+    right: 10px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #0b0d0b;
+    background: #c9cfbd;
+    border: 2px solid #f4f4ee;
+    box-shadow: inset 0 0 0 2px #050505;
+    padding: 0 7px;
+    font-size: 9px;
+    font-weight: 900;
+  }
+  .c-date-strip .red { color: #c9272e; }
+  .c-lcd-window {
+    position: absolute;
+    top: 101px;
+    left: 7px;
+    right: 7px;
+    height: 51px;
+    background: #cad2bd;
+    border: 2px solid #f4f4ee;
+    border-radius: 5px;
+    box-shadow:
+      inset 0 0 0 3px #050505,
+      inset 0 0 0 4px #e1e5d4;
+  }
+  .c-lcd-window .ghost,
+  .c-lcd-window .active {
+    position: absolute;
+    inset: 5px 8px 0 27px;
+    font-family: "W800Hour", "Courier New", monospace;
+    font-size: 37px;
+    line-height: 1;
+    letter-spacing: -1px;
+    white-space: nowrap;
+  }
+  .c-lcd-window .ghost {
+    color: rgba(61, 101, 78, .18);
+  }
+  .c-lcd-window .active {
+    color: #090a08;
+  }
+  .c-pm {
+    position: absolute;
+    left: 10px;
+    top: 22px;
+    color: #c9272e;
+    font: 900 9px/1 Arial, sans-serif;
+  }
+  .c-subrow {
+    position: absolute;
+    top: 156px;
+    left: 13px;
+    right: 13px;
+    height: 16px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    color: #0b0d0b;
+  }
+  .c-chip {
+    background: #c9cfbd;
+    border-top: 2px solid #0b0d0b;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding-top: 2px;
+    font-size: 8px;
+    font-weight: 900;
+  }
+  .c-chip b {
+    color: #c9272e;
+    font: 900 6px/1 Arial, sans-serif;
+  }
+  .c-meeting {
+    position: absolute;
+    top: 176px;
+    left: 12px;
+    right: 12px;
+    height: 17px;
+    color: #f4f4ee;
+    border-top: 2px solid #c9272e;
+    border-bottom: 2px solid #c9272e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font: 900 7px/1 Arial, sans-serif;
+    white-space: nowrap;
+  }
+  .c-bottom-brand {
+    position: absolute;
+    bottom: 3px;
+    left: 0;
+    right: 0;
+    color: #f4f4ee;
+    text-align: center;
+    font: 900 8px/1 Arial, sans-serif;
+  }
+  .c-bottom-brand .gold { color: #d5a736; }
+
+  /* Asset-backed Casio/W800 pass: 200x228 native canvas, no legacy scaling. */
+  .casio-asset {
+    background: #000 url("vendor/royale/images/bg-red.png") 0 0 / 200px 228px no-repeat;
+    font-family: "W800InfoSmall", "W800Info", monospace;
+    image-rendering: pixelated;
+  }
+  .ca-date,
+  .ca-pm,
+  .ca-time,
+  .ca-time-ghost,
+  .ca-lcd-cover,
+  .ca-data,
+  .ca-event {
+    position: absolute;
+  }
+  .ca-date {
+    top: 122px;
+    left: 138px;
+    width: 48px;
+    height: 14px;
+    background: #cad2bd;
+    color: #080908;
+    font-family: "W800FourChar", "W800InfoSmall", monospace;
+    font-size: 8px;
+    line-height: 14px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-align: center;
+  }
+  .ca-date span { color: #c9272e; }
+  .ca-lcd-cover {
+    top: 145px;
+    left: 20px;
+    width: 160px;
+    height: 48px;
+    background: #cad2bd;
+    border: 5px solid #fbfbf1;
+    box-shadow: inset 0 0 0 2px #cad2bd;
+    clip-path: polygon(15px 0, 100% 0, 100% 100%, 0 100%, 0 15px);
+  }
+  .ca-pm {
+    top: 164px;
+    left: 29px;
+    color: #c9272e;
+    font-family: "W800InfoSmall", "W800Info", monospace;
+    font-size: 8px;
+    line-height: 1;
+    font-weight: 400;
+  }
+  .ca-time {
+    top: 148px;
+    left: 42px;
+    width: 126px;
+    height: 43px;
+    color: #070807;
+    font-family: "W800Hour", "Courier New", monospace;
+    font-size: 41px;
+    line-height: 1;
+    letter-spacing: 0;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .ca-time-ghost {
+    top: 148px;
+    left: 42px;
+    width: 126px;
+    height: 43px;
+    color: rgba(170, 255, 170, .48);
+    font-family: "W800Hour", "Courier New", monospace;
+    font-size: 41px;
+    line-height: 1;
+    letter-spacing: 0;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .ca-data {
+    top: 184px;
+    height: 12px;
+    background: #cad2bd;
+    color: #080908;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-family: "W800InfoSmall", "W800Info", monospace;
+    font-size: 7px;
+    line-height: 1;
+    font-weight: 400;
+  }
+  .ca-data b {
+    color: #c9272e;
+    font-family: "W800InfoSmall", monospace;
+    font-size: 6px;
+    font-weight: 400;
+    line-height: 1;
+  }
+  .ca-step { left: 28px; width: 45px; justify-content: center; }
+  .ca-rain { left: 79px; width: 45px; justify-content: center; }
+  .ca-wx { left: 130px; width: 42px; justify-content: center; }
+  .ca-event {
+    left: 21px;
+    right: 21px;
+    bottom: 23px;
+    height: 17px;
+    background: #050505;
+    color: #f6f4e8;
+    border-top: 2px solid #c9272e;
+    border-bottom: 2px solid #c9272e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "W800InfoSmall", "W800Info", monospace;
+    font-size: 6px;
+    line-height: 1;
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  svg { display: block; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="mock">
+      <div class="label">Option 1: Samsung Structure</div>
+      <div class="icon-choices">
+        <span>watch icon</span>
+        <span class="icon-choice">A
+          <svg viewBox="0 0 16 20" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M5 1h6v4H5zM4 5h8v10H4zM5 15h6v4H5z"/>
+          </svg>
+        </span>
+        <span class="icon-choice">B
+          <svg viewBox="0 0 16 20" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="2" d="M6 1h4M4 5h8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm2 14h4"/>
+          </svg>
+        </span>
+        <span class="icon-choice selected">C
+          <svg viewBox="0 0 16 20" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M6 1h4l1 4H5l1-4ZM3 5h10v10H3zM5 15h6l-1 4H6l-1-4Z"/>
+            <path stroke="currentColor" stroke-width="1.5" d="M5 8h6"/>
+          </svg>
+        </span>
+      </div>
+      <div class="watch samsung">
+        <div class="s-top">
+          <div>
+            <span>100</span>
+            <svg class="battery-watch" viewBox="0 0 16 20" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M6 1h4l1 4H5l1-4ZM3 5h10v10H3zM5 15h6l-1 4H6l-1-4Z"/>
+              <path stroke="currentColor" stroke-width="1.5" d="M5 8h6"/>
+            </svg>
+          </div>
+          <div class="right">
+            <span class="bt-status connected" aria-label="Bluetooth connected">
+              <svg viewBox="0 0 14 18" aria-hidden="true">
+                <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M6 1v16l6-5-6-4 6-4-6-3ZM2 5l10 7M2 13l10-9"/>
+              </svg>
+              <span class="bt-x">×</span>
+            </span>
+          </div>
+        </div>
+        <div class="s-date">Thursday, May 7</div>
+        <div class="s-time"><span class="s-ampm">PM</span><span class="s-clock">1:35</span></div>
+        <div class="s-grid">
+          <div class="s-cell">
+            <svg class="s-ico step-icon" viewBox="0 0 40 25" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M10.8 4.1c2.9 5.6 6.9 9.2 12.1 10.7 3.3.9 7 .9 11 .3 2.1-.3 3.9 1.3 4 3.5.1 1.3-.8 2.4-2.1 2.7-6.8 1.5-14 .9-21.6-1.8-4.4-1.6-8.2-3.8-11.5-6.8"/>
+              <path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M8.4 3.5 5.2 6.9c-1.3 1.4-1.1 3.7.3 5 5.6 5.2 12.1 7.7 19.5 7.6"/>
+              <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M25.5 10.4c1.4.8 2.8.8 4.1 0M27.4 14c1.6.6 3.2.4 4.9-.6M1.5 7h3.9M1.5 14h7M1.5 21h11.5"/>
+            </svg>
+            <div class="s-num">1105</div>
+          </div>
+          <div class="s-cell">
+            <svg class="s-ico" viewBox="0 0 24 18" aria-hidden="true">
+              <path fill="currentColor" d="M7 15h11a5 5 0 0 0 0-10 7 7 0 0 0-13-1A5.5 5.5 0 0 0 7 15Z"/>
+            </svg>
+            <div class="s-num">72°</div>
+          </div>
+          <div class="s-cell">
+            <svg class="s-ico" viewBox="0 0 20 20" aria-hidden="true">
+              <path fill="currentColor" d="M10 1C7 5 4 8 4 12a6 6 0 0 0 12 0c0-4-3-7-6-11Z"/>
+            </svg>
+            <div class="s-num">94%</div>
+          </div>
+          <div class="s-cell">
+            <svg class="s-ico" viewBox="0 0 20 20" aria-hidden="true">
+              <path fill="currentColor" d="M10 17.5 8.8 16.4C4.5 12.5 2 10.2 2 7.4 2 5.1 3.8 3.3 6.1 3.3c1.3 0 2.6.6 3.4 1.6.8-1 2.1-1.6 3.4-1.6 2.3 0 4.1 1.8 4.1 4.1 0 2.8-2.5 5.1-6.8 9l-1.2 1.1Z"/>
+            </svg>
+            <div class="s-num">72</div>
+          </div>
+        </div>
+        <div class="s-event">3PM | Koala AU Catch Up</div>
+      </div>
+      <div class="spacer"></div>
+    </div>
+
+    <div class="mock">
+      <div class="label">Option 2: Casio Quartz</div>
+      <div class="watch casio casio-asset">
+        <div class="ca-date">THU <span>5-7</span></div>
+        <div class="ca-pm">PM</div>
+        <div class="ca-time">1:35</div>
+        <div class="ca-data ca-step"><b>STEP</b><span>1105</span></div>
+        <div class="ca-data ca-rain"><b>RAIN</b><span>94%</span></div>
+        <div class="ca-data ca-wx"><b>WX</b><span>72</span></div>
+        <div class="ca-event">3PM | KOALA AU CATCH UP</div>
+      </div>
+      <div class="spacer"></div>
+    </div>
+  </div>
+</body>
+</html>

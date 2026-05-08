@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Samsung Icon Options</title>
+<style>
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #191919;
+    color: #f7f7f2;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  main {
+    padding: 24px;
+  }
+
+  h1 {
+    margin: 0 0 6px;
+    font-size: 18px;
+    line-height: 1.2;
+    font-weight: 800;
+  }
+
+  p {
+    margin: 0 0 20px;
+    color: #c9c9c3;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .options {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+  }
+
+  .option {
+    width: 400px;
+  }
+
+  .label {
+    margin-bottom: 10px;
+    color: #f7f7f2;
+    font-size: 13px;
+    line-height: 1.2;
+    font-weight: 800;
+  }
+
+  .label span {
+    color: #a9a9a4;
+    font-weight: 700;
+  }
+
+  .preview {
+    width: 400px;
+    height: 456px;
+    background: #000;
+    box-shadow: 0 0 0 1px #4b4b47;
+  }
+
+  .screen {
+    position: relative;
+    width: 200px;
+    height: 228px;
+    overflow: hidden;
+    transform: scale(2);
+    transform-origin: top left;
+    background: #000;
+    color: #fff;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  .top {
+    position: absolute;
+    top: 4px;
+    left: 8px;
+    right: 8px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .top-left {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .watch-c {
+    width: 13px;
+    height: 17px;
+  }
+
+  .bt {
+    width: 10px;
+    height: 14px;
+  }
+
+  .date {
+    position: absolute;
+    top: 40px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 19px;
+    line-height: 1;
+    font-weight: 800;
+  }
+
+  .time-row {
+    position: absolute;
+    top: 70px;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .ampm {
+    padding-bottom: 3px;
+    color: #e7e7e2;
+    font-size: 16px;
+    line-height: 1;
+    font-weight: 800;
+  }
+
+  .time {
+    font-size: 43px;
+    line-height: .88;
+    font-weight: 900;
+  }
+
+  .widgets {
+    position: absolute;
+    top: 124px;
+    left: 7px;
+    right: 7px;
+    height: 63px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .widget {
+    width: 42px;
+    height: 42px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    display: grid;
+    grid-template-rows: 20px 13px;
+    align-content: center;
+    justify-items: center;
+    row-gap: 0;
+  }
+
+  .glyph {
+    width: 22px;
+    height: 18px;
+    align-self: end;
+  }
+
+  .glyph.weather {
+    width: 20px;
+    height: 17px;
+  }
+
+  .glyph.drop {
+    width: 15px;
+    height: 18px;
+  }
+
+  .glyph.heart {
+    width: 18px;
+    height: 17px;
+  }
+
+  .value {
+    align-self: start;
+    font-size: 10px;
+    line-height: 1;
+    font-weight: 800;
+  }
+
+  .rule {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    top: 187px;
+    height: 1px;
+    background: #fff;
+  }
+
+  .event {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    top: 204px;
+    text-align: center;
+    font-size: 11px;
+    line-height: 1;
+    font-weight: 800;
+  }
+
+  svg {
+    display: block;
+    overflow: visible;
+  }
+
+  .stroke {
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .fill {
+    fill: currentColor;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Samsung structure: smaller complication icons</h1>
+  <p>Only the step glyph changes between options. Weather, rain, heart, watch battery, and Bluetooth are tightened to read more like the Samsung reference.</p>
+
+  <div class="options">
+    <section class="option">
+      <div class="label">A <span>compact reference shoe</span></div>
+      <div class="preview">
+        <div class="screen">
+          <div class="top">
+            <div class="top-left">
+              <span>80</span>
+              <svg class="watch-c" viewBox="0 0 13 17" aria-hidden="true">
+                <rect class="stroke" x="2.5" y="4.5" width="8" height="8" rx="1" stroke-width="1.6"/>
+                <path class="stroke" d="M4.5 4.5 5.5 1.5h2l1 3M4.5 12.5l1 3h2l1-3" stroke-width="1.4"/>
+                <path class="stroke" d="M4.5 8.5h5" stroke-width="1"/>
+              </svg>
+            </div>
+            <svg class="bt" viewBox="0 0 10 14" aria-hidden="true">
+              <path class="stroke" d="M5 1v12M5 1l4 3-7 5M2 5l7 5-4 3" stroke-width="1.2"/>
+            </svg>
+          </div>
+          <div class="date">Friday, May 8</div>
+          <div class="time-row"><div class="ampm">AM</div><div class="time">10:28</div></div>
+          <div class="widgets">
+            <div class="widget">
+              <svg class="glyph" viewBox="0 0 22 18" aria-hidden="true">
+                <path class="stroke" d="M2 11.5c3.5 2 8.5 2.9 15.4 1.7 1.3-.2 2.4-.8 3-1.6" stroke-width="2"/>
+                <path class="stroke" d="M5.2 9.8c2.5 1.2 5.8 1.7 9.9 1.3" stroke-width="1.7"/>
+                <path class="stroke" d="M3.7 10.7c2.4-4 4.3-6.5 5.6-7.4 1.4-.9 2.6-.5 3.3 1.3.8 2.1 2.7 3.1 5.8 3" stroke-width="1.7"/>
+                <path class="stroke" d="M14.6 7.2h3.8" stroke-width="1.5"/>
+              </svg>
+              <div class="value">0</div>
+            </div>
+            <div class="widget">
+              <svg class="glyph weather" viewBox="0 0 20 17" aria-hidden="true">
+                <circle class="fill" cx="7" cy="9.5" r="4"/>
+                <circle class="fill" cx="12" cy="7" r="5"/>
+                <circle class="fill" cx="15.5" cy="10" r="3.5"/>
+                <rect class="fill" x="4" y="10" width="13.5" height="4"/>
+              </svg>
+              <div class="value">--</div>
+            </div>
+            <div class="widget">
+              <svg class="glyph drop" viewBox="0 0 15 18" aria-hidden="true">
+                <path class="fill" d="M7.5 1C4.6 4.9 2 8.4 2 11.2 2 14.5 4.4 17 7.5 17s5.5-2.5 5.5-5.8C13 8.4 10.4 4.9 7.5 1z"/>
+              </svg>
+              <div class="value">--</div>
+            </div>
+            <div class="widget">
+              <svg class="glyph heart" viewBox="0 0 18 17" aria-hidden="true">
+                <path class="fill" d="M9 16 2.5 9.8C.4 7.8.2 4.6 2 2.8c1.7-1.7 4.4-1.5 6 .4.3.4.7.4 1 0 1.6-1.9 4.3-2.1 6-.4 1.8 1.8 1.6 5-.5 7L9 16z"/>
+              </svg>
+              <div class="value">--</div>
+            </div>
+          </div>
+          <div class="rule"></div>
+          <div class="event">No event</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="option">
+      <div class="label">B <span>small Samsung-style trainer</span></div>
+      <div class="preview">
+        <div class="screen">
+          <div class="top">
+            <div class="top-left">
+              <span>80</span>
+              <svg class="watch-c" viewBox="0 0 13 17" aria-hidden="true">
+                <rect class="stroke" x="2.5" y="4.5" width="8" height="8" rx="1" stroke-width="1.6"/>
+                <path class="stroke" d="M4.5 4.5 5.5 1.5h2l1 3M4.5 12.5l1 3h2l1-3" stroke-width="1.4"/>
+                <path class="stroke" d="M4.5 8.5h5" stroke-width="1"/>
+              </svg>
+            </div>
+            <svg class="bt" viewBox="0 0 10 14" aria-hidden="true">
+              <path class="stroke" d="M5 1v12M5 1l4 3-7 5M2 5l7 5-4 3" stroke-width="1.2"/>
+            </svg>
+          </div>
+          <div class="date">Friday, May 8</div>
+          <div class="time-row"><div class="ampm">AM</div><div class="time">10:28</div></div>
+          <div class="widgets">
+            <div class="widget">
+              <svg class="glyph" viewBox="0 0 22 18" aria-hidden="true">
+                <path class="fill" d="M2 11.2c3.3 2.4 9.8 3.1 16.2 1.4 1.6-.4 2.8-1.1 3.3-2.2-5 .8-8.7.1-11.1-2.2L8 6.1c-.9-.7-1.8-.6-2.4.4L2 11.2z"/>
+                <path d="M4 12.3c4.1 1.8 10.1 1.9 16-.2" class="stroke" stroke="#000" stroke-width="1.2"/>
+                <path d="M11.8 8.7h3.7" class="stroke" stroke="#000" stroke-width="1.1"/>
+              </svg>
+              <div class="value">0</div>
+            </div>
+            <div class="widget">
+              <svg class="glyph weather" viewBox="0 0 20 17" aria-hidden="true">
+                <circle class="fill" cx="7" cy="9.5" r="4"/>
+                <circle class="fill" cx="12" cy="7" r="5"/>
+                <circle class="fill" cx="15.5" cy="10" r="3.5"/>
+                <rect class="fill" x="4" y="10" width="13.5" height="4"/>
+              </svg>
+              <div class="value">--</div>
+            </div>
+            <div class="widget">
+              <svg class="glyph drop" viewBox="0 0 15 18" aria-hidden="true">
+                <path class="fill" d="M7.5 1C4.6 4.9 2 8.4 2 11.2 2 14.5 4.4 17 7.5 17s5.5-2.5 5.5-5.8C13 8.4 10.4 4.9 7.5 1z"/>
+              </svg>
+              <div class="value">--</div>
+            </div>
+            <div class="widget">
+              <svg class="glyph heart" viewBox="0 0 18 17" aria-hidden="true">
+                <path class="fill" d="M9 16 2.5 9.8C.4 7.8.2 4.6 2 2.8c1.7-1.7 4.4-1.5 6 .4.3.4.7.4 1 0 1.6-1.9 4.3-2.1 6-.4 1.8 1.8 1.6 5-.5 7L9 16z"/>
+              </svg>
+              <div class="value">--</div>
+            </div>
+          </div>
+          <div class="rule"></div>
+          <div class="event">No event</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="option">
+      <div class="label">C <span>simple sole + upper</span></div>
+      <div class="preview">
+        <div class="screen">
+          <div class="top">
+            <div class="top-left">
+              <span>80</span>
+              <svg class="watch-c" viewBox="0 0 13 17" aria-hidden="true">
+                <rect class="stroke" x="2.5" y="4.5" width="8" height="8" rx="1" stroke-width="1.6"/>
+                <path class="stroke" d="M4.5 4.5 5.5 1.5h2l1 3M4.5 12.5l1 3h2l1-3" stroke-width="1.4"/>
+                <path class="stroke" d="M4.5 8.5h5" stroke-width="1"/>
+              </svg>
+            </div>
+            <svg class="bt" viewBox="0 0 10 14" aria-hidden="true">
+              <path class="stroke" d="M5 1v12M5 1l4 3-7 5M2 5l7 5-4 3" stroke-width="1.2"/>
+            </svg>
+          </div>
+          <div class="date">Friday, May 8</div>
+          <div class="time-row"><div class="ampm">AM</div><div class="time">10:28</div></div>
+          <div class="widgets">
+            <div class="widget">
+              <svg class="glyph" viewBox="0 0 22 18" aria-hidden="true">
+                <path class="stroke" d="M2.5 11.5h5.6c2.1 0 3.7.4 5 1.1 2.3 1.4 5.3 1 7.4-.8" stroke-width="2.1"/>
+                <path class="stroke" d="M4.5 10.8c1.5-3.6 3.1-5.4 4.9-5.4 1.2 0 2.1.7 2.8 2.1.9 1.8 2.8 2.6 5.8 2.4" stroke-width="1.8"/>
+                <path class="stroke" d="M13.4 8.5h3.7M3 14.7h15.6" stroke-width="1.5"/>
+              </svg>
+              <div class="value">0</div>
+            </div>
+            <div class="widget">
+              <svg class="glyph weather" viewBox="0 0 20 17" aria-hidden="true">
+                <circle class="fill" cx="7" cy="9.5" r="4"/>
+                <circle class="fill" cx="12" cy="7" r="5"/>
+                <circle class="fill" cx="15.5" cy="10" r="3.5"/>
+                <rect class="fill" x="4" y="10" width="13.5" height="4"/>
+              </svg>
+              <div class="value">--</div>
+            </div>
+            <div class="widget">
+              <svg class="glyph drop" viewBox="0 0 15 18" aria-hidden="true">
+                <path class="fill" d="M7.5 1C4.6 4.9 2 8.4 2 11.2 2 14.5 4.4 17 7.5 17s5.5-2.5 5.5-5.8C13 8.4 10.4 4.9 7.5 1z"/>
+              </svg>
+              <div class="value">--</div>
+            </div>
+            <div class="widget">
+              <svg class="glyph heart" viewBox="0 0 18 17" aria-hidden="true">
+                <path class="fill" d="M9 16 2.5 9.8C.4 7.8.2 4.6 2 2.8c1.7-1.7 4.4-1.5 6 .4.3.4.7.4 1 0 1.6-1.9 4.3-2.1 6-.4 1.8 1.8 1.6 5-.5 7L9 16z"/>
+              </svg>
+              <div class="value">--</div>
+            </div>
+          </div>
+          <div class="rule"></div>
+          <div class="event">No event</div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+</body>
+</html>

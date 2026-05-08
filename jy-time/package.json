@@ -1,0 +1,106 @@
+{
+  "name": "simple-pixel-style",
+  "author": "Josh Yates",
+  "version": "0.1.0",
+  "keywords": [
+    "pebble-app"
+  ],
+  "private": true,
+  "dependencies": {
+    "@rebble/clay": "^1.0.8"
+  },
+  "pebble": {
+    "displayName": "Simple Pixel Style",
+    "uuid": "02eeda8d-2c95-4b0c-8e10-d5df05cce87a",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "emery"
+    ],
+    "capabilities": [
+      "configurable",
+      "location"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "messageKeys": [
+      "NEXT_EVENT",
+      "PHONE_BATTERY",
+      "WEATHER_CODE",
+      "TEMPERATURE",
+      "RAIN_CHANCE",
+      "TOP_STEPS"
+    ],
+    "resources": {
+      "media": [
+        {
+          "file": "images/RES_ICON.PNG",
+          "menuIcon": true,
+          "name": "RES_ICON",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/STEP_BOOT.PNG",
+          "name": "STEP_BOOT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/w800_digits/DIGIT_0.PNG",
+          "name": "W800_STEP_DIGIT_0",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/W800_WALKING_MAN.PNG",
+          "name": "W800_WALKING_MAN",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/w800_digits/DIGIT_1.PNG",
+          "name": "W800_STEP_DIGIT_1",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/w800_digits/DIGIT_2.PNG",
+          "name": "W800_STEP_DIGIT_2",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/w800_digits/DIGIT_3.PNG",
+          "name": "W800_STEP_DIGIT_3",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/w800_digits/DIGIT_4.PNG",
+          "name": "W800_STEP_DIGIT_4",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/w800_digits/DIGIT_5.PNG",
+          "name": "W800_STEP_DIGIT_5",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/w800_digits/DIGIT_6.PNG",
+          "name": "W800_STEP_DIGIT_6",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/w800_digits/DIGIT_7.PNG",
+          "name": "W800_STEP_DIGIT_7",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/w800_digits/DIGIT_8.PNG",
+          "name": "W800_STEP_DIGIT_8",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/w800_digits/DIGIT_9.PNG",
+          "name": "W800_STEP_DIGIT_9",
+          "type": "bitmap"
+        }
+      ]
+    }
+  }
+}

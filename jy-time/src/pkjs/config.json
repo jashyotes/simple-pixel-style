@@ -1,0 +1,144 @@
+[
+  {
+    "type": "heading",
+    "defaultValue": "Simple Pixel Style"
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Layout"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "TOP_STEPS",
+        "label": "Top W800 step counter",
+        "defaultValue": false,
+        "description": "Moves steps above the date and centers the remaining complications."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Weather"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "WEATHER_ENABLED",
+        "label": "Enable weather",
+        "defaultValue": true,
+        "description": "Fetches Open-Meteo weather from the phone and updates the weather/rain circles."
+      },
+      {
+        "type": "select",
+        "messageKey": "WEATHER_SOURCE",
+        "label": "Location",
+        "defaultValue": "gps",
+        "options": [
+          {
+            "label": "Current phone location",
+            "value": "gps"
+          },
+          {
+            "label": "Manual coordinates",
+            "value": "manual"
+          }
+        ]
+      },
+      {
+        "type": "input",
+        "messageKey": "WEATHER_LAT",
+        "label": "Manual latitude",
+        "defaultValue": "",
+        "attributes": {
+          "type": "text",
+          "placeholder": "30.246"
+        }
+      },
+      {
+        "type": "input",
+        "messageKey": "WEATHER_LON",
+        "label": "Manual longitude",
+        "defaultValue": "",
+        "attributes": {
+          "type": "text",
+          "placeholder": "-87.700"
+        }
+      },
+      {
+        "type": "select",
+        "messageKey": "WEATHER_REFRESH_MIN",
+        "label": "Refresh",
+        "defaultValue": "30",
+        "options": [
+          {
+            "label": "Every 15 minutes",
+            "value": "15"
+          },
+          {
+            "label": "Every 30 minutes",
+            "value": "30"
+          },
+          {
+            "label": "Every hour",
+            "value": "60"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Calendar"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "CALENDAR_ENABLED",
+        "label": "Enable bottom event",
+        "defaultValue": false,
+        "description": "Uses a private iCal/ICS feed URL. PebbleKit JS cannot read the phone calendar directly."
+      },
+      {
+        "type": "input",
+        "messageKey": "CALENDAR_ICS_URL",
+        "label": "Calendar .ics URL",
+        "defaultValue": "",
+        "attributes": {
+          "type": "url",
+          "placeholder": "https://calendar.google.com/..."
+        }
+      },
+      {
+        "type": "select",
+        "messageKey": "CALENDAR_LOOKAHEAD_HOURS",
+        "label": "Look ahead",
+        "defaultValue": "48",
+        "options": [
+          {
+            "label": "24 hours",
+            "value": "24"
+          },
+          {
+            "label": "48 hours",
+            "value": "48"
+          },
+          {
+            "label": "7 days",
+            "value": "168"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "submit",
+    "defaultValue": "Save"
+  }
+]

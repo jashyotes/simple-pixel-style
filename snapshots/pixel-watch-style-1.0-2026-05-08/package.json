@@ -1,0 +1,52 @@
+{
+  "name": "jy-time",
+  "author": "Josh Yates",
+  "version": "0.1.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "JY Time",
+    "uuid": "02eeda8d-2c95-4b0c-8e10-d5df05cce87a",
+    "sdkVersion": "3",
+    "enableMultiJS": false,
+    "targetPlatforms": [
+      "emery"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "messageKeys": [
+      "NEXT_EVENT",
+      "PHONE_BATTERY",
+      "WEATHER_CODE",
+      "TEMPERATURE",
+      "RAIN_CHANCE"
+    ],
+    "companionApp": {
+      "android": {
+        "url": "https://github.com/jashyotes/jy-time-companion-android/releases",
+        "apps": [
+          {
+            "package": "com.joshyates.jytime"
+          }
+        ]
+      }
+    },
+    "resources": {
+      "media": [
+        {
+          "file": "images/RES_ICON.PNG",
+          "menuIcon": true,
+          "name": "RES_ICON",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/STEP_BOOT.PNG",
+          "name": "STEP_BOOT",
+          "type": "bitmap"
+        }
+      ]
+    }
+  }
+}

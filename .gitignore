@@ -1,0 +1,34 @@
+# OS/editor noise
+.DS_Store
+*.swp
+*.swo
+
+# Pebble build outputs and dependencies
+jy-time/build/
+jy-time/node_modules/
+jy-time/.lock-waf*
+jy-time/.waf*
+jy-time/.wafpickle*
+
+# Android/Gradle build outputs and local IDE state
+jy-time-companion/.gradle/
+jy-time-companion/.kotlin/
+jy-time-companion/.idea/
+jy-time-companion/build/
+jy-time-companion/app/build/
+jy-time-companion/local.properties
+jy-time-companion/app/local.properties
+*.iml
+
+# Packaged binaries are generated artifacts; keep source and release notes tracked.
+*.apk
+*.aab
+*.pbw
+
+# Logs
+*.log
+
+# Ad hoc visual-test exports at the project root. Keep curated screenshots under
+# release-assets/, snapshots/, reference-screenshots/, and design-mockups/.
+/screenshot-*.png
+/font-size-options-*.png

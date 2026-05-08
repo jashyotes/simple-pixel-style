@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">JY Time</string>
+    <string name="enable_label">Enable JY Time</string>
+    <string name="status_running">Running</string>
+    <string name="status_stopped">Stopped</string>
+    <string name="permission_calendar">Calendar permission needed to read your next event</string>
+    <string name="permission_location">Coarse location needed for weather lookup</string>
+    <string name="permission_notifications">Notifications permission needed for the foreground service notification</string>
+    <string name="sync_now">Sync now</string>
+    <string name="grant_permissions">Grant permissions</string>
+    <string name="select_calendar">Select calendar</string>
+    <string name="last_sync">Last sync: %1$s</string>
+    <string name="next_event_label">Next: %1$s</string>
+    <string name="no_next_event">No upcoming event</string>
+    <string name="phone_battery_label">Phone: %1$d%%</string>
+    <string name="weather_label">Weather: %1$d°F (code %2$d)</string>
+    <string name="notification_channel_name">JY Time sync</string>
+    <string name="notification_channel_desc">Background sync of calendar, battery, and weather to your Pebble watchface</string>
+    <string name="notification_text">Syncing JY Time data to your Pebble</string>
+</resources>
