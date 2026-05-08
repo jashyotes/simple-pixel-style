@@ -282,7 +282,8 @@ static void draw_w800_steps_digits(GContext *ctx, GRect frame, int steps) {
   const int digit_w = 12;
   const int digit_h = 24;
   const int digit_count = strlen(digits);
-  int x = frame.origin.x + frame.size.w - (digit_count * digit_w);
+  const int separator_gap = digit_count > 3 ? 2 : 0;
+  int x = frame.origin.x + frame.size.w - ((digit_count * digit_w) + separator_gap);
   if (x < frame.origin.x) {
     x = frame.origin.x;
   }
@@ -291,10 +292,22 @@ static void draw_w800_steps_digits(GContext *ctx, GRect frame, int steps) {
   for (int i = 0; i < digit_count; i++) {
     int digit = digits[i] - '0';
     if (digit >= 0 && digit <= 9 && s_w800_digit_bitmaps[digit]) {
+      int draw_x = x + (i * digit_w);
+      if (digit_count > 3 && i >= digit_count - 3) {
+        draw_x += separator_gap;
+      }
       graphics_draw_bitmap_in_rect(ctx, s_w800_digit_bitmaps[digit],
-                                   GRect(x + (i * digit_w), frame.origin.y,
-                                         digit_w, digit_h));
+                                   GRect(draw_x, frame.origin.y, digit_w, digit_h));
     }
+  }
+
+  if (digit_count > 3) {
+    const int comma_x = x + ((digit_count - 3) * digit_w) - 1;
+    const int comma_y = frame.origin.y + digit_h - 3;
+    graphics_context_set_fill_color(ctx, GColorWhite);
+    graphics_fill_rect(ctx, GRect(comma_x, comma_y, 2, 2), 0, GCornerNone);
+    graphics_fill_rect(ctx, GRect(comma_x - 1, comma_y + 2, 2, 2), 0, GCornerNone);
+    graphics_fill_rect(ctx, GRect(comma_x - 2, comma_y + 4, 2, 2), 0, GCornerNone);
   }
 }
 
