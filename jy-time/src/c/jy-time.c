@@ -25,8 +25,13 @@
 
 #define SCREEN_W 200
 #define SCREEN_H 228
+#define TIME_FRAME_Y 64
+#define TIME_FRAME_H 60
+#define TIME_VISUAL_BOTTOM 106
+#define EVENT_SEPARATOR_Y 200
 #define COMPLICATION_RADIUS 24
 #define COMPLICATION_COUNT 3
+#define COMPLICATION_CENTER_Y ((TIME_VISUAL_BOTTOM + EVENT_SEPARATOR_Y) / 2)
 
 typedef enum {
   ComplicationTemperature = 0,
@@ -212,8 +217,7 @@ static void draw_ampm_label(GContext *ctx, const char *label, GPoint origin) {
 }
 
 static void draw_time_row(GContext *ctx) {
-  const GRect time_frame = GRect(0, 60, SCREEN_W, 60);
-  const int time_visual_bottom = 102;
+  const GRect time_frame = GRect(0, TIME_FRAME_Y, SCREEN_W, TIME_FRAME_H);
   const int ampm_width = 20;
   const int ampm_height = 10;
   const int ampm_gap = 5;
@@ -229,7 +233,7 @@ static void draw_time_row(GContext *ctx) {
 
   draw_text(ctx, s_time_buf, s_font_time, time_frame,
             GColorWhite, GTextAlignmentCenter);
-  draw_ampm_label(ctx, s_ampm_buf, GPoint(ampm_x, time_visual_bottom - ampm_height));
+  draw_ampm_label(ctx, s_ampm_buf, GPoint(ampm_x, TIME_VISUAL_BOTTOM - ampm_height));
 }
 
 static void draw_watch_icon_c(GContext *ctx, GPoint origin) {
@@ -507,13 +511,13 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
 
   draw_time_row(ctx);
 
-  draw_complication(ctx, GPoint(40, 174), s_complication_slots[0]);
-  draw_complication(ctx, GPoint(100, 174), s_complication_slots[1]);
-  draw_complication(ctx, GPoint(160, 174), s_complication_slots[2]);
+  draw_complication(ctx, GPoint(40, COMPLICATION_CENTER_Y), s_complication_slots[0]);
+  draw_complication(ctx, GPoint(100, COMPLICATION_CENTER_Y), s_complication_slots[1]);
+  draw_complication(ctx, GPoint(160, COMPLICATION_CENTER_Y), s_complication_slots[2]);
 
   graphics_context_set_stroke_color(ctx, GColorWhite);
   graphics_context_set_stroke_width(ctx, 1);
-  graphics_draw_line(ctx, GPoint(8, 200), GPoint(192, 200));
+  graphics_draw_line(ctx, GPoint(8, EVENT_SEPARATOR_Y), GPoint(192, EVENT_SEPARATOR_Y));
 
   draw_text(ctx, s_event_buf, s_font_event, GRect(8, 203, 184, 25),
             GColorWhite, GTextAlignmentCenter);
