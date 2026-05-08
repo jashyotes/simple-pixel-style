@@ -25,6 +25,7 @@
         "options": [
           { "label": "Temperature", "value": "temperature" },
           { "label": "Weather", "value": "weather" },
+          { "label": "Weather icon", "value": "weather_icon" },
           { "label": "Rain chance", "value": "rain" },
           { "label": "Heart rate", "value": "heart_rate" },
           { "label": "Steps", "value": "steps" },
@@ -45,6 +46,7 @@
         "options": [
           { "label": "Temperature", "value": "temperature" },
           { "label": "Weather", "value": "weather" },
+          { "label": "Weather icon", "value": "weather_icon" },
           { "label": "Rain chance", "value": "rain" },
           { "label": "Heart rate", "value": "heart_rate" },
           { "label": "Steps", "value": "steps" },
@@ -65,6 +67,7 @@
         "options": [
           { "label": "Temperature", "value": "temperature" },
           { "label": "Weather", "value": "weather" },
+          { "label": "Weather icon", "value": "weather_icon" },
           { "label": "Rain chance", "value": "rain" },
           { "label": "Heart rate", "value": "heart_rate" },
           { "label": "Steps", "value": "steps" },

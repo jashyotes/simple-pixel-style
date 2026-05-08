@@ -1,4 +1,4 @@
-Simple Pixel Style 0.21
+Simple Pixel Style 0.22
 
 - Three complication circles are now the only layout.
 - Top W800-style walking-man step counter is enabled by default.
@@ -7,6 +7,7 @@ Simple Pixel Style 0.21
 - Rain chance now displays as a plain number from 0 to 100, with no percent sign.
 - Temperature complications now show a compact F/C unit icon, with Fahrenheit or Celsius selectable in settings.
 - Weather is available as a separate complication with a condition icon and temperature underneath.
+- Weather icon is available as a separate icon-only complication.
 - Rain icons were simplified for cleaner small-circle rendering.
 - Weather fetches now include Open-Meteo apparent temperature, daily high, wind speed, and UV index.
 - Calendar sync now sends a compact countdown value for the next-event complication.

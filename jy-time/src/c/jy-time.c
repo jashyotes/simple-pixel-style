@@ -48,6 +48,7 @@ typedef enum {
   ComplicationUvIndex = 9,
   ComplicationNextEvent = 10,
   ComplicationWeather = 11,
+  ComplicationWeatherIcon = 12,
 } ComplicationType;
 
 static Window *s_window;
@@ -125,7 +126,7 @@ static void draw_text(GContext *ctx, const char *text, GFont font, GRect frame,
 }
 
 static ComplicationType sanitize_complication(int value, ComplicationType fallback) {
-  return value >= ComplicationTemperature && value <= ComplicationWeather
+  return value >= ComplicationTemperature && value <= ComplicationWeatherIcon
       ? (ComplicationType)value
       : fallback;
 }
@@ -527,7 +528,7 @@ static void draw_complication_icon(GContext *ctx, ComplicationType type, GPoint 
     draw_sun_icon(ctx, GPoint(center.x - 8, center.y - 8));
   } else if (type == ComplicationNextEvent) {
     draw_calendar_icon_centered(ctx, center);
-  } else if (type == ComplicationWeather) {
+  } else if (type == ComplicationWeather || type == ComplicationWeatherIcon) {
     draw_weather_icon_centered(ctx, center);
   }
 }
@@ -557,6 +558,8 @@ static const char *value_for_complication(ComplicationType type) {
     return s_event_delta_buf;
   } else if (type == ComplicationWeather) {
     return s_temp_buf;
+  } else if (type == ComplicationWeatherIcon) {
+    return "";
   }
   return "--";
 }
@@ -567,6 +570,11 @@ static void draw_complication(GContext *ctx, GPoint center, ComplicationType typ
   graphics_context_set_stroke_color(ctx, GColorWhite);
   graphics_context_set_stroke_width(ctx, 2);
   graphics_draw_circle(ctx, center, COMPLICATION_RADIUS);
+
+  if (type == ComplicationWeatherIcon) {
+    draw_complication_icon(ctx, type, center);
+    return;
+  }
 
   draw_complication_icon(ctx, type, GPoint(center.x, center.y - 12));
 

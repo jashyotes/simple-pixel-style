@@ -36,7 +36,8 @@ var COMPLICATION_IDS = {
   wind: 8,
   uv: 9,
   next_event: 10,
-  weather: 11
+  weather: 11,
+  weather_icon: 12
 };
 
 function clamp(value, min, max) {
