@@ -4,12 +4,13 @@ Pebble Time 2 watchface with a pixel-watch layout: watch battery, Bluetooth stat
 
 ## Current Release
 
-Version `0.2.0` ships with:
+Version `0.21` ships with:
 
 - Three evenly spaced complication circles only.
 - Top walking-man step counter enabled by default.
 - Configurable left, middle, and right complication slots.
-- Built-in choices for temperature, rain chance, heart rate, steps, watch battery, phone battery, feels-like temperature, high temperature, wind speed, UV index, and next-event countdown.
+- Built-in choices for weather, temperature, rain chance, heart rate, steps, watch battery, phone battery, feels-like temperature, high temperature, wind speed, UV index, and next-event countdown.
+- Fahrenheit and Celsius selection for temperature-based complications.
 - Open-Meteo weather through PebbleKit JS.
 - Optional iCal/ICS calendar feed through PebbleKit JS.
 

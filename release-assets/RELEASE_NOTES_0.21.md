@@ -1,4 +1,4 @@
-Simple Pixel Style 0.2.0
+Simple Pixel Style 0.21
 
 - Three complication circles are now the only layout.
 - Top W800-style walking-man step counter is enabled by default.
