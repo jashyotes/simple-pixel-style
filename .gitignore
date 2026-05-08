@@ -31,4 +31,5 @@ jy-time-companion/app/local.properties
 # Ad hoc visual-test exports at the project root. Keep curated screenshots under
 # release-assets/, snapshots/, reference-screenshots/, and design-mockups/.
 /screenshot-*.png
+/pebble_screenshot_*.png
 /font-size-options-*.png

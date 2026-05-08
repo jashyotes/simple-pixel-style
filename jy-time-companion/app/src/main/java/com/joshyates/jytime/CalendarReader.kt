@@ -19,6 +19,15 @@ object CalendarReader {
             }
             return "$prefix | $title"
         }
+
+        fun countdownString(nowMs: Long = System.currentTimeMillis()): String {
+            if (nowMs in startMs until endMs) return "NOW"
+            val minutes = ((startMs - nowMs).coerceAtLeast(0L) + TimeUnit.MINUTES.toMillis(1) - 1) /
+                TimeUnit.MINUTES.toMillis(1)
+            if (minutes < 100) return "${minutes}m"
+            val hours = (minutes + 59) / 60
+            return if (hours < 100) "${hours}h" else "99+"
+        }
     }
 
     /**

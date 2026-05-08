@@ -87,7 +87,7 @@ private fun AppRoot(modifier: Modifier = Modifier) {
     val prefs = remember { context.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE) }
 
     var enabled by remember { mutableStateOf(prefs.getBoolean(Constants.PREF_ENABLED, false)) }
-    var topSteps by remember { mutableStateOf(prefs.getBoolean(Constants.PREF_TOP_STEPS, false)) }
+    var topSteps by remember { mutableStateOf(prefs.getBoolean(Constants.PREF_TOP_STEPS, true)) }
     var permissionsMissing by remember { mutableStateOf(missingPermissions(context)) }
     var status by remember { mutableStateOf(readSyncStatus(context)) }
 

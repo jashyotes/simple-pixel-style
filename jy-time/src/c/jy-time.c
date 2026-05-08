@@ -5,8 +5,8 @@
 // Pixel-style structure, emery target (Pebble Time 2, 200x228).
 //
 // Watch-side data: time, date, watch battery, Bluetooth, steps, HR.
-// Companion-fed via AppMessage: next calendar event, phone battery %, weather code,
-// temperature F, and rain chance.
+// Companion-fed via AppMessage: next calendar event, phone battery %, weather,
+// and configurable complication layout.
 
 #define PERSIST_KEY_PHONE_BATTERY  100
 #define PERSIST_KEY_WEATHER_CODE   101
@@ -14,9 +14,33 @@
 #define PERSIST_KEY_EVENT          103
 #define PERSIST_KEY_RAIN_CHANCE    104
 #define PERSIST_KEY_TOP_STEPS      105
+#define PERSIST_KEY_FEELS_LIKE     106
+#define PERSIST_KEY_HIGH_TEMP      107
+#define PERSIST_KEY_WIND_SPEED     108
+#define PERSIST_KEY_UV_INDEX       109
+#define PERSIST_KEY_EVENT_DELTA    110
+#define PERSIST_KEY_COMP_SLOT_1    111
+#define PERSIST_KEY_COMP_SLOT_2    112
+#define PERSIST_KEY_COMP_SLOT_3    113
 
 #define SCREEN_W 200
 #define SCREEN_H 228
+#define COMPLICATION_RADIUS 24
+#define COMPLICATION_COUNT 3
+
+typedef enum {
+  ComplicationTemperature = 0,
+  ComplicationRainChance = 1,
+  ComplicationHeartRate = 2,
+  ComplicationSteps = 3,
+  ComplicationWatchBattery = 4,
+  ComplicationPhoneBattery = 5,
+  ComplicationFeelsLike = 6,
+  ComplicationHighTemp = 7,
+  ComplicationWindSpeed = 8,
+  ComplicationUvIndex = 9,
+  ComplicationNextEvent = 10,
+} ComplicationType;
 
 static Window *s_window;
 static Layer *s_face_layer;
@@ -35,23 +59,44 @@ static char s_time_buf[8];
 static char s_ampm_buf[3];
 static char s_event_buf[80];
 static char s_watch_buf[8];
+static char s_watch_battery_buf[8];
+static char s_phone_battery_buf[8];
 static char s_steps_buf[8];
 static char s_temp_buf[8];
 static char s_rain_buf[8];
 static char s_bpm_buf[12];
+static char s_feels_like_buf[8];
+static char s_high_temp_buf[8];
+static char s_wind_buf[8];
+static char s_uv_buf[8];
+static char s_event_delta_buf[8];
 
 static uint8_t s_phone_battery_pct = 0;
 static bool s_phone_battery_known = false;
 static bool s_phone_connected = false;
+static uint8_t s_watch_battery_pct = 0;
 
 static int8_t s_temperature = 0;
 static bool s_temperature_known = false;
+static int8_t s_feels_like = 0;
+static bool s_feels_like_known = false;
+static int8_t s_high_temp = 0;
+static bool s_high_temp_known = false;
 static uint8_t s_weather_code = 0;
 static bool s_weather_known = false;
 static uint8_t s_rain_chance = 0;
 static bool s_rain_known = false;
-static bool s_w800_steps_top_enabled = false;
+static uint8_t s_wind_speed = 0;
+static bool s_wind_known = false;
+static uint8_t s_uv_index = 0;
+static bool s_uv_known = false;
+static bool s_w800_steps_top_enabled = true;
 static int s_steps_count = 0;
+static ComplicationType s_complication_slots[COMPLICATION_COUNT] = {
+  ComplicationTemperature,
+  ComplicationRainChance,
+  ComplicationHeartRate,
+};
 
 static void mark_face_dirty(void) {
   if (s_face_layer) {
@@ -68,6 +113,72 @@ static void draw_text(GContext *ctx, const char *text, GFont font, GRect frame,
   set_text_color(ctx, color);
   graphics_draw_text(ctx, text, font, frame, GTextOverflowModeTrailingEllipsis,
                      alignment, NULL);
+}
+
+static ComplicationType sanitize_complication(int value, ComplicationType fallback) {
+  return value >= ComplicationTemperature && value <= ComplicationNextEvent
+      ? (ComplicationType)value
+      : fallback;
+}
+
+static void format_unknown(char *buf, size_t len) {
+  snprintf(buf, len, "--");
+}
+
+static void format_int_3(char *buf, size_t len, bool known, int value) {
+  if (!known) {
+    format_unknown(buf, len);
+    return;
+  }
+  if (value > 999) {
+    snprintf(buf, len, "999");
+  } else if (value < -99) {
+    snprintf(buf, len, "-99");
+  } else {
+    snprintf(buf, len, "%d", value);
+  }
+}
+
+static void format_percent_3(char *buf, size_t len, bool known, int value) {
+  if (!known) {
+    format_unknown(buf, len);
+    return;
+  }
+  if (value >= 100) {
+    snprintf(buf, len, "100");
+  } else if (value < 0) {
+    snprintf(buf, len, "0%%");
+  } else {
+    snprintf(buf, len, "%d%%", value);
+  }
+}
+
+static void format_rain_chance(char *buf, size_t len, bool known, int value) {
+  if (!known) {
+    format_unknown(buf, len);
+    return;
+  }
+  if (value >= 100) {
+    snprintf(buf, len, "100");
+  } else if (value < 0) {
+    snprintf(buf, len, "0");
+  } else {
+    snprintf(buf, len, "%d", value);
+  }
+}
+
+static void format_capped_99_plus(char *buf, size_t len, bool known, int value) {
+  if (!known) {
+    format_unknown(buf, len);
+    return;
+  }
+  if (value > 99) {
+    snprintf(buf, len, "99+");
+  } else if (value < 0) {
+    snprintf(buf, len, "0");
+  } else {
+    snprintf(buf, len, "%d", value);
+  }
 }
 
 static void draw_pixel_block(GContext *ctx, GPoint origin, int x, int y, int w, int h) {
@@ -220,19 +331,11 @@ static void draw_step_icon(GContext *ctx, GPoint origin) {
 }
 
 static void draw_step_icon_centered(GContext *ctx, GPoint center) {
-  draw_step_icon(ctx, GPoint(center.x - 8, center.y - 14));
+  draw_step_icon(ctx, GPoint(center.x - 8, center.y - 7));
 }
 
 static void draw_icon_block(GContext *ctx, GPoint origin, int x, int y, int w, int h) {
   graphics_fill_rect(ctx, GRect(origin.x + x, origin.y + y, w, h), 0, GCornerNone);
-}
-
-static void draw_cloud_icon(GContext *ctx, GPoint origin) {
-  graphics_context_set_fill_color(ctx, GColorWhite);
-  draw_icon_block(ctx, origin, 6, 5, 7, 2);
-  draw_icon_block(ctx, origin, 4, 7, 11, 2);
-  draw_icon_block(ctx, origin, 2, 9, 16, 5);
-  draw_icon_block(ctx, origin, 4, 14, 12, 2);
 }
 
 static void draw_sun_icon(GContext *ctx, GPoint origin) {
@@ -244,38 +347,27 @@ static void draw_sun_icon(GContext *ctx, GPoint origin) {
   draw_icon_block(ctx, origin, 5, 5, 6, 6);
 }
 
-static void draw_weather_icon(GContext *ctx, GPoint origin) {
-  if (s_weather_known && s_weather_code == 0) {
-    draw_sun_icon(ctx, origin);
-    return;
-  }
-  draw_cloud_icon(ctx, origin);
-  if ((s_weather_code >= 51 && s_weather_code <= 67) ||
-      (s_weather_code >= 80 && s_weather_code <= 82) ||
-      s_weather_code >= 95) {
-    graphics_context_set_stroke_color(ctx, GColorWhite);
-    graphics_draw_line(ctx, GPoint(origin.x + 5, origin.y + 16), GPoint(origin.x + 4, origin.y + 18));
-    graphics_draw_line(ctx, GPoint(origin.x + 10, origin.y + 16), GPoint(origin.x + 9, origin.y + 18));
-    graphics_draw_line(ctx, GPoint(origin.x + 14, origin.y + 16), GPoint(origin.x + 13, origin.y + 18));
-  }
-}
-
-static void draw_weather_icon_centered(GContext *ctx, GPoint center) {
-  draw_weather_icon(ctx, GPoint(center.x - 8, center.y - 14));
+static void draw_thermometer_icon_centered(GContext *ctx, GPoint center) {
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  draw_icon_block(ctx, GPoint(center.x - 6, center.y - 9), 5, 0, 3, 10);
+  draw_icon_block(ctx, GPoint(center.x - 6, center.y - 9), 4, 10, 5, 2);
+  draw_icon_block(ctx, GPoint(center.x - 6, center.y - 9), 3, 12, 7, 4);
+  draw_icon_block(ctx, GPoint(center.x - 6, center.y - 9), 4, 16, 5, 1);
 }
 
 static void draw_drop_icon(GContext *ctx, GPoint origin) {
-  graphics_context_set_fill_color(ctx, GColorWhite);
-  draw_icon_block(ctx, origin, 7, 1, 2, 2);
-  draw_icon_block(ctx, origin, 6, 3, 4, 2);
-  draw_icon_block(ctx, origin, 5, 5, 6, 2);
-  draw_icon_block(ctx, origin, 4, 7, 8, 5);
-  draw_icon_block(ctx, origin, 5, 12, 6, 2);
-  draw_icon_block(ctx, origin, 7, 14, 2, 1);
+  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_line(ctx, GPoint(origin.x + 7, origin.y), GPoint(origin.x + 3, origin.y + 7));
+  graphics_draw_line(ctx, GPoint(origin.x + 7, origin.y), GPoint(origin.x + 11, origin.y + 7));
+  graphics_draw_line(ctx, GPoint(origin.x + 3, origin.y + 7), GPoint(origin.x + 3, origin.y + 11));
+  graphics_draw_line(ctx, GPoint(origin.x + 11, origin.y + 7), GPoint(origin.x + 11, origin.y + 11));
+  graphics_draw_line(ctx, GPoint(origin.x + 4, origin.y + 12), GPoint(origin.x + 10, origin.y + 12));
+  graphics_draw_line(ctx, GPoint(origin.x + 5, origin.y + 13), GPoint(origin.x + 9, origin.y + 13));
 }
 
 static void draw_drop_icon_centered(GContext *ctx, GPoint center) {
-  draw_drop_icon(ctx, GPoint(center.x - 7, center.y - 14));
+  draw_drop_icon(ctx, GPoint(center.x - 8, center.y - 8));
 }
 
 static void draw_heart_icon(GContext *ctx, GPoint origin) {
@@ -289,29 +381,112 @@ static void draw_heart_icon(GContext *ctx, GPoint origin) {
 }
 
 static void draw_heart_icon_centered(GContext *ctx, GPoint center) {
-  draw_heart_icon(ctx, GPoint(center.x - 8, center.y - 14));
+  draw_heart_icon(ctx, GPoint(center.x - 8, center.y - 8));
 }
 
-static void draw_complication(GContext *ctx, GPoint center, const char *value, int type) {
+static void draw_watch_icon_centered(GContext *ctx, GPoint center) {
+  draw_watch_icon_c(ctx, GPoint(center.x - 7, center.y - 9));
+}
+
+static void draw_phone_icon_centered(GContext *ctx, GPoint center) {
+  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_rect(ctx, GRect(center.x - 5, center.y - 8, 10, 16));
+  graphics_draw_line(ctx, GPoint(center.x - 2, center.y + 5), GPoint(center.x + 2, center.y + 5));
+}
+
+static void draw_wind_icon_centered(GContext *ctx, GPoint center) {
   graphics_context_set_stroke_color(ctx, GColorWhite);
   graphics_context_set_stroke_width(ctx, 2);
-  graphics_draw_circle(ctx, center, 22);
+  graphics_draw_line(ctx, GPoint(center.x - 8, center.y - 5), GPoint(center.x + 7, center.y - 5));
+  graphics_draw_line(ctx, GPoint(center.x - 5, center.y), GPoint(center.x + 5, center.y));
+  graphics_draw_line(ctx, GPoint(center.x - 8, center.y + 5), GPoint(center.x + 2, center.y + 5));
+}
 
-  if (type == 0) {
+static void draw_calendar_icon_centered(GContext *ctx, GPoint center) {
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  draw_icon_block(ctx, GPoint(center.x - 7, center.y - 8), 0, 2, 14, 2);
+  draw_icon_block(ctx, GPoint(center.x - 7, center.y - 8), 0, 4, 2, 11);
+  draw_icon_block(ctx, GPoint(center.x - 7, center.y - 8), 12, 4, 2, 11);
+  draw_icon_block(ctx, GPoint(center.x - 7, center.y - 8), 0, 13, 14, 2);
+  draw_icon_block(ctx, GPoint(center.x - 7, center.y - 8), 4, 7, 2, 2);
+  draw_icon_block(ctx, GPoint(center.x - 7, center.y - 8), 8, 7, 2, 2);
+}
+
+static void draw_high_temp_icon_centered(GContext *ctx, GPoint center) {
+  draw_thermometer_icon_centered(ctx, GPoint(center.x - 3, center.y));
+  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_line(ctx, GPoint(center.x + 8, center.y + 5), GPoint(center.x + 8, center.y - 6));
+  graphics_draw_line(ctx, GPoint(center.x + 8, center.y - 6), GPoint(center.x + 5, center.y - 3));
+  graphics_draw_line(ctx, GPoint(center.x + 8, center.y - 6), GPoint(center.x + 11, center.y - 3));
+}
+
+static void draw_complication_icon(GContext *ctx, ComplicationType type, GPoint center) {
+  if (type == ComplicationSteps) {
     draw_step_icon_centered(ctx, center);
-  } else if (type == 1) {
-    draw_weather_icon_centered(ctx, center);
-  } else if (type == 2) {
+  } else if (type == ComplicationTemperature || type == ComplicationFeelsLike) {
+    draw_thermometer_icon_centered(ctx, center);
+  } else if (type == ComplicationRainChance) {
     draw_drop_icon_centered(ctx, center);
-  } else {
+  } else if (type == ComplicationHeartRate) {
     draw_heart_icon_centered(ctx, center);
+  } else if (type == ComplicationWatchBattery) {
+    draw_watch_icon_centered(ctx, center);
+  } else if (type == ComplicationPhoneBattery) {
+    draw_phone_icon_centered(ctx, center);
+  } else if (type == ComplicationHighTemp) {
+    draw_high_temp_icon_centered(ctx, center);
+  } else if (type == ComplicationWindSpeed) {
+    draw_wind_icon_centered(ctx, center);
+  } else if (type == ComplicationUvIndex) {
+    draw_sun_icon(ctx, GPoint(center.x - 8, center.y - 8));
+  } else if (type == ComplicationNextEvent) {
+    draw_calendar_icon_centered(ctx, center);
   }
+}
+
+static const char *value_for_complication(ComplicationType type) {
+  if (type == ComplicationSteps) {
+    return s_steps_buf;
+  } else if (type == ComplicationTemperature) {
+    return s_temp_buf;
+  } else if (type == ComplicationRainChance) {
+    return s_rain_buf;
+  } else if (type == ComplicationHeartRate) {
+    return s_bpm_buf;
+  } else if (type == ComplicationWatchBattery) {
+    return s_watch_battery_buf;
+  } else if (type == ComplicationPhoneBattery) {
+    return s_phone_battery_buf;
+  } else if (type == ComplicationFeelsLike) {
+    return s_feels_like_buf;
+  } else if (type == ComplicationHighTemp) {
+    return s_high_temp_buf;
+  } else if (type == ComplicationWindSpeed) {
+    return s_wind_buf;
+  } else if (type == ComplicationUvIndex) {
+    return s_uv_buf;
+  } else if (type == ComplicationNextEvent) {
+    return s_event_delta_buf;
+  }
+  return "--";
+}
+
+static void draw_complication(GContext *ctx, GPoint center, ComplicationType type) {
+  const char *value = value_for_complication(type);
+
+  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_stroke_width(ctx, 2);
+  graphics_draw_circle(ctx, center, COMPLICATION_RADIUS);
+
+  draw_complication_icon(ctx, type, GPoint(center.x, center.y - 15));
 
   GFont value_font = strlen(value) > 2
       ? fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD)
       : s_font_complication;
   draw_text(ctx, value, value_font,
-            GRect(center.x - 22, center.y + 2, 44, 18),
+            GRect(center.x - 23, center.y - 6, 46, 18),
             GColorWhite, GTextAlignmentCenter);
 }
 
@@ -332,16 +507,9 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
 
   draw_time_row(ctx);
 
-  if (s_w800_steps_top_enabled) {
-    draw_complication(ctx, GPoint(40, 174), s_temp_buf, 1);
-    draw_complication(ctx, GPoint(100, 174), s_rain_buf, 2);
-    draw_complication(ctx, GPoint(160, 174), s_bpm_buf, 3);
-  } else {
-    draw_complication(ctx, GPoint(28, 174), s_steps_buf, 0);
-    draw_complication(ctx, GPoint(76, 174), s_temp_buf, 1);
-    draw_complication(ctx, GPoint(124, 174), s_rain_buf, 2);
-    draw_complication(ctx, GPoint(172, 174), s_bpm_buf, 3);
-  }
+  draw_complication(ctx, GPoint(40, 174), s_complication_slots[0]);
+  draw_complication(ctx, GPoint(100, 174), s_complication_slots[1]);
+  draw_complication(ctx, GPoint(160, 174), s_complication_slots[2]);
 
   graphics_context_set_stroke_color(ctx, GColorWhite);
   graphics_context_set_stroke_width(ctx, 1);
@@ -368,22 +536,29 @@ static void update_time_date(struct tm *t) {
 }
 
 static void update_watch_battery(BatteryChargeState s) {
+  s_watch_battery_pct = s.charge_percent;
   snprintf(s_watch_buf, sizeof(s_watch_buf), "%d", s.charge_percent);
+  format_percent_3(s_watch_battery_buf, sizeof(s_watch_battery_buf), true, s_watch_battery_pct);
   mark_face_dirty();
 }
 
 static void update_weather_widget(void) {
-  if (s_temperature_known) {
-    snprintf(s_temp_buf, sizeof(s_temp_buf), "%d", s_temperature);
+  format_int_3(s_temp_buf, sizeof(s_temp_buf), s_temperature_known, s_temperature);
+  format_rain_chance(s_rain_buf, sizeof(s_rain_buf), s_rain_known, s_rain_chance);
+  format_int_3(s_feels_like_buf, sizeof(s_feels_like_buf), s_feels_like_known, s_feels_like);
+  format_int_3(s_high_temp_buf, sizeof(s_high_temp_buf), s_high_temp_known, s_high_temp);
+  format_capped_99_plus(s_wind_buf, sizeof(s_wind_buf), s_wind_known, s_wind_speed);
+  if (s_uv_known && s_uv_index > 11) {
+    snprintf(s_uv_buf, sizeof(s_uv_buf), "11+");
   } else {
-    snprintf(s_temp_buf, sizeof(s_temp_buf), "--");
+    format_int_3(s_uv_buf, sizeof(s_uv_buf), s_uv_known, s_uv_index);
   }
+  mark_face_dirty();
+}
 
-  if (s_rain_known) {
-    snprintf(s_rain_buf, sizeof(s_rain_buf), "%d%%", s_rain_chance);
-  } else {
-    snprintf(s_rain_buf, sizeof(s_rain_buf), "--");
-  }
+static void update_phone_battery_widget(void) {
+  format_percent_3(s_phone_battery_buf, sizeof(s_phone_battery_buf),
+                   s_phone_battery_known, s_phone_battery_pct);
   mark_face_dirty();
 }
 
@@ -398,6 +573,16 @@ static void update_event(const char *title) {
   mark_face_dirty();
 }
 
+static void update_event_delta(const char *delta) {
+  if (delta && delta[0] != '\0') {
+    strncpy(s_event_delta_buf, delta, sizeof(s_event_delta_buf) - 1);
+    s_event_delta_buf[sizeof(s_event_delta_buf) - 1] = '\0';
+  } else {
+    format_unknown(s_event_delta_buf, sizeof(s_event_delta_buf));
+  }
+  mark_face_dirty();
+}
+
 static void update_stats(void) {
 #if defined(PBL_HEALTH)
   int steps = (int) health_service_sum_today(HealthMetricStepCount);
@@ -407,8 +592,6 @@ static void update_stats(void) {
   s_steps_count = steps;
   if (steps < 1000) {
     snprintf(s_steps_buf, sizeof(s_steps_buf), "%d", steps);
-  } else if (steps < 10000) {
-    snprintf(s_steps_buf, sizeof(s_steps_buf), "%d.%dk", steps / 1000, (steps % 1000) / 100);
   } else if (steps < 100000) {
     snprintf(s_steps_buf, sizeof(s_steps_buf), "%dk", steps / 1000);
   } else {
@@ -442,6 +625,7 @@ static void connection_handler(bool connected) {
   s_phone_connected = connected;
   if (!connected) {
     s_phone_battery_known = false;
+    update_phone_battery_widget();
   }
   mark_face_dirty();
 }
@@ -466,6 +650,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   if (t) {
     s_phone_battery_pct = (uint8_t)t->value->int32;
     s_phone_battery_known = true;
+    update_phone_battery_widget();
     persist_write_int(PERSIST_KEY_PHONE_BATTERY, s_phone_battery_pct);
   }
 
@@ -490,10 +675,62 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_int(PERSIST_KEY_RAIN_CHANCE, s_rain_chance);
   }
 
+  t = dict_find(iter, MESSAGE_KEY_FEELS_LIKE);
+  if (t) {
+    s_feels_like = (int8_t)t->value->int32;
+    s_feels_like_known = true;
+    persist_write_int(PERSIST_KEY_FEELS_LIKE, s_feels_like);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_HIGH_TEMP);
+  if (t) {
+    s_high_temp = (int8_t)t->value->int32;
+    s_high_temp_known = true;
+    persist_write_int(PERSIST_KEY_HIGH_TEMP, s_high_temp);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_WIND_SPEED);
+  if (t) {
+    s_wind_speed = (uint8_t)t->value->int32;
+    s_wind_known = true;
+    persist_write_int(PERSIST_KEY_WIND_SPEED, s_wind_speed);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_UV_INDEX);
+  if (t) {
+    s_uv_index = (uint8_t)t->value->int32;
+    s_uv_known = true;
+    persist_write_int(PERSIST_KEY_UV_INDEX, s_uv_index);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_NEXT_EVENT_DELTA);
+  if (t && t->type == TUPLE_CSTRING) {
+    persist_write_string(PERSIST_KEY_EVENT_DELTA, t->value->cstring);
+    update_event_delta(t->value->cstring);
+  }
+
   t = dict_find(iter, MESSAGE_KEY_TOP_STEPS);
   if (t) {
     s_w800_steps_top_enabled = t->value->int32 != 0;
     persist_write_bool(PERSIST_KEY_TOP_STEPS, s_w800_steps_top_enabled);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_COMPLICATION_1);
+  if (t) {
+    s_complication_slots[0] = sanitize_complication(t->value->int32, ComplicationTemperature);
+    persist_write_int(PERSIST_KEY_COMP_SLOT_1, s_complication_slots[0]);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_COMPLICATION_2);
+  if (t) {
+    s_complication_slots[1] = sanitize_complication(t->value->int32, ComplicationRainChance);
+    persist_write_int(PERSIST_KEY_COMP_SLOT_2, s_complication_slots[1]);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_COMPLICATION_3);
+  if (t) {
+    s_complication_slots[2] = sanitize_complication(t->value->int32, ComplicationHeartRate);
+    persist_write_int(PERSIST_KEY_COMP_SLOT_3, s_complication_slots[2]);
   }
 
   update_weather_widget();
@@ -521,12 +758,44 @@ static void load_persisted(void) {
     s_rain_chance = (uint8_t)persist_read_int(PERSIST_KEY_RAIN_CHANCE);
     s_rain_known = true;
   }
+  if (persist_exists(PERSIST_KEY_FEELS_LIKE)) {
+    s_feels_like = (int8_t)persist_read_int(PERSIST_KEY_FEELS_LIKE);
+    s_feels_like_known = true;
+  }
+  if (persist_exists(PERSIST_KEY_HIGH_TEMP)) {
+    s_high_temp = (int8_t)persist_read_int(PERSIST_KEY_HIGH_TEMP);
+    s_high_temp_known = true;
+  }
+  if (persist_exists(PERSIST_KEY_WIND_SPEED)) {
+    s_wind_speed = (uint8_t)persist_read_int(PERSIST_KEY_WIND_SPEED);
+    s_wind_known = true;
+  }
+  if (persist_exists(PERSIST_KEY_UV_INDEX)) {
+    s_uv_index = (uint8_t)persist_read_int(PERSIST_KEY_UV_INDEX);
+    s_uv_known = true;
+  }
   if (persist_exists(PERSIST_KEY_TOP_STEPS)) {
     s_w800_steps_top_enabled = persist_read_bool(PERSIST_KEY_TOP_STEPS);
   }
   if (persist_exists(PERSIST_KEY_EVENT)) {
     persist_read_string(PERSIST_KEY_EVENT, s_event_buf, sizeof(s_event_buf));
     s_event_buf[sizeof(s_event_buf) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_EVENT_DELTA)) {
+    persist_read_string(PERSIST_KEY_EVENT_DELTA, s_event_delta_buf, sizeof(s_event_delta_buf));
+    s_event_delta_buf[sizeof(s_event_delta_buf) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_COMP_SLOT_1)) {
+    s_complication_slots[0] = sanitize_complication(
+        persist_read_int(PERSIST_KEY_COMP_SLOT_1), ComplicationTemperature);
+  }
+  if (persist_exists(PERSIST_KEY_COMP_SLOT_2)) {
+    s_complication_slots[1] = sanitize_complication(
+        persist_read_int(PERSIST_KEY_COMP_SLOT_2), ComplicationRainChance);
+  }
+  if (persist_exists(PERSIST_KEY_COMP_SLOT_3)) {
+    s_complication_slots[2] = sanitize_complication(
+        persist_read_int(PERSIST_KEY_COMP_SLOT_3), ComplicationHeartRate);
   }
 }
 
@@ -562,8 +831,13 @@ static void window_load(Window *window) {
   update_time_date(t);
   update_watch_battery(battery_state_service_peek());
   s_phone_connected = connection_service_peek_pebble_app_connection();
+  if (!s_phone_connected) {
+    s_phone_battery_known = false;
+  }
+  update_phone_battery_widget();
   update_weather_widget();
   update_event(s_event_buf[0] ? s_event_buf : NULL);
+  update_event_delta(s_event_delta_buf[0] ? s_event_delta_buf : NULL);
   update_stats();
 }
 

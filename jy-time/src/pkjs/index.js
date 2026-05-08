@@ -9,7 +9,10 @@ var weatherTimer = null;
 var calendarTimer = null;
 
 var DEFAULT_SETTINGS = {
-  TOP_STEPS: false,
+  TOP_STEPS: true,
+  COMPLICATION_1: 'temperature',
+  COMPLICATION_2: 'rain',
+  COMPLICATION_3: 'heart_rate',
   WEATHER_ENABLED: true,
   WEATHER_SOURCE: 'gps',
   WEATHER_LAT: '',
@@ -20,8 +23,32 @@ var DEFAULT_SETTINGS = {
   CALENDAR_LOOKAHEAD_HOURS: '48'
 };
 
+var COMPLICATION_IDS = {
+  temperature: 0,
+  rain: 1,
+  heart_rate: 2,
+  steps: 3,
+  watch_battery: 4,
+  phone_battery: 5,
+  feels_like: 6,
+  high_temp: 7,
+  wind: 8,
+  uv: 9,
+  next_event: 10
+};
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function isNumber(value) {
+  return typeof value === 'number' && isFinite(value);
+}
+
+function complicationId(value, fallback) {
+  return typeof COMPLICATION_IDS[value] !== 'undefined'
+      ? COMPLICATION_IDS[value]
+      : fallback;
 }
 
 function readSettings() {
@@ -50,6 +77,9 @@ function sendToWatch(dict, label) {
 function sendLayoutSetting(settings) {
   var dict = {};
   dict[keys.TOP_STEPS] = settings.TOP_STEPS ? 1 : 0;
+  dict[keys.COMPLICATION_1] = complicationId(settings.COMPLICATION_1, COMPLICATION_IDS.temperature);
+  dict[keys.COMPLICATION_2] = complicationId(settings.COMPLICATION_2, COMPLICATION_IDS.rain);
+  dict[keys.COMPLICATION_3] = complicationId(settings.COMPLICATION_3, COMPLICATION_IDS.heart_rate);
   sendToWatch(dict, 'Layout setting');
 }
 
@@ -72,13 +102,29 @@ function nearestRainChance(hourly) {
   return clamp(Math.round(hourly.precipitation_probability[bestIndex] || 0), 0, 100);
 }
 
+function firstDailyValue(daily, field) {
+  if (!daily || !daily[field] || !daily[field].length) {
+    return null;
+  }
+  var value = Number(daily[field][0]);
+  return isFinite(value) ? value : null;
+}
+
+function addRounded(dict, key, value, min, max) {
+  if (isNumber(value)) {
+    dict[key] = clamp(Math.round(value), min, max);
+  }
+}
+
 function fetchWeatherForCoordinates(lat, lon) {
   var url = 'https://api.open-meteo.com/v1/forecast'
       + '?latitude=' + encodeURIComponent(lat)
       + '&longitude=' + encodeURIComponent(lon)
-      + '&current=temperature_2m,weather_code'
+      + '&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m'
       + '&hourly=precipitation_probability'
+      + '&daily=temperature_2m_max,uv_index_max'
       + '&temperature_unit=fahrenheit'
+      + '&wind_speed_unit=mph'
       + '&forecast_days=1'
       + '&timezone=auto';
 
@@ -91,8 +137,12 @@ function fetchWeatherForCoordinates(lat, lon) {
       }
 
       var dict = {};
-      dict[keys.TEMPERATURE] = clamp(Math.round(data.current.temperature_2m), -99, 127);
-      dict[keys.WEATHER_CODE] = clamp(Math.round(data.current.weather_code), 0, 255);
+      addRounded(dict, keys.TEMPERATURE, data.current.temperature_2m, -99, 127);
+      addRounded(dict, keys.FEELS_LIKE, data.current.apparent_temperature, -99, 127);
+      addRounded(dict, keys.WEATHER_CODE, data.current.weather_code, 0, 255);
+      addRounded(dict, keys.WIND_SPEED, data.current.wind_speed_10m, 0, 255);
+      addRounded(dict, keys.HIGH_TEMP, firstDailyValue(data.daily, 'temperature_2m_max'), -99, 127);
+      addRounded(dict, keys.UV_INDEX, firstDailyValue(data.daily, 'uv_index_max'), 0, 255);
       dict[keys.RAIN_CHANCE] = nearestRainChance(data.hourly);
       sendToWatch(dict, 'Weather');
     } catch (e) {
@@ -238,6 +288,31 @@ function formatEvent(event) {
   return text.length > 72 ? text.slice(0, 69) + '...' : text;
 }
 
+function formatEventDelta(event) {
+  if (!event) {
+    return '--';
+  }
+
+  var now = new Date().getTime();
+  var start = event.start.getTime();
+  var end = event.end ? event.end.getTime() : start + 60 * 60 * 1000;
+  if (start <= now && end >= now) {
+    return 'NOW';
+  }
+
+  var minutes = Math.max(0, Math.ceil((start - now) / 60000));
+  if (minutes < 100) {
+    return minutes + 'm';
+  }
+
+  var hours = Math.ceil(minutes / 60);
+  if (hours < 100) {
+    return hours + 'h';
+  }
+
+  return '99+';
+}
+
 function refreshCalendar() {
   var settings = readSettings();
   var url = (settings.CALENDAR_ICS_URL || '').trim();
@@ -250,6 +325,7 @@ function refreshCalendar() {
     var event = parseNextEvent(xhr.responseText, settings.CALENDAR_LOOKAHEAD_HOURS);
     var dict = {};
     dict[keys.NEXT_EVENT] = formatEvent(event);
+    dict[keys.NEXT_EVENT_DELTA] = formatEventDelta(event);
     sendToWatch(dict, 'Calendar');
   };
   xhr.onerror = function() {

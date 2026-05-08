@@ -112,16 +112,30 @@ class WatchSyncService : Service() {
         val battery = BatteryReader.getBatteryPercent(this)
         val w = weather.fetch()
         val eventDisplay = ev?.displayString()?.truncateUtf8(Constants.MAX_EVENT_DISPLAY_BYTES) ?: ""
+        val eventDelta = ev?.countdownString() ?: "--"
         val topSteps = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean(Constants.PREF_TOP_STEPS, false)
+            .getBoolean(Constants.PREF_TOP_STEPS, true)
 
         val data = buildMap<UInt, PebbleDictionaryItem> {
             put(Constants.KEY_NEXT_EVENT, PebbleDictionaryItem.Text(eventDisplay))
+            put(Constants.KEY_NEXT_EVENT_DELTA, PebbleDictionaryItem.Text(eventDelta))
             put(Constants.KEY_TOP_STEPS, PebbleDictionaryItem.UInt8(if (topSteps) 1u else 0u))
             if (battery != null) put(Constants.KEY_PHONE_BATTERY, PebbleDictionaryItem.UInt8(battery.toUByte()))
             if (w != null) {
                 put(Constants.KEY_WEATHER_CODE, PebbleDictionaryItem.UInt8(w.wmoCode.coerceIn(0, 255).toUByte()))
                 put(Constants.KEY_TEMPERATURE, PebbleDictionaryItem.Int8(w.temperatureF.coerceIn(-128, 127).toByte()))
+                w.feelsLikeF?.let {
+                    put(Constants.KEY_FEELS_LIKE, PebbleDictionaryItem.Int8(it.coerceIn(-128, 127).toByte()))
+                }
+                w.highTempF?.let {
+                    put(Constants.KEY_HIGH_TEMP, PebbleDictionaryItem.Int8(it.coerceIn(-128, 127).toByte()))
+                }
+                w.windMph?.let {
+                    put(Constants.KEY_WIND_SPEED, PebbleDictionaryItem.UInt8(it.coerceIn(0, 255).toUByte()))
+                }
+                w.uvIndex?.let {
+                    put(Constants.KEY_UV_INDEX, PebbleDictionaryItem.UInt8(it.coerceIn(0, 255).toUByte()))
+                }
                 w.rainChance?.let {
                     put(Constants.KEY_RAIN_CHANCE, PebbleDictionaryItem.UInt8(it.coerceIn(0, 100).toUByte()))
                 }
@@ -129,7 +143,7 @@ class WatchSyncService : Service() {
         }
 
         val result = sender.sendDataToPebble(Constants.WATCHFACE_UUID, data)
-        Log.d(TAG, "sync sent: event=$eventDisplay, batt=$battery, wmo=${w?.wmoCode}, tempF=${w?.temperatureF}, rain=${w?.rainChance}, result=$result")
+        Log.d(TAG, "sync sent: event=$eventDisplay, eventDelta=$eventDelta, batt=$battery, wmo=${w?.wmoCode}, tempF=${w?.temperatureF}, feels=${w?.feelsLikeF}, high=${w?.highTempF}, wind=${w?.windMph}, uv=${w?.uvIndex}, rain=${w?.rainChance}, result=$result")
 
         lastSyncMs = System.currentTimeMillis()
         lastEventTitle = eventDisplay.ifBlank { null }

@@ -14,8 +14,65 @@
         "type": "toggle",
         "messageKey": "TOP_STEPS",
         "label": "Top W800 step counter",
-        "defaultValue": false,
-        "description": "Moves steps above the date and centers the remaining complications."
+        "defaultValue": true,
+        "description": "Shows the walking-man step counter above the date."
+      },
+      {
+        "type": "select",
+        "messageKey": "COMPLICATION_1",
+        "label": "Left circle",
+        "defaultValue": "temperature",
+        "options": [
+          { "label": "Temperature", "value": "temperature" },
+          { "label": "Rain chance", "value": "rain" },
+          { "label": "Heart rate", "value": "heart_rate" },
+          { "label": "Steps", "value": "steps" },
+          { "label": "Watch battery", "value": "watch_battery" },
+          { "label": "Phone battery", "value": "phone_battery" },
+          { "label": "Feels like", "value": "feels_like" },
+          { "label": "High temp", "value": "high_temp" },
+          { "label": "Wind", "value": "wind" },
+          { "label": "UV index", "value": "uv" },
+          { "label": "Next event", "value": "next_event" }
+        ]
+      },
+      {
+        "type": "select",
+        "messageKey": "COMPLICATION_2",
+        "label": "Middle circle",
+        "defaultValue": "rain",
+        "options": [
+          { "label": "Temperature", "value": "temperature" },
+          { "label": "Rain chance", "value": "rain" },
+          { "label": "Heart rate", "value": "heart_rate" },
+          { "label": "Steps", "value": "steps" },
+          { "label": "Watch battery", "value": "watch_battery" },
+          { "label": "Phone battery", "value": "phone_battery" },
+          { "label": "Feels like", "value": "feels_like" },
+          { "label": "High temp", "value": "high_temp" },
+          { "label": "Wind", "value": "wind" },
+          { "label": "UV index", "value": "uv" },
+          { "label": "Next event", "value": "next_event" }
+        ]
+      },
+      {
+        "type": "select",
+        "messageKey": "COMPLICATION_3",
+        "label": "Right circle",
+        "defaultValue": "heart_rate",
+        "options": [
+          { "label": "Temperature", "value": "temperature" },
+          { "label": "Rain chance", "value": "rain" },
+          { "label": "Heart rate", "value": "heart_rate" },
+          { "label": "Steps", "value": "steps" },
+          { "label": "Watch battery", "value": "watch_battery" },
+          { "label": "Phone battery", "value": "phone_battery" },
+          { "label": "Feels like", "value": "feels_like" },
+          { "label": "High temp", "value": "high_temp" },
+          { "label": "Wind", "value": "wind" },
+          { "label": "UV index", "value": "uv" },
+          { "label": "Next event", "value": "next_event" }
+        ]
       }
     ]
   },

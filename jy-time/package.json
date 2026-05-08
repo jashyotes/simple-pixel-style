@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "keywords": [
     "pebble-app"
   ],
@@ -30,7 +30,15 @@
       "WEATHER_CODE",
       "TEMPERATURE",
       "RAIN_CHANCE",
-      "TOP_STEPS"
+      "TOP_STEPS",
+      "FEELS_LIKE",
+      "HIGH_TEMP",
+      "WIND_SPEED",
+      "UV_INDEX",
+      "NEXT_EVENT_DELTA",
+      "COMPLICATION_1",
+      "COMPLICATION_2",
+      "COMPLICATION_3"
     ],
     "resources": {
       "media": [

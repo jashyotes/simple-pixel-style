@@ -12,6 +12,14 @@ object Constants {
     const val KEY_TEMPERATURE: UInt = 10003u
     const val KEY_RAIN_CHANCE: UInt = 10004u
     const val KEY_TOP_STEPS: UInt = 10005u
+    const val KEY_FEELS_LIKE: UInt = 10006u
+    const val KEY_HIGH_TEMP: UInt = 10007u
+    const val KEY_WIND_SPEED: UInt = 10008u
+    const val KEY_UV_INDEX: UInt = 10009u
+    const val KEY_NEXT_EVENT_DELTA: UInt = 10010u
+    const val KEY_COMPLICATION_1: UInt = 10011u
+    const val KEY_COMPLICATION_2: UInt = 10012u
+    const val KEY_COMPLICATION_3: UInt = 10013u
 
     const val SYNC_INTERVAL_MS: Long = 60_000L
     const val WEATHER_CACHE_MS: Long = 30 * 60_000L
