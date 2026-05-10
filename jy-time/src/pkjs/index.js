@@ -10,6 +10,8 @@ var calendarTimer = null;
 
 var DEFAULT_SETTINGS = {
   TOP_STEPS: true,
+  VERBOSE_WEATHER: false,
+  VERBOSE_WEATHER_STYLE: 'one_line',
   COMPLICATION_1: 'weather',
   COMPLICATION_2: 'rain',
   COMPLICATION_3: 'heart_rate',
@@ -84,6 +86,8 @@ function sendToWatch(dict, label) {
 function sendLayoutSetting(settings) {
   var dict = {};
   dict[keys.TOP_STEPS] = settings.TOP_STEPS ? 1 : 0;
+  dict[keys.VERBOSE_WEATHER] = settings.VERBOSE_WEATHER ? 1 : 0;
+  dict[keys.VERBOSE_WEATHER_STYLE] = settings.VERBOSE_WEATHER_STYLE === 'large' ? 1 : 0;
   dict[keys.COMPLICATION_1] = complicationId(settings.COMPLICATION_1, COMPLICATION_IDS.weather);
   dict[keys.COMPLICATION_2] = complicationId(settings.COMPLICATION_2, COMPLICATION_IDS.rain);
   dict[keys.COMPLICATION_3] = complicationId(settings.COMPLICATION_3, COMPLICATION_IDS.heart_rate);
@@ -110,6 +114,147 @@ function nearestRainChance(hourly) {
   return clamp(Math.round(hourly.precipitation_probability[bestIndex] || 0), 0, 100);
 }
 
+function nearestHourlyIndex(hourly) {
+  if (!hourly || !hourly.time || !hourly.time.length) {
+    return -1;
+  }
+
+  var now = Date.now();
+  var bestIndex = 0;
+  var bestDistance = Infinity;
+  hourly.time.forEach(function(timeValue, index) {
+    var distance = Math.abs(new Date(timeValue).getTime() - now);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
+function weatherBaseLabel(code) {
+  if (code === 0) return 'CLEAR';
+  if (code === 1) return 'MOSTLY CLR';
+  if (code === 2) return 'PARTLY CLDY';
+  if (code === 3) return 'CLOUDY';
+  if (code === 45 || code === 48) return 'FOG';
+  if (code >= 51 && code <= 55) return 'DRIZZLE';
+  if (code === 56 || code === 57) return 'FRZ DRZL';
+  if (code >= 61 && code <= 65) return 'RAIN';
+  if (code === 66 || code === 67) return 'FRZ RAIN';
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'SNOW';
+  if (code >= 80 && code <= 82) return 'SHWRS';
+  if (code >= 95 && code <= 99) return 'STORMS';
+  return 'CLOUDY';
+}
+
+function weatherEventLabel(code) {
+  if (code >= 95 && code <= 99) return 'STORMS';
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'SNOW';
+  if (code >= 80 && code <= 82) return 'SHWRS';
+  if (code === 66 || code === 67) return 'FRZ RAIN';
+  if (code >= 61 && code <= 65) return 'RAIN';
+  if (code === 56 || code === 57) return 'FRZ DRZL';
+  if (code >= 51 && code <= 55) return 'DRIZZLE';
+  return null;
+}
+
+function formatWeatherHour(date) {
+  var hours = date.getHours();
+  var suffix = hours >= 12 ? 'P' : 'A';
+  var hour = hours % 12 || 12;
+  return hour + suffix;
+}
+
+function isSameLocalDay(a, b) {
+  return a.getFullYear() === b.getFullYear()
+      && a.getMonth() === b.getMonth()
+      && a.getDate() === b.getDate();
+}
+
+function hourlyWeatherCode(hourly, index) {
+  if (!hourly || !hourly.weather_code || index < 0 || index >= hourly.weather_code.length) {
+    return null;
+  }
+  var code = Number(hourly.weather_code[index]);
+  return isFinite(code) ? code : null;
+}
+
+function hourlyRainChance(hourly, index) {
+  if (!hourly || !hourly.precipitation_probability ||
+      index < 0 || index >= hourly.precipitation_probability.length) {
+    return 0;
+  }
+  var value = Number(hourly.precipitation_probability[index]);
+  return isFinite(value) ? clamp(Math.round(value), 0, 100) : 0;
+}
+
+function significantWeatherEvent(hourly, index) {
+  var code = hourlyWeatherCode(hourly, index);
+  if (code === null) {
+    return null;
+  }
+
+  var label = weatherEventLabel(code);
+  if (!label) {
+    return null;
+  }
+
+  var rainChance = hourlyRainChance(hourly, index);
+  return rainChance >= 30 || code >= 71 ? label : null;
+}
+
+function verboseWeatherSummary(hourly, currentCode) {
+  var dryHoursRequired = 3;
+  var fallback = weatherBaseLabel(Number(currentCode));
+  var startIndex = nearestHourlyIndex(hourly);
+  if (startIndex < 0 || !hourly.time) {
+    return fallback;
+  }
+
+  var now = new Date();
+  var currentEvent = weatherEventLabel(Number(currentCode)) ||
+      significantWeatherEvent(hourly, startIndex);
+
+  if (currentEvent) {
+    var dryRun = 0;
+    var firstDryIndex = -1;
+    for (var i = startIndex + 1; i < hourly.time.length; i++) {
+      var stopDate = new Date(hourly.time[i]);
+      if (!isSameLocalDay(now, stopDate)) {
+        return currentEvent + ' ALL DAY';
+      }
+      if (!significantWeatherEvent(hourly, i)) {
+        if (dryRun === 0) {
+          firstDryIndex = i;
+        }
+        dryRun++;
+        if (dryRun >= dryHoursRequired) {
+          return currentEvent + ' TIL ' + formatWeatherHour(new Date(hourly.time[firstDryIndex]));
+        }
+      } else {
+        dryRun = 0;
+        firstDryIndex = -1;
+      }
+    }
+    return currentEvent + ' ALL DAY';
+  }
+
+  var latest = now.getTime() + (18 * 60 * 60 * 1000);
+  for (var j = startIndex + 1; j < hourly.time.length; j++) {
+    var eventDate = new Date(hourly.time[j]);
+    if (eventDate.getTime() > latest) {
+      break;
+    }
+    var nextEvent = significantWeatherEvent(hourly, j);
+    if (nextEvent) {
+      return nextEvent + ' AT ' + formatWeatherHour(eventDate);
+    }
+  }
+
+  return fallback;
+}
+
 function firstDailyValue(daily, field) {
   if (!daily || !daily[field] || !daily[field].length) {
     return null;
@@ -130,7 +275,7 @@ function fetchWeatherForCoordinates(lat, lon, unit) {
       + '?latitude=' + encodeURIComponent(lat)
       + '&longitude=' + encodeURIComponent(lon)
       + '&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m'
-      + '&hourly=precipitation_probability'
+      + '&hourly=precipitation_probability,weather_code'
       + '&daily=temperature_2m_max,uv_index_max'
       + '&temperature_unit=' + encodeURIComponent(unitParam)
       + '&wind_speed_unit=mph'
@@ -153,6 +298,7 @@ function fetchWeatherForCoordinates(lat, lon, unit) {
       addRounded(dict, keys.HIGH_TEMP, firstDailyValue(data.daily, 'temperature_2m_max'), -99, 127);
       addRounded(dict, keys.UV_INDEX, firstDailyValue(data.daily, 'uv_index_max'), 0, 255);
       dict[keys.RAIN_CHANCE] = nearestRainChance(data.hourly);
+      dict[keys.WEATHER_SUMMARY] = verboseWeatherSummary(data.hourly, data.current.weather_code);
       sendToWatch(dict, 'Weather');
     } catch (e) {
       console.log('Weather parse failed: ' + e);

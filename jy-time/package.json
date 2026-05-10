@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "0.31.0",
+  "version": "0.33.0",
   "keywords": [
     "pebble-app"
   ],
@@ -39,7 +39,10 @@
       "COMPLICATION_1",
       "COMPLICATION_2",
       "COMPLICATION_3",
-      "TEMPERATURE_UNIT"
+      "TEMPERATURE_UNIT",
+      "VERBOSE_WEATHER",
+      "WEATHER_SUMMARY",
+      "VERBOSE_WEATHER_STYLE"
     ],
     "resources": {
       "media": [
@@ -62,6 +65,11 @@
         {
           "file": "images/W800_WALKING_MAN.PNG",
           "name": "W800_WALKING_MAN",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/QUIET_TIME_MOUSE.PNG",
+          "name": "QUIET_TIME_MOUSE",
           "type": "bitmap"
         },
         {
@@ -107,6 +115,76 @@
         {
           "file": "images/w800_digits/DIGIT_9.PNG",
           "name": "W800_STEP_DIGIT_9",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/small/WEATHER_SUNNY.PNG",
+          "name": "WEATHER_SUNNY_SMALL",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/small/WEATHER_PARTLY_CLOUDY.PNG",
+          "name": "WEATHER_PARTLY_CLOUDY_SMALL",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/small/WEATHER_CLOUDY.PNG",
+          "name": "WEATHER_CLOUDY_SMALL",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/small/WEATHER_FOG.PNG",
+          "name": "WEATHER_FOG_SMALL",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/small/WEATHER_RAIN.PNG",
+          "name": "WEATHER_RAIN_SMALL",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/small/WEATHER_SNOW.PNG",
+          "name": "WEATHER_SNOW_SMALL",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/small/WEATHER_STORM.PNG",
+          "name": "WEATHER_STORM_SMALL",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/large/WEATHER_SUNNY.PNG",
+          "name": "WEATHER_SUNNY_LARGE",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/large/WEATHER_PARTLY_CLOUDY.PNG",
+          "name": "WEATHER_PARTLY_CLOUDY_LARGE",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/large/WEATHER_CLOUDY.PNG",
+          "name": "WEATHER_CLOUDY_LARGE",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/large/WEATHER_FOG.PNG",
+          "name": "WEATHER_FOG_LARGE",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/large/WEATHER_RAIN.PNG",
+          "name": "WEATHER_RAIN_LARGE",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/large/WEATHER_SNOW.PNG",
+          "name": "WEATHER_SNOW_LARGE",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/weather/weather-icons/large/WEATHER_STORM.PNG",
+          "name": "WEATHER_STORM_LARGE",
           "type": "bitmap"
         }
       ]

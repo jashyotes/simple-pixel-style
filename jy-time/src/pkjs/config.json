@@ -18,6 +18,29 @@
         "description": "Shows the walking-man step counter above the date."
       },
       {
+        "type": "toggle",
+        "messageKey": "VERBOSE_WEATHER",
+        "label": "Verbose weather, centered time",
+        "defaultValue": false,
+        "description": "Replaces the complication circles with one centered weather line."
+      },
+      {
+        "type": "select",
+        "messageKey": "VERBOSE_WEATHER_STYLE",
+        "label": "Verbose weather style",
+        "defaultValue": "one_line",
+        "options": [
+          {
+            "label": "One-line",
+            "value": "one_line"
+          },
+          {
+            "label": "Large",
+            "value": "large"
+          }
+        ]
+      },
+      {
         "type": "select",
         "messageKey": "COMPLICATION_1",
         "label": "Left circle",
