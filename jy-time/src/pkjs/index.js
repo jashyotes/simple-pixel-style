@@ -575,6 +575,56 @@ function parseByDay(rule, fallbackComponents) {
   return days;
 }
 
+function parseByDayEntries(rule) {
+  var entries = [];
+  if (!rule.BYDAY) {
+    return entries;
+  }
+
+  rule.BYDAY.split(',').forEach(function(day) {
+    var match = day.match(/^([+-]?\d+)?([A-Z]{2})$/);
+    var index = weekdayIndex(day);
+    if (match && index !== -1) {
+      entries.push({
+        ordinal: match[1] ? Number(match[1]) : null,
+        weekday: index
+      });
+    }
+  });
+  return entries;
+}
+
+function daysInMonth(year, monthIndex) {
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+function nthWeekdayFromEndOfMonth(year, monthIndex, weekday, nthFromEnd) {
+  var lastDay = daysInMonth(year, monthIndex);
+  var lastWeekday = new Date(Date.UTC(year, monthIndex, lastDay)).getUTCDay();
+  return lastDay - ((lastWeekday - weekday + 7) % 7) - ((nthFromEnd - 1) * 7);
+}
+
+function matchesMonthlyByDayEntry(dateComponents, entry) {
+  if (localWeekday(dateComponents) !== entry.weekday) {
+    return false;
+  }
+
+  if (!entry.ordinal) {
+    return true;
+  }
+
+  var monthIndex = dateComponents.month - 1;
+  if (entry.ordinal > 0) {
+    return dateComponents.day === nthWeekdayOfMonth(
+      dateComponents.year, monthIndex, entry.weekday, entry.ordinal
+    );
+  }
+
+  return dateComponents.day === nthWeekdayFromEndOfMonth(
+    dateComponents.year, monthIndex, entry.weekday, Math.abs(entry.ordinal)
+  );
+}
+
 function componentsForOccurrence(startInfo, dateComponents) {
   return {
     year: dateComponents.year,
@@ -675,6 +725,12 @@ function matchesRecurrenceDate(dateComponents, startComponents, rule) {
     }
     if (rule.BYMONTHDAY) {
       return rule.BYMONTHDAY.split(',').indexOf(String(dateComponents.day)) !== -1;
+    }
+    if (rule.BYDAY) {
+      var monthlyByDays = parseByDayEntries(rule);
+      return monthlyByDays.some(function(entry) {
+        return matchesMonthlyByDayEntry(dateComponents, entry);
+      });
     }
     return dateComponents.day === startComponents.day;
   }
