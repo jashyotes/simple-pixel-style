@@ -4,8 +4,9 @@ Pebble Time 2 watchface with a pixel-watch layout: watch battery, Bluetooth stat
 
 ## Current Release
 
-Version `0.37` ships with:
+Version `0.39` ships with:
 
+- Optional light mode with a white background and black text/icons.
 - Three configurable complication circles by default, with weather, rain chance, and heart rate selected out of the box.
 - Top walking-man W800 step counter enabled by default, including a Casio-style thousands comma.
 - Optional small or large verbose weather mode that replaces the circles with a centered weather line.
@@ -16,13 +17,16 @@ Version `0.37` ships with:
 - Google Calendar recurring event expansion, timezone handling, full event time labels, and 15-minute current-meeting rollover.
 - Monthly recurring events that use ordinal weekdays, such as second Tuesday or fourth Tuesday.
 - Quiet Time indicator using the mouse icon, aligned opposite the AM/PM label.
+- Current screenshots organized into the `Current Screenshots/` folder, including dark and light variants.
 
 Current release artifacts:
 
-- `release-assets/simple-pixel-style-0.37-emery.pbw`
-- `release-assets/screenshot-0.37-default-3-circles-quiet-time.png`
-- `release-assets/screenshot-0.37-small-verbose-weather-quiet-time.png`
-- `release-assets/RELEASE_NOTES_0.37.md`
+- `release-assets/simple-pixel-style-0.39-emery.pbw`
+- `Current Screenshots/current-dark-default-3-circles-quiet-time.png`
+- `Current Screenshots/current-light-default-3-circles.png`
+- `Current Screenshots/current-light-small-verbose-weather.png`
+- `Current Screenshots/current-light-large-verbose-weather.png`
+- `release-assets/RELEASE_NOTES_0.39.md`
 
 ## Project Layout
 
