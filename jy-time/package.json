@@ -45,7 +45,9 @@
       "VERBOSE_WEATHER_STYLE",
       "LIGHT_MODE",
       "INVERT_TOP_BAR",
-      "INVERT_MIDDLE",
+      "INVERT_DATE_BAR",
+      "INVERT_TIME",
+      "INVERT_WEATHER",
       "INVERT_MEETING_BAR"
     ],
     "resources": {

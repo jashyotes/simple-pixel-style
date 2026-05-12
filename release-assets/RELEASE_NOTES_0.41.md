@@ -1,6 +1,7 @@
 Simple Pixel Style 0.41
 
-- Replaces separate date, time, and weather inversion toggles with one Invert Middle toggle.
-- Draws the middle inversion as one continuous band from below the top bar to the meeting separator.
-- Keeps top bar and meeting bar inversion independent.
-- Preserves old 0.40 time/weather inversion settings by mapping them into the new middle-band behavior.
+- Keeps the 0.40 color customization controls: top bar, date bar, time, weather area, and meeting bar.
+- Fixes date and time inversion bar geometry so adjacent inverted clock/date bars do not show base-color gaps.
+- Tightens weather-area inversion around the three complication circles.
+- Leaves top bar and meeting inversion sizing unchanged.
+- Adds dark and light screenshots showing weather plus meeting bar inversion.

@@ -26,10 +26,24 @@
       },
       {
         "type": "toggle",
-        "messageKey": "INVERT_MIDDLE",
-        "label": "Invert middle",
+        "messageKey": "INVERT_DATE_BAR",
+        "label": "Invert date bar",
         "defaultValue": false,
-        "description": "Swaps the date, time, and weather area colors as one continuous band."
+        "description": "Swaps the date bar colors."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "INVERT_TIME",
+        "label": "Invert time",
+        "defaultValue": false,
+        "description": "Swaps the time row colors."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "INVERT_WEATHER",
+        "label": "Invert weather",
+        "defaultValue": false,
+        "description": "Swaps the complication or verbose weather colors."
       },
       {
         "type": "toggle",

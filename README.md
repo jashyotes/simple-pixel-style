@@ -6,8 +6,9 @@ Pebble Time 2 watchface with a pixel-watch layout: watch battery, Bluetooth stat
 
 Version `0.41` ships with:
 
-- Color customization toggles for independently inverting the top bar, middle band, and meeting bar.
-- A continuous middle inversion band covering the date, time, and weather/complication area without base-color gaps.
+- Color customization toggles for independently inverting the top bar, date bar, time, weather area, and meeting bar.
+- Cleaner date and time inversion bars, with contiguous edges when both are inverted.
+- Tighter weather-area inversion around the three complication circles.
 - Optional light mode with a white background and black text/icons.
 - Three configurable complication circles by default, with weather, rain chance, and heart rate selected out of the box.
 - Top walking-man W800 step counter enabled by default, including a Casio-style thousands comma.
@@ -27,6 +28,8 @@ Current release artifacts:
 - `Current Screenshots/current-dark-default-3-circles-quiet-time.png`
 - `Current Screenshots/current-light-default-3-circles.png`
 - `Current Screenshots/current-light-inverted-bars-default-3-circles.png`
+- `Current Screenshots/current-dark-weather-meeting-inverted.png`
+- `Current Screenshots/current-light-weather-meeting-inverted.png`
 - `Current Screenshots/current-light-small-verbose-weather.png`
 - `Current Screenshots/current-light-large-verbose-weather.png`
 - `release-assets/RELEASE_NOTES_0.41.md`
