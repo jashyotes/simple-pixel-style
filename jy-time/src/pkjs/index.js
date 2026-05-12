@@ -7,6 +7,7 @@ var keys = require('message_keys');
 var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
 var weatherTimer = null;
 var calendarTimer = null;
+var CURRENT_EVENT_DISPLAY_MINUTES = 15;
 
 var DEFAULT_SETTINGS = {
   TOP_STEPS: true,
@@ -23,6 +24,7 @@ var DEFAULT_SETTINGS = {
   WEATHER_REFRESH_MIN: '30',
   CALENDAR_ENABLED: false,
   CALENDAR_ICS_URL: '',
+  CALENDAR_ICS_URL_2: '',
   CALENDAR_LOOKAHEAD_HOURS: '48'
 };
 
@@ -345,34 +347,167 @@ function unfoldIcs(text) {
   return text.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '').split(/\r?\n/);
 }
 
-function parseIcsDate(line) {
-  var parts = line.split(':');
-  var meta = parts.shift() || '';
-  var value = parts.join(':');
-  if (!value) {
-    return null;
-  }
+function parseIcsProperty(line) {
+  var colon = line.indexOf(':');
+  var meta = colon === -1 ? line : line.slice(0, colon);
+  var value = colon === -1 ? '' : line.slice(colon + 1);
+  var parts = meta.split(';');
+  var name = parts.shift() || '';
+  var params = {};
 
-  if (meta.indexOf('VALUE=DATE') !== -1 || /^\d{8}$/.test(value)) {
-    return null;
-  }
+  parts.forEach(function(part) {
+    var equals = part.indexOf('=');
+    if (equals !== -1) {
+      params[part.slice(0, equals).toUpperCase()] = part.slice(equals + 1).replace(/^"|"$/g, '');
+    }
+  });
 
+  return {
+    name: name.toUpperCase(),
+    meta: meta,
+    value: value,
+    params: params
+  };
+}
+
+function parseIcsDateComponents(value) {
   var match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
   if (!match) {
     return null;
   }
 
-  if (match[7] === 'Z') {
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5]),
+    second: Number(match[6]),
+    isUtc: match[7] === 'Z'
+  };
+}
+
+function nthWeekdayOfMonth(year, monthIndex, weekday, nth) {
+  var firstWeekday = new Date(Date.UTC(year, monthIndex, 1)).getUTCDay();
+  return 1 + ((weekday - firstWeekday + 7) % 7) + ((nth - 1) * 7);
+}
+
+function localComponentTime(components) {
+  return Date.UTC(components.year, components.month - 1, components.day,
+      components.hour || 0, components.minute || 0, components.second || 0);
+}
+
+function isUsDst(components) {
+  var startDay = nthWeekdayOfMonth(components.year, 2, 0, 2);
+  var endDay = nthWeekdayOfMonth(components.year, 10, 0, 1);
+  var current = localComponentTime(components);
+  var start = Date.UTC(components.year, 2, startDay, 2, 0, 0);
+  var end = Date.UTC(components.year, 10, endDay, 2, 0, 0);
+  return current >= start && current < end;
+}
+
+function isSydneyDst(components) {
+  var current = localComponentTime(components);
+  var year = components.year;
+  var month = components.month;
+
+  if (month <= 3 || month >= 11) {
+    return true;
+  }
+  if (month >= 5 && month <= 9) {
+    return false;
+  }
+
+  if (month === 4) {
+    var endDay = nthWeekdayOfMonth(year, 3, 0, 1);
+    return current < Date.UTC(year, 3, endDay, 3, 0, 0);
+  }
+
+  var startDay = nthWeekdayOfMonth(year, 9, 0, 1);
+  return current >= Date.UTC(year, 9, startDay, 2, 0, 0);
+}
+
+function normalizeTzid(tzid) {
+  return (tzid || '').replace(/^"|"$/g, '');
+}
+
+function timezoneOffsetMinutes(tzid, components) {
+  tzid = normalizeTzid(tzid);
+  if (!tzid) {
+    return null;
+  }
+  if (tzid === 'UTC' || tzid === 'Etc/UTC' || tzid === 'GMT' || tzid === 'Z') {
+    return 0;
+  }
+  if (tzid === 'America/New_York') {
+    return isUsDst(components) ? -240 : -300;
+  }
+  if (tzid === 'America/Chicago') {
+    return isUsDst(components) ? -300 : -360;
+  }
+  if (tzid === 'America/Denver') {
+    return isUsDst(components) ? -360 : -420;
+  }
+  if (tzid === 'America/Phoenix') {
+    return -420;
+  }
+  if (tzid === 'America/Los_Angeles') {
+    return isUsDst(components) ? -420 : -480;
+  }
+  if (tzid === 'Australia/Sydney') {
+    return isSydneyDst(components) ? 660 : 600;
+  }
+  return null;
+}
+
+function dateFromIcsComponents(components, tzid) {
+  if (components.isUtc) {
     return new Date(Date.UTC(
-      Number(match[1]), Number(match[2]) - 1, Number(match[3]),
-      Number(match[4]), Number(match[5]), Number(match[6])
+      components.year, components.month - 1, components.day,
+      components.hour, components.minute, components.second
     ));
   }
 
+  var offset = timezoneOffsetMinutes(tzid, components);
+  if (offset !== null) {
+    return new Date(Date.UTC(
+      components.year, components.month - 1, components.day,
+      components.hour, components.minute, components.second
+    ) - (offset * 60 * 1000));
+  }
+
   return new Date(
-    Number(match[1]), Number(match[2]) - 1, Number(match[3]),
-    Number(match[4]), Number(match[5]), Number(match[6])
+    components.year, components.month - 1, components.day,
+    components.hour, components.minute, components.second
   );
+}
+
+function parseIcsDateInfo(line) {
+  var property = parseIcsProperty(line);
+  if (!property.value) {
+    return null;
+  }
+
+  if (property.meta.indexOf('VALUE=DATE') !== -1 || /^\d{8}$/.test(property.value)) {
+    return null;
+  }
+
+  var components = parseIcsDateComponents(property.value);
+  if (!components) {
+    return null;
+  }
+
+  var tzid = normalizeTzid(property.params.TZID);
+  return {
+    date: dateFromIcsComponents(components, tzid),
+    components: components,
+    tzid: tzid
+  };
+}
+
+function parseIcsDate(line) {
+  var info = parseIcsDateInfo(line);
+  return info ? info.date : null;
 }
 
 function unescapeIcsText(value) {
@@ -384,8 +519,239 @@ function unescapeIcsText(value) {
     .trim();
 }
 
+function parseRRule(line) {
+  var property = parseIcsProperty(line);
+  var rule = {};
+  property.value.split(';').forEach(function(part) {
+    var equals = part.indexOf('=');
+    if (equals !== -1) {
+      rule[part.slice(0, equals).toUpperCase()] = part.slice(equals + 1);
+    }
+  });
+  return rule;
+}
+
+function weekdayIndex(value) {
+  var code = (value || '').slice(-2);
+  var days = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+  return days.indexOf(code);
+}
+
+function localDateOnly(components) {
+  return Date.UTC(components.year, components.month - 1, components.day);
+}
+
+function componentsFromDateOnly(dateOnly) {
+  var date = new Date(dateOnly);
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate()
+  };
+}
+
+function localWeekday(components) {
+  return new Date(Date.UTC(components.year, components.month - 1, components.day)).getUTCDay();
+}
+
+function startOfWeekDateOnly(components, weekStart) {
+  var diff = (localWeekday(components) - weekStart + 7) % 7;
+  return localDateOnly(components) - (diff * 24 * 60 * 60 * 1000);
+}
+
+function parseByDay(rule, fallbackComponents) {
+  var days = [];
+  if (rule.BYDAY) {
+    rule.BYDAY.split(',').forEach(function(day) {
+      var index = weekdayIndex(day);
+      if (index !== -1) {
+        days.push(index);
+      }
+    });
+  }
+  if (!days.length && fallbackComponents) {
+    days.push(localWeekday(fallbackComponents));
+  }
+  return days;
+}
+
+function componentsForOccurrence(startInfo, dateComponents) {
+  return {
+    year: dateComponents.year,
+    month: dateComponents.month,
+    day: dateComponents.day,
+    hour: startInfo.components.hour,
+    minute: startInfo.components.minute,
+    second: startInfo.components.second,
+    isUtc: startInfo.components.isUtc
+  };
+}
+
+function eventDurationMs(event) {
+  if (event.end && event.start) {
+    return Math.max(0, event.end.getTime() - event.start.getTime());
+  }
+  return 60 * 60 * 1000;
+}
+
+function eventDisplayEndTime(start) {
+  return start.getTime() + (CURRENT_EVENT_DISPLAY_MINUTES * 60 * 1000);
+}
+
+function parseIcsDateList(line, fallbackTzid) {
+  var property = parseIcsProperty(line);
+  if (property.meta.indexOf('VALUE=DATE') !== -1) {
+    return [];
+  }
+
+  var tzid = normalizeTzid(property.params.TZID || fallbackTzid);
+  var dates = [];
+  property.value.split(',').forEach(function(value) {
+    if (/^\d{8}$/.test(value)) {
+      return;
+    }
+    var components = parseIcsDateComponents(value);
+    if (components) {
+      dates.push(dateFromIcsComponents(components, tzid));
+    }
+  });
+  return dates;
+}
+
+function recurrenceUntil(rule, fallbackTzid) {
+  if (!rule.UNTIL) {
+    return null;
+  }
+
+  var components = parseIcsDateComponents(rule.UNTIL);
+  if (!components) {
+    return null;
+  }
+  return dateFromIcsComponents(components, components.isUtc ? null : fallbackTzid);
+}
+
+function eventExceptionKey(uid, date) {
+  return uid + '|' + date.getTime();
+}
+
+function matchesRecurrenceDate(dateComponents, startComponents, rule) {
+  var frequency = rule.FREQ || '';
+  var interval = Math.max(1, Number(rule.INTERVAL) || 1);
+  var dayMs = 24 * 60 * 60 * 1000;
+  var startDate = localDateOnly(startComponents);
+  var candidateDate = localDateOnly(dateComponents);
+
+  if (candidateDate < startDate) {
+    return false;
+  }
+
+  if (frequency === 'DAILY') {
+    var days = Math.floor((candidateDate - startDate) / dayMs);
+    var dailyByDays = rule.BYDAY ? parseByDay(rule, null) : [];
+    return days % interval === 0
+        && (!dailyByDays.length || dailyByDays.indexOf(localWeekday(dateComponents)) !== -1);
+  }
+
+  if (frequency === 'WEEKLY') {
+    var byDays = parseByDay(rule, startComponents);
+    var weekStart = weekdayIndex(rule.WKST || 'SU');
+    if (weekStart === -1) {
+      weekStart = 0;
+    }
+    var weeks = Math.floor(
+      (startOfWeekDateOnly(dateComponents, weekStart) - startOfWeekDateOnly(startComponents, weekStart))
+      / (7 * dayMs)
+    );
+    return weeks >= 0
+        && weeks % interval === 0
+        && byDays.indexOf(localWeekday(dateComponents)) !== -1;
+  }
+
+  if (frequency === 'MONTHLY') {
+    var months = ((dateComponents.year - startComponents.year) * 12)
+        + (dateComponents.month - startComponents.month);
+    if (months < 0 || months % interval !== 0) {
+      return false;
+    }
+    if (rule.BYMONTHDAY) {
+      return rule.BYMONTHDAY.split(',').indexOf(String(dateComponents.day)) !== -1;
+    }
+    return dateComponents.day === startComponents.day;
+  }
+
+  if (frequency === 'YEARLY') {
+    var years = dateComponents.year - startComponents.year;
+    return years >= 0
+        && years % interval === 0
+        && dateComponents.month === startComponents.month
+        && dateComponents.day === startComponents.day;
+  }
+
+  return false;
+}
+
+function expandRecurringEvent(event, now, maxTime, exceptionKeys) {
+  if (!event.rrule || !event.startInfo) {
+    return [event];
+  }
+
+  var rule = parseRRule(event.rrule);
+  var until = recurrenceUntil(rule, event.startInfo.tzid);
+  var duration = eventDurationMs(event);
+  var exdates = {};
+  var occurrences = [];
+  var generated = 0;
+  var count = Number(rule.COUNT) || 0;
+  var dayMs = 24 * 60 * 60 * 1000;
+  var dateOnly = localDateOnly(event.startInfo.components);
+  var hardStop = dateOnly + (dayMs * 12000);
+
+  (event.exdates || []).forEach(function(line) {
+    parseIcsDateList(line, event.startInfo.tzid).forEach(function(date) {
+      exdates[date.getTime()] = true;
+    });
+  });
+
+  while (dateOnly <= hardStop) {
+    var dateComponents = componentsFromDateOnly(dateOnly);
+    var occurrenceComponents = componentsForOccurrence(event.startInfo, dateComponents);
+    var occurrenceStart = dateFromIcsComponents(occurrenceComponents, event.startInfo.tzid);
+    var occurrenceEnd = new Date(occurrenceStart.getTime() + duration);
+
+    if (occurrenceStart.getTime() > maxTime && dateOnly > localDateOnly(event.startInfo.components)) {
+      break;
+    }
+
+    if (until && occurrenceStart.getTime() > until.getTime()) {
+      break;
+    }
+
+    if (matchesRecurrenceDate(dateComponents, event.startInfo.components, rule)) {
+      generated++;
+      if (count && generated > count) {
+        break;
+      }
+
+      if (occurrenceStart.getTime() <= maxTime && eventDisplayEndTime(occurrenceStart) >= now.getTime()
+          && !exdates[occurrenceStart.getTime()]
+          && !(event.uid && exceptionKeys[eventExceptionKey(event.uid, occurrenceStart)])) {
+        occurrences.push({
+          start: occurrenceStart,
+          end: occurrenceEnd,
+          summary: event.summary
+        });
+      }
+    }
+
+    dateOnly += dayMs;
+  }
+
+  return occurrences;
+}
+
 function parseNextEvent(icsText, lookaheadHours) {
   var lines = unfoldIcs(icsText);
+  var rawEvents = [];
   var events = [];
   var current = null;
 
@@ -393,26 +759,52 @@ function parseNextEvent(icsText, lookaheadHours) {
     if (line === 'BEGIN:VEVENT') {
       current = {};
     } else if (line === 'END:VEVENT' && current) {
-      if (current.start && current.summary) {
-        events.push(current);
-      }
+      rawEvents.push(current);
       current = null;
     } else if (current) {
       if (line.indexOf('DTSTART') === 0) {
-        current.start = parseIcsDate(line);
+        current.startInfo = parseIcsDateInfo(line);
+        current.start = current.startInfo ? current.startInfo.date : null;
       } else if (line.indexOf('DTEND') === 0) {
         current.end = parseIcsDate(line);
       } else if (line.indexOf('SUMMARY') === 0) {
-        current.summary = unescapeIcsText(line.split(':').slice(1).join(':'));
+        current.summary = unescapeIcsText(parseIcsProperty(line).value);
+      } else if (line.indexOf('UID') === 0) {
+        current.uid = parseIcsProperty(line).value;
+      } else if (line.indexOf('RRULE') === 0) {
+        current.rrule = line;
+      } else if (line.indexOf('EXDATE') === 0) {
+        current.exdates = current.exdates || [];
+        current.exdates.push(line);
+      } else if (line.indexOf('RECURRENCE-ID') === 0) {
+        current.recurrenceIdInfo = parseIcsDateInfo(line);
+      } else if (line.indexOf('STATUS') === 0) {
+        current.status = parseIcsProperty(line).value;
       }
     }
   });
 
   var now = new Date();
   var maxTime = now.getTime() + (Number(lookaheadHours) || 48) * 60 * 60 * 1000;
+  var exceptionKeys = {};
+
+  rawEvents.forEach(function(event) {
+    if (event.uid && event.recurrenceIdInfo) {
+      exceptionKeys[eventExceptionKey(event.uid, event.recurrenceIdInfo.date)] = true;
+    }
+  });
+
+  rawEvents.forEach(function(event) {
+    if (!event.start || !event.summary || event.status === 'CANCELLED') {
+      return;
+    }
+    expandRecurringEvent(event, now, maxTime, exceptionKeys).forEach(function(occurrence) {
+      events.push(occurrence);
+    });
+  });
+
   var upcoming = events.filter(function(event) {
-    var endTime = event.end ? event.end.getTime() : event.start.getTime() + 60 * 60 * 1000;
-    return event.start.getTime() <= maxTime && endTime >= now.getTime();
+    return event.start.getTime() <= maxTime && eventDisplayEndTime(event.start) >= now.getTime();
   }).sort(function(a, b) {
     return a.start.getTime() - b.start.getTime();
   });
@@ -420,14 +812,22 @@ function parseNextEvent(icsText, lookaheadHours) {
   return upcoming[0] || null;
 }
 
+function nextSortedEvent(events) {
+  return events.filter(function(event) {
+    return event && event.start;
+  }).sort(function(a, b) {
+    return a.start.getTime() - b.start.getTime();
+  })[0] || null;
+}
+
 function formatHour(date) {
   var hours = date.getHours();
-  var suffix = hours >= 12 ? 'PM' : 'AM';
+  var suffix = hours >= 12 ? 'P' : 'A';
   var hour = hours % 12;
   if (hour === 0) {
     hour = 12;
   }
-  return hour + suffix;
+  return hour + ':' + (date.getMinutes() < 10 ? '0' : '') + date.getMinutes() + suffix;
 }
 
 function formatEvent(event) {
@@ -435,13 +835,15 @@ function formatEvent(event) {
     return '[None]';
   }
 
-  var now = new Date();
-  var endTime = event.end ? event.end.getTime() : event.start.getTime() + 60 * 60 * 1000;
-  var prefix = event.start.getTime() <= now.getTime() && endTime >= now.getTime()
-      ? 'NOW'
-      : formatHour(event.start);
-  var text = prefix + ' | ' + event.summary;
-  return text.length > 72 ? text.slice(0, 69) + '...' : text;
+  var prefix = formatHour(event.start);
+  var separator = ' | ';
+  var maxLength = 72;
+  var maxSummaryLength = maxLength - prefix.length - separator.length;
+  var summary = event.summary;
+  if (summary.length > maxSummaryLength) {
+    summary = summary.slice(0, Math.max(0, maxSummaryLength - 3)) + '...';
+  }
+  return prefix + separator + summary;
 }
 
 function formatEventDelta(event) {
@@ -451,7 +853,7 @@ function formatEventDelta(event) {
 
   var now = new Date().getTime();
   var start = event.start.getTime();
-  var end = event.end ? event.end.getTime() : start + 60 * 60 * 1000;
+  var end = eventDisplayEndTime(event.start);
   if (start <= now && end >= now) {
     return 'NOW';
   }
@@ -469,26 +871,84 @@ function formatEventDelta(event) {
   return '99+';
 }
 
+function calendarUrls(settings) {
+  var urls = [];
+  [
+    settings.CALENDAR_ICS_URL,
+    settings.CALENDAR_ICS_URL_2
+  ].forEach(function(value) {
+    var url = (value || '').trim();
+    if (url && urls.indexOf(url) === -1) {
+      urls.push(url);
+    }
+  });
+  return urls;
+}
+
+function sendCalendarEvent(event) {
+  var dict = {};
+  dict[keys.NEXT_EVENT] = formatEvent(event);
+  dict[keys.NEXT_EVENT_DELTA] = formatEventDelta(event);
+  sendToWatch(dict, 'Calendar');
+}
+
 function refreshCalendar() {
   var settings = readSettings();
-  var url = (settings.CALENDAR_ICS_URL || '').trim();
-  if (!settings.CALENDAR_ENABLED || !url) {
+  if (!settings.CALENDAR_ENABLED) {
     return;
   }
 
-  var xhr = new XMLHttpRequest();
-  xhr.onload = function() {
-    var event = parseNextEvent(xhr.responseText, settings.CALENDAR_LOOKAHEAD_HOURS);
-    var dict = {};
-    dict[keys.NEXT_EVENT] = formatEvent(event);
-    dict[keys.NEXT_EVENT_DELTA] = formatEventDelta(event);
-    sendToWatch(dict, 'Calendar');
-  };
-  xhr.onerror = function() {
-    console.log('Calendar request failed');
-  };
-  xhr.open('GET', url);
-  xhr.send();
+  var urls = calendarUrls(settings);
+  if (!urls.length) {
+    sendCalendarEvent(null);
+    return;
+  }
+
+  var pending = urls.length;
+  var successCount = 0;
+  var events = [];
+
+  function finish() {
+    pending--;
+    if (pending > 0) {
+      return;
+    }
+
+    if (!successCount) {
+      console.log('Calendar refresh failed for all feeds');
+      return;
+    }
+
+    sendCalendarEvent(nextSortedEvent(events));
+  }
+
+  urls.forEach(function(url) {
+    var xhr = new XMLHttpRequest();
+    xhr.onload = function() {
+      if (xhr.status && (xhr.status < 200 || xhr.status >= 400)) {
+        console.log('Calendar request failed with status ' + xhr.status);
+        finish();
+        return;
+      }
+
+      successCount++;
+      try {
+        var event = parseNextEvent(xhr.responseText, settings.CALENDAR_LOOKAHEAD_HOURS);
+        if (event) {
+          events.push(event);
+        }
+      } catch (e) {
+        console.log('Calendar parse failed: ' + e);
+      }
+      finish();
+    };
+    xhr.onerror = function() {
+      console.log('Calendar request failed');
+      finish();
+    };
+    xhr.open('GET', url);
+    xhr.send();
+  });
 }
 
 function scheduleRefreshes() {

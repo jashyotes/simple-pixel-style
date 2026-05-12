@@ -218,6 +218,16 @@
         }
       },
       {
+        "type": "input",
+        "messageKey": "CALENDAR_ICS_URL_2",
+        "label": "Second calendar .ics URL",
+        "defaultValue": "",
+        "attributes": {
+          "type": "url",
+          "placeholder": "https://calendar.google.com/..."
+        }
+      },
+      {
         "type": "select",
         "messageKey": "CALENDAR_LOOKAHEAD_HOURS",
         "label": "Look ahead",
