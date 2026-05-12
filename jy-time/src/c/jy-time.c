@@ -28,9 +28,9 @@
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
-#define PERSIST_KEY_INVERT_DATE_BAR 120
-#define PERSIST_KEY_INVERT_TIME    121
-#define PERSIST_KEY_INVERT_WEATHER 122
+#define PERSIST_KEY_INVERT_MIDDLE  120
+#define PERSIST_KEY_INVERT_TIME_LEGACY 121
+#define PERSIST_KEY_INVERT_WEATHER_LEGACY 122
 #define PERSIST_KEY_INVERT_MEETING_BAR 123
 
 #define SCREEN_W 200
@@ -86,10 +86,8 @@ typedef enum {
 typedef enum {
   ColorSectionBase = 0,
   ColorSectionTopBar = 1,
-  ColorSectionDateBar = 2,
-  ColorSectionTime = 3,
-  ColorSectionWeather = 4,
-  ColorSectionMeetingBar = 5,
+  ColorSectionMiddle = 2,
+  ColorSectionMeetingBar = 3,
 } ColorSection;
 
 static Window *s_window;
@@ -150,9 +148,7 @@ static bool s_verbose_weather_enabled = false;
 static bool s_verbose_weather_large = false;
 static bool s_light_mode_enabled = false;
 static bool s_invert_top_bar = false;
-static bool s_invert_date_bar = false;
-static bool s_invert_time = false;
-static bool s_invert_weather = false;
+static bool s_invert_middle = false;
 static bool s_invert_meeting_bar = false;
 static ColorSection s_draw_section = ColorSectionBase;
 static int s_steps_count = 0;
@@ -181,12 +177,8 @@ static GColor theme_fg_color(void) {
 static bool section_inverted(ColorSection section) {
   if (section == ColorSectionTopBar) {
     return s_invert_top_bar;
-  } else if (section == ColorSectionDateBar) {
-    return s_invert_date_bar;
-  } else if (section == ColorSectionTime) {
-    return s_invert_time;
-  } else if (section == ColorSectionWeather) {
-    return s_invert_weather;
+  } else if (section == ColorSectionMiddle) {
+    return s_invert_middle;
   } else if (section == ColorSectionMeetingBar) {
     return s_invert_meeting_bar;
   }
@@ -818,34 +810,20 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   const int content_offset_y = s_verbose_weather_enabled ? VERBOSE_WEATHER_OFFSET_Y : 0;
   const GRect date_frame = GRect(0, DATE_FRAME_Y + content_offset_y, SCREEN_W, 29);
 
-  set_draw_section(ColorSectionDateBar);
-  fill_inverted_section_background(ctx, ColorSectionDateBar, date_frame);
+  set_draw_section(ColorSectionMiddle);
+  fill_inverted_section_background(
+      ctx, ColorSectionMiddle,
+      GRect(0, 31, SCREEN_W, EVENT_SEPARATOR_Y - 31));
   draw_text(ctx, s_date_buf, s_font_date, date_frame,
             draw_fg_color(), GTextAlignmentCenter);
 
-  set_draw_section(ColorSectionTime);
   if (s_verbose_weather_enabled) {
-    fill_inverted_section_background(
-        ctx, ColorSectionTime,
-        GRect(0, TIME_FRAME_Y + VERBOSE_WEATHER_OFFSET_Y, SCREEN_W, TIME_FRAME_H));
     draw_time_row_at(ctx, TIME_FRAME_Y + VERBOSE_WEATHER_OFFSET_Y,
                      TIME_VISUAL_BOTTOM + VERBOSE_WEATHER_OFFSET_Y);
-    set_draw_section(ColorSectionWeather);
-    fill_inverted_section_background(
-        ctx, ColorSectionWeather,
-        GRect(0, s_verbose_weather_large ? 148 : 162, SCREEN_W,
-              EVENT_SEPARATOR_Y - (s_verbose_weather_large ? 148 : 162)));
     draw_verbose_weather_row(ctx);
   } else {
-    fill_inverted_section_background(
-        ctx, ColorSectionTime, GRect(0, TIME_FRAME_Y, SCREEN_W, TIME_FRAME_H));
     draw_time_row(ctx);
 
-    set_draw_section(ColorSectionWeather);
-    fill_inverted_section_background(
-        ctx, ColorSectionWeather,
-        GRect(0, COMPLICATION_CENTER_Y - COMPLICATION_RADIUS - 4,
-              SCREEN_W, (COMPLICATION_RADIUS * 2) + 8));
     draw_complication(ctx, GPoint(40, COMPLICATION_CENTER_Y), s_complication_slots[0]);
     draw_complication(ctx, GPoint(100, COMPLICATION_CENTER_Y), s_complication_slots[1]);
     draw_complication(ctx, GPoint(160, COMPLICATION_CENTER_Y), s_complication_slots[2]);
@@ -1066,22 +1044,10 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_bool(PERSIST_KEY_INVERT_TOP_BAR, s_invert_top_bar);
   }
 
-  t = dict_find(iter, MESSAGE_KEY_INVERT_DATE_BAR);
+  t = dict_find(iter, MESSAGE_KEY_INVERT_MIDDLE);
   if (t) {
-    s_invert_date_bar = t->value->int32 != 0;
-    persist_write_bool(PERSIST_KEY_INVERT_DATE_BAR, s_invert_date_bar);
-  }
-
-  t = dict_find(iter, MESSAGE_KEY_INVERT_TIME);
-  if (t) {
-    s_invert_time = t->value->int32 != 0;
-    persist_write_bool(PERSIST_KEY_INVERT_TIME, s_invert_time);
-  }
-
-  t = dict_find(iter, MESSAGE_KEY_INVERT_WEATHER);
-  if (t) {
-    s_invert_weather = t->value->int32 != 0;
-    persist_write_bool(PERSIST_KEY_INVERT_WEATHER, s_invert_weather);
+    s_invert_middle = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_INVERT_MIDDLE, s_invert_middle);
   }
 
   t = dict_find(iter, MESSAGE_KEY_INVERT_MEETING_BAR);
@@ -1198,14 +1164,16 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_INVERT_TOP_BAR)) {
     s_invert_top_bar = persist_read_bool(PERSIST_KEY_INVERT_TOP_BAR);
   }
-  if (persist_exists(PERSIST_KEY_INVERT_DATE_BAR)) {
-    s_invert_date_bar = persist_read_bool(PERSIST_KEY_INVERT_DATE_BAR);
+  if (persist_exists(PERSIST_KEY_INVERT_MIDDLE)) {
+    s_invert_middle = persist_read_bool(PERSIST_KEY_INVERT_MIDDLE);
   }
-  if (persist_exists(PERSIST_KEY_INVERT_TIME)) {
-    s_invert_time = persist_read_bool(PERSIST_KEY_INVERT_TIME);
+  if (persist_exists(PERSIST_KEY_INVERT_TIME_LEGACY)) {
+    s_invert_middle = s_invert_middle ||
+        persist_read_bool(PERSIST_KEY_INVERT_TIME_LEGACY);
   }
-  if (persist_exists(PERSIST_KEY_INVERT_WEATHER)) {
-    s_invert_weather = persist_read_bool(PERSIST_KEY_INVERT_WEATHER);
+  if (persist_exists(PERSIST_KEY_INVERT_WEATHER_LEGACY)) {
+    s_invert_middle = s_invert_middle ||
+        persist_read_bool(PERSIST_KEY_INVERT_WEATHER_LEGACY);
   }
   if (persist_exists(PERSIST_KEY_INVERT_MEETING_BAR)) {
     s_invert_meeting_bar = persist_read_bool(PERSIST_KEY_INVERT_MEETING_BAR);
