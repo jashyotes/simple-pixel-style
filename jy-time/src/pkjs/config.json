@@ -8,7 +8,7 @@
     "items": [
       {
         "type": "heading",
-        "defaultValue": "Layout"
+        "defaultValue": "Color Customization"
       },
       {
         "type": "toggle",
@@ -16,6 +16,50 @@
         "label": "Light mode",
         "defaultValue": false,
         "description": "Uses a white background with black text and icons."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "INVERT_TOP_BAR",
+        "label": "Invert top bar",
+        "defaultValue": false,
+        "description": "Swaps the battery, step, and Bluetooth bar colors."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "INVERT_DATE_BAR",
+        "label": "Invert date bar",
+        "defaultValue": false,
+        "description": "Swaps the date bar colors."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "INVERT_TIME",
+        "label": "Invert time",
+        "defaultValue": false,
+        "description": "Swaps the time row colors."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "INVERT_WEATHER",
+        "label": "Invert weather",
+        "defaultValue": false,
+        "description": "Swaps the complication or verbose weather colors."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "INVERT_MEETING_BAR",
+        "label": "Invert meeting bar",
+        "defaultValue": false,
+        "description": "Swaps the meeting bar colors."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Layout"
       },
       {
         "type": "toggle",

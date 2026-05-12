@@ -11,6 +11,11 @@ var CURRENT_EVENT_DISPLAY_MINUTES = 15;
 
 var DEFAULT_SETTINGS = {
   LIGHT_MODE: false,
+  INVERT_TOP_BAR: false,
+  INVERT_DATE_BAR: false,
+  INVERT_TIME: false,
+  INVERT_WEATHER: false,
+  INVERT_MEETING_BAR: false,
   TOP_STEPS: true,
   VERBOSE_WEATHER: false,
   VERBOSE_WEATHER_STYLE: 'one_line',
@@ -89,6 +94,11 @@ function sendToWatch(dict, label) {
 function sendLayoutSetting(settings) {
   var dict = {};
   dict[keys.LIGHT_MODE] = settings.LIGHT_MODE ? 1 : 0;
+  dict[keys.INVERT_TOP_BAR] = settings.INVERT_TOP_BAR ? 1 : 0;
+  dict[keys.INVERT_DATE_BAR] = settings.INVERT_DATE_BAR ? 1 : 0;
+  dict[keys.INVERT_TIME] = settings.INVERT_TIME ? 1 : 0;
+  dict[keys.INVERT_WEATHER] = settings.INVERT_WEATHER ? 1 : 0;
+  dict[keys.INVERT_MEETING_BAR] = settings.INVERT_MEETING_BAR ? 1 : 0;
   dict[keys.TOP_STEPS] = settings.TOP_STEPS ? 1 : 0;
   dict[keys.VERBOSE_WEATHER] = settings.VERBOSE_WEATHER ? 1 : 0;
   dict[keys.VERBOSE_WEATHER_STYLE] = settings.VERBOSE_WEATHER_STYLE === 'large' ? 1 : 0;

@@ -27,6 +27,11 @@
 #define PERSIST_KEY_WEATHER_SUMMARY 116
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
+#define PERSIST_KEY_INVERT_TOP_BAR 119
+#define PERSIST_KEY_INVERT_DATE_BAR 120
+#define PERSIST_KEY_INVERT_TIME    121
+#define PERSIST_KEY_INVERT_WEATHER 122
+#define PERSIST_KEY_INVERT_MEETING_BAR 123
 
 #define SCREEN_W 200
 #define SCREEN_H 228
@@ -72,6 +77,21 @@ typedef enum {
   WeatherIconCount = 7,
 } WeatherIconBitmap;
 
+typedef enum {
+  BitmapThemeDark = 0,
+  BitmapThemeLight = 1,
+  BitmapThemeCount = 2,
+} BitmapTheme;
+
+typedef enum {
+  ColorSectionBase = 0,
+  ColorSectionTopBar = 1,
+  ColorSectionDateBar = 2,
+  ColorSectionTime = 3,
+  ColorSectionWeather = 4,
+  ColorSectionMeetingBar = 5,
+} ColorSection;
+
 static Window *s_window;
 static Layer *s_face_layer;
 
@@ -80,12 +100,12 @@ static GFont s_font_date;
 static GFont s_font_time;
 static GFont s_font_complication;
 static GFont s_font_event;
-static GBitmap *s_step_boot_bitmap;
-static GBitmap *s_w800_walking_bitmap;
-static GBitmap *s_quiet_time_mouse_bitmap;
-static GBitmap *s_w800_digit_bitmaps[10];
-static GBitmap *s_weather_icon_small_bitmaps[WeatherIconCount];
-static GBitmap *s_weather_icon_large_bitmaps[WeatherIconCount];
+static GBitmap *s_step_boot_bitmaps[BitmapThemeCount];
+static GBitmap *s_w800_walking_bitmaps[BitmapThemeCount];
+static GBitmap *s_quiet_time_mouse_bitmaps[BitmapThemeCount];
+static GBitmap *s_w800_digit_bitmaps[BitmapThemeCount][10];
+static GBitmap *s_weather_icon_small_bitmaps[BitmapThemeCount][WeatherIconCount];
+static GBitmap *s_weather_icon_large_bitmaps[BitmapThemeCount][WeatherIconCount];
 
 static char s_date_buf[32];
 static char s_time_buf[8];
@@ -129,6 +149,12 @@ static bool s_temperature_unit_celsius = false;
 static bool s_verbose_weather_enabled = false;
 static bool s_verbose_weather_large = false;
 static bool s_light_mode_enabled = false;
+static bool s_invert_top_bar = false;
+static bool s_invert_date_bar = false;
+static bool s_invert_time = false;
+static bool s_invert_weather = false;
+static bool s_invert_meeting_bar = false;
+static ColorSection s_draw_section = ColorSectionBase;
 static int s_steps_count = 0;
 static ComplicationType s_complication_slots[COMPLICATION_COUNT] = {
   ComplicationWeather,
@@ -150,6 +176,62 @@ static GColor theme_bg_color(void) {
 
 static GColor theme_fg_color(void) {
   return s_light_mode_enabled ? GColorBlack : GColorWhite;
+}
+
+static bool section_inverted(ColorSection section) {
+  if (section == ColorSectionTopBar) {
+    return s_invert_top_bar;
+  } else if (section == ColorSectionDateBar) {
+    return s_invert_date_bar;
+  } else if (section == ColorSectionTime) {
+    return s_invert_time;
+  } else if (section == ColorSectionWeather) {
+    return s_invert_weather;
+  } else if (section == ColorSectionMeetingBar) {
+    return s_invert_meeting_bar;
+  }
+  return false;
+}
+
+static bool section_uses_light_palette(ColorSection section) {
+  return s_light_mode_enabled != section_inverted(section);
+}
+
+static GColor section_bg_color(ColorSection section) {
+  return section_inverted(section) ? theme_fg_color() : theme_bg_color();
+}
+
+static GColor section_fg_color(ColorSection section) {
+  return section_inverted(section) ? theme_bg_color() : theme_fg_color();
+}
+
+static BitmapTheme section_bitmap_theme(ColorSection section) {
+  return section_uses_light_palette(section) ? BitmapThemeLight : BitmapThemeDark;
+}
+
+static GColor draw_bg_color(void) {
+  return section_bg_color(s_draw_section);
+}
+
+static GColor draw_fg_color(void) {
+  return section_fg_color(s_draw_section);
+}
+
+static BitmapTheme draw_bitmap_theme(void) {
+  return section_bitmap_theme(s_draw_section);
+}
+
+static void set_draw_section(ColorSection section) {
+  s_draw_section = section;
+}
+
+static void fill_inverted_section_background(GContext *ctx, ColorSection section, GRect frame) {
+  if (!section_inverted(section)) {
+    return;
+  }
+
+  graphics_context_set_fill_color(ctx, section_bg_color(section));
+  graphics_fill_rect(ctx, frame, 0, GCornerNone);
 }
 
 static void set_text_color(GContext *ctx, GColor color) {
@@ -254,7 +336,7 @@ static void draw_ampm_letter(GContext *ctx, char letter, GPoint origin) {
 }
 
 static void draw_ampm_label(GContext *ctx, const char *label, GPoint origin) {
-  graphics_context_set_fill_color(ctx, theme_fg_color());
+  graphics_context_set_fill_color(ctx, draw_fg_color());
   draw_ampm_letter(ctx, label[0], origin);
   draw_ampm_letter(ctx, label[1], GPoint(origin.x + 10, origin.y));
 }
@@ -268,12 +350,13 @@ static bool quiet_time_active_now(void) {
 }
 
 static void draw_quiet_time_icon(GContext *ctx, GPoint origin) {
-  if (!s_quiet_time_mouse_bitmap || !quiet_time_active_now()) {
+  GBitmap *bitmap = s_quiet_time_mouse_bitmaps[draw_bitmap_theme()];
+  if (!bitmap || !quiet_time_active_now()) {
     return;
   }
 
   graphics_context_set_compositing_mode(ctx, GCompOpSet);
-  graphics_draw_bitmap_in_rect(ctx, s_quiet_time_mouse_bitmap,
+  graphics_draw_bitmap_in_rect(ctx, bitmap,
                                GRect(origin.x, origin.y,
                                      QUIET_TIME_ICON_SIZE, QUIET_TIME_ICON_SIZE));
 }
@@ -294,7 +377,7 @@ static void draw_time_row_at(GContext *ctx, int frame_y, int visual_bottom) {
   }
 
   draw_text(ctx, s_time_buf, s_font_time, time_frame,
-            theme_fg_color(), GTextAlignmentCenter);
+            draw_fg_color(), GTextAlignmentCenter);
   draw_ampm_label(ctx, s_ampm_buf, GPoint(ampm_x, visual_bottom - ampm_height));
 
   draw_quiet_time_icon(ctx,
@@ -306,7 +389,7 @@ static void draw_time_row(GContext *ctx) {
 }
 
 static void draw_watch_icon_c(GContext *ctx, GPoint origin) {
-  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  graphics_context_set_stroke_color(ctx, draw_fg_color());
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_rect(ctx, GRect(origin.x + 3, origin.y + 4, 8, 10));
 
@@ -330,7 +413,7 @@ static void draw_watch_battery(GContext *ctx) {
       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
 
   draw_text(ctx, s_watch_buf, s_font_top, battery_frame,
-            theme_fg_color(), GTextAlignmentLeft);
+            draw_fg_color(), GTextAlignmentLeft);
   draw_watch_icon_c(ctx, GPoint(battery_frame.origin.x + battery_size.w - 1, 5));
 }
 
@@ -353,14 +436,15 @@ static void draw_w800_steps_digits(GContext *ctx, GRect frame, int steps) {
   }
 
   graphics_context_set_compositing_mode(ctx, GCompOpSet);
+  BitmapTheme bitmap_theme = draw_bitmap_theme();
   for (int i = 0; i < digit_count; i++) {
     int digit = digits[i] - '0';
-    if (digit >= 0 && digit <= 9 && s_w800_digit_bitmaps[digit]) {
+    if (digit >= 0 && digit <= 9 && s_w800_digit_bitmaps[bitmap_theme][digit]) {
       int draw_x = x + (i * digit_w);
       if (digit_count > 3 && i >= digit_count - 3) {
         draw_x += separator_gap;
       }
-      graphics_draw_bitmap_in_rect(ctx, s_w800_digit_bitmaps[digit],
+      graphics_draw_bitmap_in_rect(ctx, s_w800_digit_bitmaps[bitmap_theme][digit],
                                    GRect(draw_x, frame.origin.y, digit_w, digit_h));
     }
   }
@@ -368,7 +452,7 @@ static void draw_w800_steps_digits(GContext *ctx, GRect frame, int steps) {
   if (digit_count > 3) {
     const int comma_x = x + ((digit_count - 3) * digit_w) - 1;
     const int comma_y = frame.origin.y + digit_h - 3;
-    graphics_context_set_fill_color(ctx, theme_fg_color());
+    graphics_context_set_fill_color(ctx, draw_fg_color());
     graphics_fill_rect(ctx, GRect(comma_x, comma_y, 2, 2), 0, GCornerNone);
     graphics_fill_rect(ctx, GRect(comma_x - 1, comma_y + 2, 2, 2), 0, GCornerNone);
     graphics_fill_rect(ctx, GRect(comma_x - 2, comma_y + 4, 2, 2), 0, GCornerNone);
@@ -376,16 +460,17 @@ static void draw_w800_steps_digits(GContext *ctx, GRect frame, int steps) {
 }
 
 static void draw_w800_steps_top_bar(GContext *ctx) {
-  if (!s_w800_walking_bitmap) {
+  GBitmap *walking_bitmap = s_w800_walking_bitmaps[draw_bitmap_theme()];
+  if (!walking_bitmap) {
     return;
   }
 
   const GRect bar_frame = GRect(56, 3, 88, 24);
-  graphics_context_set_fill_color(ctx, theme_bg_color());
+  graphics_context_set_fill_color(ctx, draw_bg_color());
   graphics_fill_rect(ctx, bar_frame, 1, GCornersAll);
 
   graphics_context_set_compositing_mode(ctx, GCompOpSet);
-  graphics_draw_bitmap_in_rect(ctx, s_w800_walking_bitmap, GRect(61, 8, 8, 13));
+  graphics_draw_bitmap_in_rect(ctx, walking_bitmap, GRect(61, 8, 8, 13));
   draw_w800_steps_digits(ctx, GRect(73, 3, 64, 24), s_steps_count);
 }
 
@@ -398,7 +483,7 @@ static void draw_bt_icon(GContext *ctx, GPoint origin) {
     return;
   }
 
-  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  graphics_context_set_stroke_color(ctx, draw_fg_color());
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_line(ctx, GPoint(origin.x + 5, origin.y), GPoint(origin.x + 5, origin.y + 14));
   graphics_draw_line(ctx, GPoint(origin.x + 5, origin.y), GPoint(origin.x + 10, origin.y + 4));
@@ -408,12 +493,13 @@ static void draw_bt_icon(GContext *ctx, GPoint origin) {
 }
 
 static void draw_step_icon(GContext *ctx, GPoint origin) {
-  if (!s_step_boot_bitmap) {
+  GBitmap *bitmap = s_step_boot_bitmaps[draw_bitmap_theme()];
+  if (!bitmap) {
     return;
   }
 
   graphics_context_set_compositing_mode(ctx, GCompOpSet);
-  graphics_draw_bitmap_in_rect(ctx, s_step_boot_bitmap, GRect(origin.x, origin.y, 16, 14));
+  graphics_draw_bitmap_in_rect(ctx, bitmap, GRect(origin.x, origin.y, 16, 14));
 }
 
 static void draw_step_icon_centered(GContext *ctx, GPoint center) {
@@ -425,7 +511,7 @@ static void draw_icon_block(GContext *ctx, GPoint origin, int x, int y, int w, i
 }
 
 static void draw_sun_icon(GContext *ctx, GPoint origin) {
-  graphics_context_set_fill_color(ctx, theme_fg_color());
+  graphics_context_set_fill_color(ctx, draw_fg_color());
   draw_icon_block(ctx, origin, 7, 1, 2, 3);
   draw_icon_block(ctx, origin, 7, 13, 2, 3);
   draw_icon_block(ctx, origin, 1, 7, 3, 2);
@@ -461,9 +547,10 @@ static WeatherIconBitmap weather_icon_for_code(void) {
 
 static void draw_weather_icon_centered(GContext *ctx, GPoint center, bool large) {
   WeatherIconBitmap icon = weather_icon_for_code();
+  BitmapTheme bitmap_theme = draw_bitmap_theme();
   GBitmap *bitmap = large
-      ? s_weather_icon_large_bitmaps[icon]
-      : s_weather_icon_small_bitmaps[icon];
+      ? s_weather_icon_large_bitmaps[bitmap_theme][icon]
+      : s_weather_icon_small_bitmaps[bitmap_theme][icon];
   int size = large ? WEATHER_ICON_LARGE_SIZE : WEATHER_ICON_SMALL_SIZE;
 
   if (!bitmap) {
@@ -478,8 +565,8 @@ static void draw_weather_icon_centered(GContext *ctx, GPoint center, bool large)
 
 static void draw_temp_unit_icon_centered(GContext *ctx, GPoint center) {
   GPoint origin = GPoint(center.x - 7, center.y - 5);
-  graphics_context_set_fill_color(ctx, theme_fg_color());
-  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  graphics_context_set_fill_color(ctx, draw_fg_color());
+  graphics_context_set_stroke_color(ctx, draw_fg_color());
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_circle(ctx, GPoint(origin.x + 2, origin.y + 2), 2);
 
@@ -495,7 +582,7 @@ static void draw_temp_unit_icon_centered(GContext *ctx, GPoint center) {
 }
 
 static void draw_drop_icon(GContext *ctx, GPoint origin) {
-  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  graphics_context_set_stroke_color(ctx, draw_fg_color());
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_line(ctx, GPoint(origin.x + 7, origin.y), GPoint(origin.x + 3, origin.y + 7));
   graphics_draw_line(ctx, GPoint(origin.x + 7, origin.y), GPoint(origin.x + 11, origin.y + 7));
@@ -510,7 +597,7 @@ static void draw_drop_icon_centered(GContext *ctx, GPoint center) {
 }
 
 static void draw_heart_icon(GContext *ctx, GPoint origin) {
-  graphics_context_set_fill_color(ctx, theme_fg_color());
+  graphics_context_set_fill_color(ctx, draw_fg_color());
   draw_icon_block(ctx, origin, 3, 4, 4, 2);
   draw_icon_block(ctx, origin, 10, 4, 4, 2);
   draw_icon_block(ctx, origin, 2, 6, 13, 4);
@@ -528,14 +615,14 @@ static void draw_watch_icon_centered(GContext *ctx, GPoint center) {
 }
 
 static void draw_phone_icon_centered(GContext *ctx, GPoint center) {
-  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  graphics_context_set_stroke_color(ctx, draw_fg_color());
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_rect(ctx, GRect(center.x - 5, center.y - 8, 10, 16));
   graphics_draw_line(ctx, GPoint(center.x - 2, center.y + 5), GPoint(center.x + 2, center.y + 5));
 }
 
 static void draw_wind_icon_centered(GContext *ctx, GPoint center) {
-  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  graphics_context_set_stroke_color(ctx, draw_fg_color());
   graphics_context_set_stroke_width(ctx, 2);
   graphics_draw_line(ctx, GPoint(center.x - 8, center.y - 5), GPoint(center.x + 7, center.y - 5));
   graphics_draw_line(ctx, GPoint(center.x - 5, center.y), GPoint(center.x + 5, center.y));
@@ -543,7 +630,7 @@ static void draw_wind_icon_centered(GContext *ctx, GPoint center) {
 }
 
 static void draw_calendar_icon_centered(GContext *ctx, GPoint center) {
-  graphics_context_set_fill_color(ctx, theme_fg_color());
+  graphics_context_set_fill_color(ctx, draw_fg_color());
   draw_icon_block(ctx, GPoint(center.x - 7, center.y - 8), 0, 2, 14, 2);
   draw_icon_block(ctx, GPoint(center.x - 7, center.y - 8), 0, 4, 2, 11);
   draw_icon_block(ctx, GPoint(center.x - 7, center.y - 8), 12, 4, 2, 11);
@@ -614,7 +701,7 @@ static const char *value_for_complication(ComplicationType type) {
 static void draw_complication(GContext *ctx, GPoint center, ComplicationType type) {
   const char *value = value_for_complication(type);
 
-  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  graphics_context_set_stroke_color(ctx, draw_fg_color());
   graphics_context_set_stroke_width(ctx, 2);
   graphics_draw_circle(ctx, center, COMPLICATION_RADIUS);
 
@@ -630,7 +717,7 @@ static void draw_complication(GContext *ctx, GPoint center, ComplicationType typ
       : s_font_complication;
   draw_text(ctx, value, value_font,
             GRect(center.x - 23, center.y - 6, 46, 18),
-            theme_fg_color(), GTextAlignmentCenter);
+            draw_fg_color(), GTextAlignmentCenter);
 }
 
 static void draw_verbose_weather_row(GContext *ctx) {
@@ -666,11 +753,11 @@ static void draw_verbose_weather_row(GContext *ctx) {
     draw_text(ctx, large_temp_text, temp_font,
               GRect(top_row_x + icon_size + icon_gap, top_center_y - 17,
                     SCREEN_W - top_row_x - icon_size - icon_gap, 32),
-              theme_fg_color(), GTextAlignmentLeft);
+              draw_fg_color(), GTextAlignmentLeft);
 
     draw_text(ctx, summary, summary_font,
               GRect(8, VERBOSE_WEATHER_CENTER_Y - 3, SCREEN_W - 16, 24),
-              theme_fg_color(), GTextAlignmentCenter);
+              draw_fg_color(), GTextAlignmentCenter);
     return;
   }
 
@@ -710,15 +797,18 @@ static void draw_verbose_weather_row(GContext *ctx) {
   draw_weather_icon_centered(ctx, GPoint(row_x + (icon_size / 2), icon_center_y), false);
   draw_text(ctx, row_text, row_font,
             GRect(row_x + icon_size + icon_gap, text_y, text_width, 32),
-            theme_fg_color(), GTextAlignmentLeft);
+            draw_fg_color(), GTextAlignmentLeft);
 }
 
 static void face_update_proc(Layer *layer, GContext *ctx) {
   (void)layer;
 
+  set_draw_section(ColorSectionBase);
   graphics_context_set_fill_color(ctx, theme_bg_color());
   graphics_fill_rect(ctx, GRect(0, 0, SCREEN_W, SCREEN_H), 0, GCornerNone);
 
+  set_draw_section(ColorSectionTopBar);
+  fill_inverted_section_background(ctx, ColorSectionTopBar, GRect(0, 0, SCREEN_W, 31));
   draw_watch_battery(ctx);
   if (s_w800_steps_top_enabled) {
     draw_w800_steps_top_bar(ctx);
@@ -726,29 +816,51 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   draw_bt_icon(ctx, GPoint(181, 7));
 
   const int content_offset_y = s_verbose_weather_enabled ? VERBOSE_WEATHER_OFFSET_Y : 0;
+  const GRect date_frame = GRect(0, DATE_FRAME_Y + content_offset_y, SCREEN_W, 29);
 
-  draw_text(ctx, s_date_buf, s_font_date,
-            GRect(0, DATE_FRAME_Y + content_offset_y, SCREEN_W, 29),
-            theme_fg_color(), GTextAlignmentCenter);
+  set_draw_section(ColorSectionDateBar);
+  fill_inverted_section_background(ctx, ColorSectionDateBar, date_frame);
+  draw_text(ctx, s_date_buf, s_font_date, date_frame,
+            draw_fg_color(), GTextAlignmentCenter);
 
+  set_draw_section(ColorSectionTime);
   if (s_verbose_weather_enabled) {
+    fill_inverted_section_background(
+        ctx, ColorSectionTime,
+        GRect(0, TIME_FRAME_Y + VERBOSE_WEATHER_OFFSET_Y, SCREEN_W, TIME_FRAME_H));
     draw_time_row_at(ctx, TIME_FRAME_Y + VERBOSE_WEATHER_OFFSET_Y,
                      TIME_VISUAL_BOTTOM + VERBOSE_WEATHER_OFFSET_Y);
+    set_draw_section(ColorSectionWeather);
+    fill_inverted_section_background(
+        ctx, ColorSectionWeather,
+        GRect(0, s_verbose_weather_large ? 148 : 162, SCREEN_W,
+              EVENT_SEPARATOR_Y - (s_verbose_weather_large ? 148 : 162)));
     draw_verbose_weather_row(ctx);
   } else {
+    fill_inverted_section_background(
+        ctx, ColorSectionTime, GRect(0, TIME_FRAME_Y, SCREEN_W, TIME_FRAME_H));
     draw_time_row(ctx);
 
+    set_draw_section(ColorSectionWeather);
+    fill_inverted_section_background(
+        ctx, ColorSectionWeather,
+        GRect(0, COMPLICATION_CENTER_Y - COMPLICATION_RADIUS - 4,
+              SCREEN_W, (COMPLICATION_RADIUS * 2) + 8));
     draw_complication(ctx, GPoint(40, COMPLICATION_CENTER_Y), s_complication_slots[0]);
     draw_complication(ctx, GPoint(100, COMPLICATION_CENTER_Y), s_complication_slots[1]);
     draw_complication(ctx, GPoint(160, COMPLICATION_CENTER_Y), s_complication_slots[2]);
   }
 
-  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  set_draw_section(ColorSectionMeetingBar);
+  fill_inverted_section_background(
+      ctx, ColorSectionMeetingBar,
+      GRect(0, EVENT_SEPARATOR_Y, SCREEN_W, SCREEN_H - EVENT_SEPARATOR_Y));
+  graphics_context_set_stroke_color(ctx, draw_fg_color());
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_line(ctx, GPoint(8, EVENT_SEPARATOR_Y), GPoint(192, EVENT_SEPARATOR_Y));
 
   draw_text(ctx, s_event_buf, s_font_event, GRect(8, 203, 184, 25),
-            theme_fg_color(), GTextAlignmentCenter);
+            draw_fg_color(), GTextAlignmentCenter);
 }
 
 static void update_time_date(struct tm *t) {
@@ -948,6 +1060,36 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     apply_light_mode(light_mode_enabled);
   }
 
+  t = dict_find(iter, MESSAGE_KEY_INVERT_TOP_BAR);
+  if (t) {
+    s_invert_top_bar = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_INVERT_TOP_BAR, s_invert_top_bar);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_INVERT_DATE_BAR);
+  if (t) {
+    s_invert_date_bar = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_INVERT_DATE_BAR, s_invert_date_bar);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_INVERT_TIME);
+  if (t) {
+    s_invert_time = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_INVERT_TIME, s_invert_time);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_INVERT_WEATHER);
+  if (t) {
+    s_invert_weather = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_INVERT_WEATHER, s_invert_weather);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_INVERT_MEETING_BAR);
+  if (t) {
+    s_invert_meeting_bar = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_INVERT_MEETING_BAR, s_invert_meeting_bar);
+  }
+
   t = dict_find(iter, MESSAGE_KEY_TOP_STEPS);
   if (t) {
     s_w800_steps_top_enabled = t->value->int32 != 0;
@@ -1053,6 +1195,21 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_LIGHT_MODE)) {
     s_light_mode_enabled = persist_read_bool(PERSIST_KEY_LIGHT_MODE);
   }
+  if (persist_exists(PERSIST_KEY_INVERT_TOP_BAR)) {
+    s_invert_top_bar = persist_read_bool(PERSIST_KEY_INVERT_TOP_BAR);
+  }
+  if (persist_exists(PERSIST_KEY_INVERT_DATE_BAR)) {
+    s_invert_date_bar = persist_read_bool(PERSIST_KEY_INVERT_DATE_BAR);
+  }
+  if (persist_exists(PERSIST_KEY_INVERT_TIME)) {
+    s_invert_time = persist_read_bool(PERSIST_KEY_INVERT_TIME);
+  }
+  if (persist_exists(PERSIST_KEY_INVERT_WEATHER)) {
+    s_invert_weather = persist_read_bool(PERSIST_KEY_INVERT_WEATHER);
+  }
+  if (persist_exists(PERSIST_KEY_INVERT_MEETING_BAR)) {
+    s_invert_meeting_bar = persist_read_bool(PERSIST_KEY_INVERT_MEETING_BAR);
+  }
   if (persist_exists(PERSIST_KEY_EVENT)) {
     persist_read_string(PERSIST_KEY_EVENT, s_event_buf, sizeof(s_event_buf));
     s_event_buf[sizeof(s_event_buf) - 1] = '\0';
@@ -1080,54 +1237,63 @@ static void load_persisted(void) {
   }
 }
 
-static uint32_t themed_resource_id(uint32_t dark_resource, uint32_t light_resource) {
-  return s_light_mode_enabled ? light_resource : dark_resource;
+static uint32_t resource_id_for_bitmap_theme(BitmapTheme theme,
+                                             uint32_t dark_resource,
+                                             uint32_t light_resource) {
+  return theme == BitmapThemeLight ? light_resource : dark_resource;
+}
+
+static void load_weather_icon_bitmaps_for_theme(BitmapTheme theme) {
+  s_weather_icon_small_bitmaps[theme][WeatherIconSunny] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_SUNNY_SMALL, RESOURCE_ID_WEATHER_SUNNY_SMALL_LIGHT));
+  s_weather_icon_small_bitmaps[theme][WeatherIconPartlyCloudy] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_PARTLY_CLOUDY_SMALL,
+          RESOURCE_ID_WEATHER_PARTLY_CLOUDY_SMALL_LIGHT));
+  s_weather_icon_small_bitmaps[theme][WeatherIconCloudy] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_CLOUDY_SMALL, RESOURCE_ID_WEATHER_CLOUDY_SMALL_LIGHT));
+  s_weather_icon_small_bitmaps[theme][WeatherIconFog] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_FOG_SMALL, RESOURCE_ID_WEATHER_FOG_SMALL_LIGHT));
+  s_weather_icon_small_bitmaps[theme][WeatherIconRain] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_RAIN_SMALL, RESOURCE_ID_WEATHER_RAIN_SMALL_LIGHT));
+  s_weather_icon_small_bitmaps[theme][WeatherIconSnow] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_SNOW_SMALL, RESOURCE_ID_WEATHER_SNOW_SMALL_LIGHT));
+  s_weather_icon_small_bitmaps[theme][WeatherIconStorm] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_STORM_SMALL, RESOURCE_ID_WEATHER_STORM_SMALL_LIGHT));
+
+  s_weather_icon_large_bitmaps[theme][WeatherIconSunny] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_SUNNY_LARGE, RESOURCE_ID_WEATHER_SUNNY_LARGE_LIGHT));
+  s_weather_icon_large_bitmaps[theme][WeatherIconPartlyCloudy] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_PARTLY_CLOUDY_LARGE,
+          RESOURCE_ID_WEATHER_PARTLY_CLOUDY_LARGE_LIGHT));
+  s_weather_icon_large_bitmaps[theme][WeatherIconCloudy] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_CLOUDY_LARGE, RESOURCE_ID_WEATHER_CLOUDY_LARGE_LIGHT));
+  s_weather_icon_large_bitmaps[theme][WeatherIconFog] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_FOG_LARGE, RESOURCE_ID_WEATHER_FOG_LARGE_LIGHT));
+  s_weather_icon_large_bitmaps[theme][WeatherIconRain] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_RAIN_LARGE, RESOURCE_ID_WEATHER_RAIN_LARGE_LIGHT));
+  s_weather_icon_large_bitmaps[theme][WeatherIconSnow] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_SNOW_LARGE, RESOURCE_ID_WEATHER_SNOW_LARGE_LIGHT));
+  s_weather_icon_large_bitmaps[theme][WeatherIconStorm] =
+      gbitmap_create_with_resource(resource_id_for_bitmap_theme(
+          theme, RESOURCE_ID_WEATHER_STORM_LARGE, RESOURCE_ID_WEATHER_STORM_LARGE_LIGHT));
 }
 
 static void load_weather_icon_bitmaps(void) {
-  s_weather_icon_small_bitmaps[WeatherIconSunny] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_SUNNY_SMALL, RESOURCE_ID_WEATHER_SUNNY_SMALL_LIGHT));
-  s_weather_icon_small_bitmaps[WeatherIconPartlyCloudy] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_PARTLY_CLOUDY_SMALL, RESOURCE_ID_WEATHER_PARTLY_CLOUDY_SMALL_LIGHT));
-  s_weather_icon_small_bitmaps[WeatherIconCloudy] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_CLOUDY_SMALL, RESOURCE_ID_WEATHER_CLOUDY_SMALL_LIGHT));
-  s_weather_icon_small_bitmaps[WeatherIconFog] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_FOG_SMALL, RESOURCE_ID_WEATHER_FOG_SMALL_LIGHT));
-  s_weather_icon_small_bitmaps[WeatherIconRain] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_RAIN_SMALL, RESOURCE_ID_WEATHER_RAIN_SMALL_LIGHT));
-  s_weather_icon_small_bitmaps[WeatherIconSnow] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_SNOW_SMALL, RESOURCE_ID_WEATHER_SNOW_SMALL_LIGHT));
-  s_weather_icon_small_bitmaps[WeatherIconStorm] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_STORM_SMALL, RESOURCE_ID_WEATHER_STORM_SMALL_LIGHT));
-
-  s_weather_icon_large_bitmaps[WeatherIconSunny] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_SUNNY_LARGE, RESOURCE_ID_WEATHER_SUNNY_LARGE_LIGHT));
-  s_weather_icon_large_bitmaps[WeatherIconPartlyCloudy] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_PARTLY_CLOUDY_LARGE, RESOURCE_ID_WEATHER_PARTLY_CLOUDY_LARGE_LIGHT));
-  s_weather_icon_large_bitmaps[WeatherIconCloudy] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_CLOUDY_LARGE, RESOURCE_ID_WEATHER_CLOUDY_LARGE_LIGHT));
-  s_weather_icon_large_bitmaps[WeatherIconFog] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_FOG_LARGE, RESOURCE_ID_WEATHER_FOG_LARGE_LIGHT));
-  s_weather_icon_large_bitmaps[WeatherIconRain] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_RAIN_LARGE, RESOURCE_ID_WEATHER_RAIN_LARGE_LIGHT));
-  s_weather_icon_large_bitmaps[WeatherIconSnow] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_SNOW_LARGE, RESOURCE_ID_WEATHER_SNOW_LARGE_LIGHT));
-  s_weather_icon_large_bitmaps[WeatherIconStorm] =
-      gbitmap_create_with_resource(themed_resource_id(
-          RESOURCE_ID_WEATHER_STORM_LARGE, RESOURCE_ID_WEATHER_STORM_LARGE_LIGHT));
+  load_weather_icon_bitmaps_for_theme(BitmapThemeDark);
+  load_weather_icon_bitmaps_for_theme(BitmapThemeLight);
 }
 
 static void destroy_bitmap(GBitmap **bitmap) {
@@ -1138,50 +1304,80 @@ static void destroy_bitmap(GBitmap **bitmap) {
 }
 
 static void destroy_weather_icon_bitmaps(void) {
-  for (int i = 0; i < WeatherIconCount; i++) {
-    destroy_bitmap(&s_weather_icon_small_bitmaps[i]);
-    destroy_bitmap(&s_weather_icon_large_bitmaps[i]);
+  for (int theme = 0; theme < BitmapThemeCount; theme++) {
+    for (int i = 0; i < WeatherIconCount; i++) {
+      destroy_bitmap(&s_weather_icon_small_bitmaps[theme][i]);
+      destroy_bitmap(&s_weather_icon_large_bitmaps[theme][i]);
+    }
   }
 }
 
 static void load_theme_bitmaps(void) {
-  s_step_boot_bitmap = gbitmap_create_with_resource(themed_resource_id(
-      RESOURCE_ID_STEP_BOOT, RESOURCE_ID_STEP_BOOT_LIGHT));
-  s_w800_walking_bitmap = gbitmap_create_with_resource(themed_resource_id(
-      RESOURCE_ID_W800_WALKING_MAN, RESOURCE_ID_W800_WALKING_MAN_LIGHT));
-  s_quiet_time_mouse_bitmap = gbitmap_create_with_resource(themed_resource_id(
-      RESOURCE_ID_QUIET_TIME_MOUSE, RESOURCE_ID_QUIET_TIME_MOUSE_LIGHT));
-  s_w800_digit_bitmaps[0] = gbitmap_create_with_resource(themed_resource_id(
-      RESOURCE_ID_W800_STEP_DIGIT_0, RESOURCE_ID_W800_STEP_DIGIT_0_LIGHT));
-  s_w800_digit_bitmaps[1] = gbitmap_create_with_resource(themed_resource_id(
-      RESOURCE_ID_W800_STEP_DIGIT_1, RESOURCE_ID_W800_STEP_DIGIT_1_LIGHT));
-  s_w800_digit_bitmaps[2] = gbitmap_create_with_resource(themed_resource_id(
-      RESOURCE_ID_W800_STEP_DIGIT_2, RESOURCE_ID_W800_STEP_DIGIT_2_LIGHT));
-  s_w800_digit_bitmaps[3] = gbitmap_create_with_resource(themed_resource_id(
-      RESOURCE_ID_W800_STEP_DIGIT_3, RESOURCE_ID_W800_STEP_DIGIT_3_LIGHT));
-  s_w800_digit_bitmaps[4] = gbitmap_create_with_resource(themed_resource_id(
-      RESOURCE_ID_W800_STEP_DIGIT_4, RESOURCE_ID_W800_STEP_DIGIT_4_LIGHT));
-  s_w800_digit_bitmaps[5] = gbitmap_create_with_resource(themed_resource_id(
-      RESOURCE_ID_W800_STEP_DIGIT_5, RESOURCE_ID_W800_STEP_DIGIT_5_LIGHT));
-  s_w800_digit_bitmaps[6] = gbitmap_create_with_resource(themed_resource_id(
-      RESOURCE_ID_W800_STEP_DIGIT_6, RESOURCE_ID_W800_STEP_DIGIT_6_LIGHT));
-  s_w800_digit_bitmaps[7] = gbitmap_create_with_resource(themed_resource_id(
-      RESOURCE_ID_W800_STEP_DIGIT_7, RESOURCE_ID_W800_STEP_DIGIT_7_LIGHT));
-  s_w800_digit_bitmaps[8] = gbitmap_create_with_resource(themed_resource_id(
-      RESOURCE_ID_W800_STEP_DIGIT_8, RESOURCE_ID_W800_STEP_DIGIT_8_LIGHT));
-  s_w800_digit_bitmaps[9] = gbitmap_create_with_resource(themed_resource_id(
-      RESOURCE_ID_W800_STEP_DIGIT_9, RESOURCE_ID_W800_STEP_DIGIT_9_LIGHT));
+  s_step_boot_bitmaps[BitmapThemeDark] =
+      gbitmap_create_with_resource(RESOURCE_ID_STEP_BOOT);
+  s_step_boot_bitmaps[BitmapThemeLight] =
+      gbitmap_create_with_resource(RESOURCE_ID_STEP_BOOT_LIGHT);
+  s_w800_walking_bitmaps[BitmapThemeDark] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_WALKING_MAN);
+  s_w800_walking_bitmaps[BitmapThemeLight] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_WALKING_MAN_LIGHT);
+  s_quiet_time_mouse_bitmaps[BitmapThemeDark] =
+      gbitmap_create_with_resource(RESOURCE_ID_QUIET_TIME_MOUSE);
+  s_quiet_time_mouse_bitmaps[BitmapThemeLight] =
+      gbitmap_create_with_resource(RESOURCE_ID_QUIET_TIME_MOUSE_LIGHT);
+  s_w800_digit_bitmaps[BitmapThemeDark][0] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_0);
+  s_w800_digit_bitmaps[BitmapThemeLight][0] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_0_LIGHT);
+  s_w800_digit_bitmaps[BitmapThemeDark][1] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_1);
+  s_w800_digit_bitmaps[BitmapThemeLight][1] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_1_LIGHT);
+  s_w800_digit_bitmaps[BitmapThemeDark][2] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_2);
+  s_w800_digit_bitmaps[BitmapThemeLight][2] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_2_LIGHT);
+  s_w800_digit_bitmaps[BitmapThemeDark][3] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_3);
+  s_w800_digit_bitmaps[BitmapThemeLight][3] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_3_LIGHT);
+  s_w800_digit_bitmaps[BitmapThemeDark][4] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_4);
+  s_w800_digit_bitmaps[BitmapThemeLight][4] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_4_LIGHT);
+  s_w800_digit_bitmaps[BitmapThemeDark][5] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_5);
+  s_w800_digit_bitmaps[BitmapThemeLight][5] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_5_LIGHT);
+  s_w800_digit_bitmaps[BitmapThemeDark][6] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_6);
+  s_w800_digit_bitmaps[BitmapThemeLight][6] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_6_LIGHT);
+  s_w800_digit_bitmaps[BitmapThemeDark][7] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_7);
+  s_w800_digit_bitmaps[BitmapThemeLight][7] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_7_LIGHT);
+  s_w800_digit_bitmaps[BitmapThemeDark][8] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_8);
+  s_w800_digit_bitmaps[BitmapThemeLight][8] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_8_LIGHT);
+  s_w800_digit_bitmaps[BitmapThemeDark][9] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_9);
+  s_w800_digit_bitmaps[BitmapThemeLight][9] =
+      gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_9_LIGHT);
   load_weather_icon_bitmaps();
 }
 
 static void destroy_theme_bitmaps(void) {
   destroy_weather_icon_bitmaps();
-  for (int i = 0; i < 10; i++) {
-    destroy_bitmap(&s_w800_digit_bitmaps[i]);
+  for (int theme = 0; theme < BitmapThemeCount; theme++) {
+    for (int i = 0; i < 10; i++) {
+      destroy_bitmap(&s_w800_digit_bitmaps[theme][i]);
+    }
+    destroy_bitmap(&s_quiet_time_mouse_bitmaps[theme]);
+    destroy_bitmap(&s_w800_walking_bitmaps[theme]);
+    destroy_bitmap(&s_step_boot_bitmaps[theme]);
   }
-  destroy_bitmap(&s_quiet_time_mouse_bitmap);
-  destroy_bitmap(&s_w800_walking_bitmap);
-  destroy_bitmap(&s_step_boot_bitmap);
 }
 
 static void reload_theme_bitmaps(void) {

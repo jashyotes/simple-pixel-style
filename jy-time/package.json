@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "0.39.0",
+  "version": "0.40.0",
   "keywords": [
     "pebble-app"
   ],
@@ -43,7 +43,12 @@
       "VERBOSE_WEATHER",
       "WEATHER_SUMMARY",
       "VERBOSE_WEATHER_STYLE",
-      "LIGHT_MODE"
+      "LIGHT_MODE",
+      "INVERT_TOP_BAR",
+      "INVERT_DATE_BAR",
+      "INVERT_TIME",
+      "INVERT_WEATHER",
+      "INVERT_MEETING_BAR"
     ],
     "resources": {
       "media": [
