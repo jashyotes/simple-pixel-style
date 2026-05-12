@@ -4,15 +4,24 @@ Pebble Time 2 watchface with a pixel-watch layout: watch battery, Bluetooth stat
 
 ## Current Release
 
-Version `0.22` ships with:
+Version `0.35` ships with:
 
-- Three evenly spaced complication circles only.
-- Top walking-man step counter enabled by default.
-- Configurable left, middle, and right complication slots.
+- Three configurable complication circles by default, with weather, rain chance, and heart rate selected out of the box.
+- Top walking-man W800 step counter enabled by default, including a Casio-style thousands comma.
+- Optional small or large verbose weather mode that replaces the circles with a centered weather line.
 - Built-in choices for weather, weather icon-only, temperature, rain chance, heart rate, steps, watch battery, phone battery, feels-like temperature, high temperature, wind speed, UV index, and next-event countdown.
 - Fahrenheit and Celsius selection for temperature-based complications.
 - Open-Meteo weather through PebbleKit JS.
-- Optional iCal/ICS calendar feed through PebbleKit JS.
+- Optional bottom calendar event from one or two iCalendar/ICS feed URLs, sorted so the soonest event wins.
+- Google Calendar recurring event expansion, timezone handling, full event time labels, and 15-minute current-meeting rollover.
+- Quiet Time indicator using the mouse icon, aligned opposite the AM/PM label.
+
+Current release artifacts:
+
+- `release-assets/simple-pixel-style-0.35-emery.pbw`
+- `release-assets/screenshot-0.35-default-3-circles-real.png`
+- `release-assets/screenshot-0.35-small-verbose-weather-real.png`
+- `release-assets/RELEASE_NOTES_0.35.md`
 
 ## Project Layout
 
