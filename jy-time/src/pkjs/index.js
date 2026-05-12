@@ -10,6 +10,7 @@ var calendarTimer = null;
 var CURRENT_EVENT_DISPLAY_MINUTES = 15;
 
 var DEFAULT_SETTINGS = {
+  LIGHT_MODE: false,
   TOP_STEPS: true,
   VERBOSE_WEATHER: false,
   VERBOSE_WEATHER_STYLE: 'one_line',
@@ -87,6 +88,7 @@ function sendToWatch(dict, label) {
 
 function sendLayoutSetting(settings) {
   var dict = {};
+  dict[keys.LIGHT_MODE] = settings.LIGHT_MODE ? 1 : 0;
   dict[keys.TOP_STEPS] = settings.TOP_STEPS ? 1 : 0;
   dict[keys.VERBOSE_WEATHER] = settings.VERBOSE_WEATHER ? 1 : 0;
   dict[keys.VERBOSE_WEATHER_STYLE] = settings.VERBOSE_WEATHER_STYLE === 'large' ? 1 : 0;

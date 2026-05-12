@@ -42,7 +42,8 @@
       "TEMPERATURE_UNIT",
       "VERBOSE_WEATHER",
       "WEATHER_SUMMARY",
-      "VERBOSE_WEATHER_STYLE"
+      "VERBOSE_WEATHER_STYLE",
+      "LIGHT_MODE"
     ],
     "resources": {
       "media": [
@@ -185,6 +186,141 @@
         {
           "file": "images/weather/weather-icons/large/WEATHER_STORM.PNG",
           "name": "WEATHER_STORM_LARGE",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/STEP_BOOT.PNG",
+          "name": "STEP_BOOT_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/W800_WALKING_MAN.PNG",
+          "name": "W800_WALKING_MAN_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/QUIET_TIME_MOUSE.PNG",
+          "name": "QUIET_TIME_MOUSE_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/w800_digits/DIGIT_0.PNG",
+          "name": "W800_STEP_DIGIT_0_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/w800_digits/DIGIT_1.PNG",
+          "name": "W800_STEP_DIGIT_1_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/w800_digits/DIGIT_2.PNG",
+          "name": "W800_STEP_DIGIT_2_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/w800_digits/DIGIT_3.PNG",
+          "name": "W800_STEP_DIGIT_3_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/w800_digits/DIGIT_4.PNG",
+          "name": "W800_STEP_DIGIT_4_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/w800_digits/DIGIT_5.PNG",
+          "name": "W800_STEP_DIGIT_5_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/w800_digits/DIGIT_6.PNG",
+          "name": "W800_STEP_DIGIT_6_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/w800_digits/DIGIT_7.PNG",
+          "name": "W800_STEP_DIGIT_7_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/w800_digits/DIGIT_8.PNG",
+          "name": "W800_STEP_DIGIT_8_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/w800_digits/DIGIT_9.PNG",
+          "name": "W800_STEP_DIGIT_9_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/small/WEATHER_SUNNY.PNG",
+          "name": "WEATHER_SUNNY_SMALL_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/small/WEATHER_PARTLY_CLOUDY.PNG",
+          "name": "WEATHER_PARTLY_CLOUDY_SMALL_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/small/WEATHER_CLOUDY.PNG",
+          "name": "WEATHER_CLOUDY_SMALL_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/small/WEATHER_FOG.PNG",
+          "name": "WEATHER_FOG_SMALL_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/small/WEATHER_RAIN.PNG",
+          "name": "WEATHER_RAIN_SMALL_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/small/WEATHER_SNOW.PNG",
+          "name": "WEATHER_SNOW_SMALL_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/small/WEATHER_STORM.PNG",
+          "name": "WEATHER_STORM_SMALL_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/large/WEATHER_SUNNY.PNG",
+          "name": "WEATHER_SUNNY_LARGE_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/large/WEATHER_PARTLY_CLOUDY.PNG",
+          "name": "WEATHER_PARTLY_CLOUDY_LARGE_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/large/WEATHER_CLOUDY.PNG",
+          "name": "WEATHER_CLOUDY_LARGE_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/large/WEATHER_FOG.PNG",
+          "name": "WEATHER_FOG_LARGE_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/large/WEATHER_RAIN.PNG",
+          "name": "WEATHER_RAIN_LARGE_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/large/WEATHER_SNOW.PNG",
+          "name": "WEATHER_SNOW_LARGE_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/light/weather/weather-icons/large/WEATHER_STORM.PNG",
+          "name": "WEATHER_STORM_LARGE_LIGHT",
           "type": "bitmap"
         }
       ]

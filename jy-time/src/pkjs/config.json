@@ -12,6 +12,13 @@
       },
       {
         "type": "toggle",
+        "messageKey": "LIGHT_MODE",
+        "label": "Light mode",
+        "defaultValue": false,
+        "description": "Uses a white background with black text and icons."
+      },
+      {
+        "type": "toggle",
         "messageKey": "TOP_STEPS",
         "label": "Top W800 step counter",
         "defaultValue": true,
