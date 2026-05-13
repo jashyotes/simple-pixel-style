@@ -656,8 +656,53 @@ function eventDurationMs(event) {
   return 60 * 60 * 1000;
 }
 
-function eventDisplayEndTime(start) {
+function fallbackEventEndTime(start) {
   return start.getTime() + (CURRENT_EVENT_DISPLAY_MINUTES * 60 * 1000);
+}
+
+function eventEndTime(event) {
+  if (event && event.end && event.start && event.end.getTime() > event.start.getTime()) {
+    return event.end.getTime();
+  }
+  return event && event.start ? fallbackEventEndTime(event.start) : 0;
+}
+
+function compareCalendarTitles(a, b) {
+  var aTitle = (a && a.summary) || '';
+  var bTitle = (b && b.summary) || '';
+  if (aTitle < bTitle) return -1;
+  if (aTitle > bTitle) return 1;
+  return 0;
+}
+
+function chooseBestCalendarEvent(events, nowMs, maxTime) {
+  var candidates = events.filter(function(event) {
+    return event && event.start
+        && event.start.getTime() <= maxTime;
+  });
+
+  var started = candidates.filter(function(event) {
+    return event.start.getTime() <= nowMs;
+  }).sort(function(a, b) {
+    var startDiff = b.start.getTime() - a.start.getTime();
+    if (startDiff !== 0) return startDiff;
+    var endDiff = eventEndTime(b) - eventEndTime(a);
+    if (endDiff !== 0) return endDiff;
+    return compareCalendarTitles(a, b);
+  });
+  if (started.length && eventEndTime(started[0]) > nowMs) {
+    return started[0];
+  }
+
+  return candidates.filter(function(event) {
+    return event.start.getTime() >= nowMs;
+  }).sort(function(a, b) {
+    var startDiff = a.start.getTime() - b.start.getTime();
+    if (startDiff !== 0) return startDiff;
+    var endDiff = eventEndTime(a) - eventEndTime(b);
+    if (endDiff !== 0) return endDiff;
+    return compareCalendarTitles(a, b);
+  })[0] || null;
 }
 
 function parseIcsDateList(line, fallbackTzid) {
@@ -773,6 +818,7 @@ function expandRecurringEvent(event, now, maxTime, exceptionKeys) {
   var dayMs = 24 * 60 * 60 * 1000;
   var dateOnly = localDateOnly(event.startInfo.components);
   var hardStop = dateOnly + (dayMs * 12000);
+  var latestStartedOccurrence = null;
 
   (event.exdates || []).forEach(function(line) {
     parseIcsDateList(line, event.startInfo.tzid).forEach(function(date) {
@@ -800,18 +846,36 @@ function expandRecurringEvent(event, now, maxTime, exceptionKeys) {
         break;
       }
 
-      if (occurrenceStart.getTime() <= maxTime && eventDisplayEndTime(occurrenceStart) >= now.getTime()
+      if (occurrenceStart.getTime() <= maxTime && occurrenceEnd.getTime() > now.getTime()
           && !exdates[occurrenceStart.getTime()]
           && !(event.uid && exceptionKeys[eventExceptionKey(event.uid, occurrenceStart)])) {
-        occurrences.push({
+        var occurrence = {
           start: occurrenceStart,
           end: occurrenceEnd,
           summary: event.summary
-        });
+        };
+        occurrences.push(occurrence);
+        if (occurrenceStart.getTime() <= now.getTime()) {
+          latestStartedOccurrence = occurrence;
+        }
+      } else if (occurrenceStart.getTime() <= now.getTime()
+          && !exdates[occurrenceStart.getTime()]
+          && !(event.uid && exceptionKeys[eventExceptionKey(event.uid, occurrenceStart)])) {
+        latestStartedOccurrence = {
+          start: occurrenceStart,
+          end: occurrenceEnd,
+          summary: event.summary
+        };
       }
     }
 
     dateOnly += dayMs;
+  }
+
+  if (latestStartedOccurrence && !occurrences.some(function(occurrence) {
+    return occurrence.start.getTime() === latestStartedOccurrence.start.getTime();
+  })) {
+    occurrences.push(latestStartedOccurrence);
   }
 
   return occurrences;
@@ -871,21 +935,11 @@ function parseNextEvent(icsText, lookaheadHours) {
     });
   });
 
-  var upcoming = events.filter(function(event) {
-    return event.start.getTime() <= maxTime && eventDisplayEndTime(event.start) >= now.getTime();
-  }).sort(function(a, b) {
-    return a.start.getTime() - b.start.getTime();
-  });
-
-  return upcoming[0] || null;
+  return chooseBestCalendarEvent(events, now.getTime(), maxTime);
 }
 
 function nextSortedEvent(events) {
-  return events.filter(function(event) {
-    return event && event.start;
-  }).sort(function(a, b) {
-    return a.start.getTime() - b.start.getTime();
-  })[0] || null;
+  return chooseBestCalendarEvent(events, new Date().getTime(), Number.MAX_VALUE);
 }
 
 function formatHour(date) {
@@ -921,8 +975,8 @@ function formatEventDelta(event) {
 
   var now = new Date().getTime();
   var start = event.start.getTime();
-  var end = eventDisplayEndTime(event.start);
-  if (start <= now && end >= now) {
+  var end = eventEndTime(event);
+  if (start <= now && end > now) {
     return 'NOW';
   }
 

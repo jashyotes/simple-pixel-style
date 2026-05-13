@@ -4,7 +4,7 @@ Pebble Time 2 watchface with a pixel-watch layout: watch battery, Bluetooth stat
 
 ## Current Release
 
-Version `0.41` ships with:
+Version `0.42` ships with:
 
 - Color customization toggles for independently inverting the top bar, date bar, time, weather area, and meeting bar.
 - Cleaner date and time inversion bars, with contiguous edges when both are inverted.
@@ -17,6 +17,7 @@ Version `0.41` ships with:
 - Fahrenheit and Celsius selection for temperature-based complications.
 - Open-Meteo weather through PebbleKit JS.
 - Optional bottom calendar event from one or two iCalendar/ICS feed URLs, sorted so the soonest event wins.
+- Calendar event selection now handles overlapping meetings and close rollovers by keeping the latest started active event paired with its own countdown/title.
 - Google Calendar recurring event expansion, timezone handling, full event time labels, and 15-minute current-meeting rollover.
 - Monthly recurring events that use ordinal weekdays, such as second Tuesday or fourth Tuesday.
 - Quiet Time indicator using the mouse icon, aligned opposite the AM/PM label.
@@ -24,7 +25,7 @@ Version `0.41` ships with:
 
 Current release artifacts:
 
-- `release-assets/simple-pixel-style-0.41-emery.pbw`
+- `release-assets/simple-pixel-style-0.42-emery.pbw`
 - `Current Screenshots/current-dark-default-3-circles-quiet-time.png`
 - `Current Screenshots/current-light-default-3-circles.png`
 - `Current Screenshots/current-light-inverted-bars-default-3-circles.png`
@@ -32,7 +33,7 @@ Current release artifacts:
 - `Current Screenshots/current-light-weather-meeting-inverted.png`
 - `Current Screenshots/current-light-small-verbose-weather.png`
 - `Current Screenshots/current-light-large-verbose-weather.png`
-- `release-assets/RELEASE_NOTES_0.41.md`
+- `release-assets/RELEASE_NOTES_0.42.md`
 
 ## Project Layout
 
