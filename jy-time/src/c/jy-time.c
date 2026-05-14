@@ -771,12 +771,12 @@ static void draw_verbose_weather_row(GContext *ctx) {
                                GPoint(top_row_x + (icon_size / 2), top_center_y),
                                true);
     draw_text(ctx, large_temp_text, temp_font,
-              GRect(top_row_x + icon_size + icon_gap, top_center_y - 17,
+              GRect(top_row_x + icon_size + icon_gap, top_center_y - 19,
                     SCREEN_W - top_row_x - icon_size - icon_gap, 32),
               draw_fg_color(), GTextAlignmentLeft);
 
     draw_text(ctx, summary, summary_font,
-              GRect(8, VERBOSE_WEATHER_CENTER_Y - 2, SCREEN_W - 16, 20),
+              GRect(8, VERBOSE_WEATHER_CENTER_Y - 4, SCREEN_W - 16, 20),
               draw_fg_color(), GTextAlignmentCenter);
     return;
   }
@@ -886,9 +886,10 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
     fill_inverted_section_background(
         ctx, ColorSectionWeather,
         GRect(0, weather_y, SCREEN_W, compact_weather_bottom - weather_y));
-    draw_complication(ctx, GPoint(40, COMPLICATION_CENTER_Y), s_complication_slots[0]);
-    draw_complication(ctx, GPoint(100, COMPLICATION_CENTER_Y), s_complication_slots[1]);
-    draw_complication(ctx, GPoint(160, COMPLICATION_CENTER_Y), s_complication_slots[2]);
+    const int complication_center_y = COMPLICATION_CENTER_Y + 3;
+    draw_complication(ctx, GPoint(40, complication_center_y), s_complication_slots[0]);
+    draw_complication(ctx, GPoint(100, complication_center_y), s_complication_slots[1]);
+    draw_complication(ctx, GPoint(160, complication_center_y), s_complication_slots[2]);
   }
 
   set_draw_section(ColorSectionMeetingBar);
