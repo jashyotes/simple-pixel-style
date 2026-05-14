@@ -70,6 +70,13 @@
       },
       {
         "type": "toggle",
+        "messageKey": "MILITARY_TIME",
+        "label": "Use military time",
+        "defaultValue": false,
+        "description": "Shows the main time in 24-hour format and hides AM/PM."
+      },
+      {
+        "type": "toggle",
         "messageKey": "VERBOSE_WEATHER",
         "label": "Verbose weather, centered time",
         "defaultValue": false,
@@ -381,6 +388,30 @@
         "messageKey": "FITNESS_COLOR_CALORIES",
         "label": "Calories ring color",
         "defaultValue": 16711680
+      },
+      {
+        "type": "select",
+        "messageKey": "FITNESS_OVERLAY_DURATION_S",
+        "label": "Shake overlay duration",
+        "defaultValue": "5",
+        "options": [
+          {
+            "label": "3 seconds",
+            "value": "3"
+          },
+          {
+            "label": "5 seconds (default)",
+            "value": "5"
+          },
+          {
+            "label": "7 seconds",
+            "value": "7"
+          },
+          {
+            "label": "10 seconds",
+            "value": "10"
+          }
+        ]
       }
     ]
   },

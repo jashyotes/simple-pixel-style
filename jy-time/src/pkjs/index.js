@@ -8,12 +8,15 @@ var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
 var weatherTimer = null;
 var calendarTimer = null;
 var CURRENT_EVENT_DISPLAY_MINUTES = 15;
+var messageQueue = [];
+var messageInFlight = false;
 
 var DEFAULT_SETTINGS = {
   LIGHT_MODE: false,
   INVERT_TOP_BAR: false,
   INVERT_DATE_BAR: false,
   INVERT_TIME: false,
+  MILITARY_TIME: false,
   INVERT_WEATHER: false,
   INVERT_MEETING_BAR: false,
   TOP_STEPS: true,
@@ -41,7 +44,8 @@ var DEFAULT_SETTINGS = {
   FITNESS_TARGET_CALORIES: '500',
   FITNESS_COLOR_STEPS: 0x00FF00,
   FITNESS_COLOR_ACTIVE: 0x00AAFF,
-  FITNESS_COLOR_CALORIES: 0xFF0000
+  FITNESS_COLOR_CALORIES: 0xFF0000,
+  FITNESS_OVERLAY_DURATION_S: '5'
 };
 
 var COMPLICATION_IDS = {
@@ -101,12 +105,30 @@ function readSettings() {
   return settings;
 }
 
-function sendToWatch(dict, label) {
-  Pebble.sendAppMessage(dict, function() {
-    console.log((label || 'Message') + ' sent');
+function sendNextMessage() {
+  if (messageInFlight || !messageQueue.length) {
+    return;
+  }
+
+  var message = messageQueue.shift();
+  messageInFlight = true;
+  Pebble.sendAppMessage(message.dict, function() {
+    console.log((message.label || 'Message') + ' sent');
+    messageInFlight = false;
+    sendNextMessage();
   }, function(error) {
-    console.log((label || 'Message') + ' failed: ' + JSON.stringify(error));
+    console.log((message.label || 'Message') + ' failed: ' + JSON.stringify(error));
+    messageInFlight = false;
+    sendNextMessage();
   });
+}
+
+function sendToWatch(dict, label) {
+  messageQueue.push({
+    dict: dict,
+    label: label
+  });
+  sendNextMessage();
 }
 
 function sendLayoutSetting(settings) {
@@ -115,6 +137,7 @@ function sendLayoutSetting(settings) {
   dict[keys.INVERT_TOP_BAR] = settings.INVERT_TOP_BAR ? 1 : 0;
   dict[keys.INVERT_DATE_BAR] = settings.INVERT_DATE_BAR ? 1 : 0;
   dict[keys.INVERT_TIME] = settings.INVERT_TIME ? 1 : 0;
+  dict[keys.MILITARY_TIME] = settings.MILITARY_TIME ? 1 : 0;
   dict[keys.INVERT_WEATHER] = settings.INVERT_WEATHER ? 1 : 0;
   dict[keys.INVERT_MEETING_BAR] = settings.INVERT_MEETING_BAR ? 1 : 0;
   dict[keys.TOP_STEPS] = settings.TOP_STEPS ? 1 : 0;
@@ -139,6 +162,7 @@ function sendFitnessSetting(settings) {
   dict[keys.FITNESS_COLOR_STEPS] = numberSetting(settings.FITNESS_COLOR_STEPS, 0x00FF00, 0, 0xFFFFFF);
   dict[keys.FITNESS_COLOR_ACTIVE] = numberSetting(settings.FITNESS_COLOR_ACTIVE, 0x00AAFF, 0, 0xFFFFFF);
   dict[keys.FITNESS_COLOR_CALORIES] = numberSetting(settings.FITNESS_COLOR_CALORIES, 0xFF0000, 0, 0xFFFFFF);
+  dict[keys.FITNESS_OVERLAY_DURATION_S] = numberSetting(settings.FITNESS_OVERLAY_DURATION_S, 5, 3, 30);
   sendToWatch(dict, 'Fitness setting');
 }
 
