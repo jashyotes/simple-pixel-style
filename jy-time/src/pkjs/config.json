@@ -536,10 +536,6 @@
 	          {
 	            "label": "Heart rate big",
 	            "value": "heart_rate"
-	          },
-	          {
-	            "label": "Step graph today",
-	            "value": "step_graph"
 	          }
 	        ]
 	      },
@@ -668,15 +664,15 @@
 	        "type": "select",
 	        "messageKey": "YOUR_DAY_WINDOW_MODE",
 	        "label": "Hour window",
-	        "defaultValue": "fixed",
+	        "defaultValue": "rolling",
 	        "options": [
-	          {
-	            "label": "Fixed start/end",
-	            "value": "fixed"
-	          },
 	          {
 	            "label": "Rolling",
 	            "value": "rolling"
+	          },
+	          {
+	            "label": "Fixed start/end",
+	            "value": "fixed"
 	          }
 	        ]
 	      },

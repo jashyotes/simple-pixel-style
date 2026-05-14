@@ -137,7 +137,6 @@ typedef enum {
   ShakeBehaviorDetailedWeather = 4,
   ShakeBehaviorAltTimezone = 5,
   ShakeBehaviorHeartRate = 6,
-  ShakeBehaviorStepGraph = 7,
 } ShakeBehavior;
 
 typedef enum {
@@ -273,7 +272,7 @@ static int s_day_event_hours_bitmap_tomorrow = 0;
 static int s_day_event_hours_bitmap_yesterday = 0;
 static int s_day_event_count_today = 0;
 static int s_alt_tz_offset_min = 0;
-static int s_your_day_window_mode = 1;
+static int s_your_day_window_mode = 0;
 static int s_your_day_window_hours = 10;
 static int s_your_day_start_hour = 8;
 static int s_your_day_end_hour = 17;
@@ -457,7 +456,7 @@ static ComplicationType sanitize_complication(int value, ComplicationType fallba
 }
 
 static ShakeBehavior sanitize_shake_behavior(int value) {
-  return value >= ShakeBehaviorOff && value <= ShakeBehaviorStepGraph
+  return value >= ShakeBehaviorOff && value <= ShakeBehaviorHeartRate
       ? (ShakeBehavior)value
       : ShakeBehaviorOff;
 }
@@ -768,8 +767,7 @@ static void shake_show_overlay(void) {
     return;
   }
 
-  if (s_shake_behavior == ShakeBehaviorFitnessRings ||
-      s_shake_behavior == ShakeBehaviorStepGraph) {
+  if (s_shake_behavior == ShakeBehaviorFitnessRings) {
     fitness_read_health_values();
   } else if (s_shake_behavior == ShakeBehaviorHeartRate) {
     update_stats();
@@ -1565,7 +1563,7 @@ static void normalize_display_hour(int *hour, int *day_offset) {
   }
 }
 
-static void draw_your_day_hour_pips(GContext *ctx) {
+static void draw_your_day_hour_pips(GContext *ctx, const char *now_text, GFont now_font) {
   time_t now = time(NULL);
   struct tm *now_tm = localtime(&now);
   int current_hour = now_tm ? now_tm->tm_hour : 0;
@@ -1579,6 +1577,7 @@ static void draw_your_day_hour_pips(GContext *ctx) {
   const int start_x = (SCREEN_W - ((pip_count - 1) * gap_x)) / 2;
   const int y = 96;
   GFont label_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  int current_x = -1;
 
   for (int i = 0; i < pip_count; i++) {
     int hour = start_hour + i;
@@ -1591,13 +1590,15 @@ static void draw_your_day_hour_pips(GContext *ctx) {
     graphics_context_set_stroke_color(ctx, theme_fg_color());
     graphics_context_set_fill_color(ctx, theme_fg_color());
     graphics_context_set_stroke_width(ctx, 1);
-    if (current) {
-      graphics_draw_circle(ctx, GPoint(x, y), 5);
-      graphics_fill_circle(ctx, GPoint(x, y), 2);
-    } else if (busy) {
+    if (busy) {
       graphics_fill_circle(ctx, GPoint(x, y), 5);
     } else {
       graphics_draw_circle(ctx, GPoint(x, y), 5);
+    }
+
+    if (current) {
+      current_x = x;
+      continue;
     }
 
     char label[4];
@@ -1609,6 +1610,32 @@ static void draw_your_day_hour_pips(GContext *ctx) {
     draw_text(ctx, label, label_font, GRect(x - 8, y + 9, 16, 16),
               fitness_muted_text_color(), GTextAlignmentCenter);
   }
+
+  if (current_x < 0) {
+    return;
+  }
+
+  GSize now_size = graphics_text_layout_get_content_size(
+      now_text ? now_text : "", now_font, GRect(0, 0, SCREEN_W - 16, 22),
+      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter);
+  int now_left = (SCREEN_W - now_size.w) / 2;
+  int now_right = now_left + now_size.w;
+  if (now_left < 8) {
+    now_left = 8;
+  }
+  if (now_right > SCREEN_W - 8) {
+    now_right = SCREEN_W - 8;
+  }
+
+  const int elbow_y = y + 23;
+  const int target_x = current_x <= ((now_left + now_right) / 2)
+      ? now_left - 4
+      : now_right + 4;
+
+  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_line(ctx, GPoint(current_x, y - 18), GPoint(current_x, elbow_y));
+  graphics_draw_line(ctx, GPoint(current_x, elbow_y), GPoint(target_x, elbow_y));
 }
 
 static void your_day_draw_overlay(GContext *ctx) {
@@ -1638,7 +1665,6 @@ static void your_day_draw_overlay(GContext *ctx) {
   }
   draw_text(ctx, title_buf, s_font_top, GRect(8, 64, SCREEN_W - 16, 24),
             fitness_muted_text_color(), GTextAlignmentCenter);
-  draw_your_day_hour_pips(ctx);
 
   time_t now = time(NULL);
   struct tm *now_tm = localtime(&now);
@@ -1655,8 +1681,10 @@ static void your_day_draw_overlay(GContext *ctx) {
   } else {
     snprintf(now_buf, sizeof(now_buf), "Now: --:--");
   }
-  draw_text(ctx, now_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18),
-            GRect(8, 126, SCREEN_W - 16, 22), theme_fg_color(), GTextAlignmentCenter);
+  GFont now_font = fonts_get_system_font(FONT_KEY_GOTHIC_18);
+  draw_your_day_hour_pips(ctx, now_buf, now_font);
+  draw_text(ctx, now_buf, now_font, GRect(8, 126, SCREEN_W - 16, 22),
+            theme_fg_color(), GTextAlignmentCenter);
 
   graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
   graphics_draw_line(ctx, GPoint(8, 154), GPoint(192, 154));
@@ -1830,82 +1858,6 @@ static void heart_rate_draw_overlay(GContext *ctx) {
             GTextAlignmentCenter);
 }
 
-static void draw_step_graph_bars(GContext *ctx, int *hour_steps, int count) {
-  int max_steps = 1;
-  for (int i = 0; i < count; i++) {
-    if (hour_steps[i] > max_steps) {
-      max_steps = hour_steps[i];
-    }
-  }
-
-  const int graph_bottom = 162;
-  const int max_h = 94;
-  const int bar_w = 9;
-  const int gap = 3;
-  const int start_x = 5;
-  graphics_context_set_fill_color(ctx, theme_fg_color());
-  for (int i = 0; i < count; i++) {
-    int h = (hour_steps[i] * max_h) / max_steps;
-    if (hour_steps[i] > 0 && h < 2) {
-      h = 2;
-    }
-    graphics_fill_rect(ctx, GRect(start_x + (i * (bar_w + gap)),
-                                  graph_bottom - h, bar_w, h),
-                       0, GCornerNone);
-  }
-}
-
-static void step_graph_draw_overlay(GContext *ctx) {
-  int hour_steps[16];
-  memset(hour_steps, 0, sizeof(hour_steps));
-
-#if defined(PBL_HEALTH)
-  time_t now = time(NULL);
-  struct tm start_tm = *localtime(&now);
-  start_tm.tm_min = 0;
-  start_tm.tm_sec = 0;
-  for (int i = 0; i < 16; i++) {
-    start_tm.tm_hour = 6 + i;
-    time_t start = mktime(&start_tm);
-    time_t end = start + 3600;
-    HealthMinuteData records[60];
-    uint32_t count = health_service_get_minute_history(records, 60, &start, &end);
-    for (uint32_t j = 0; j < count; j++) {
-      if (!records[j].is_invalid) {
-        hour_steps[i] += records[j].steps;
-      }
-    }
-  }
-#endif
-
-  char total_buf[36];
-  char steps_buf[16];
-  char target_buf[16];
-  format_number_commas(steps_buf, sizeof(steps_buf), s_fitness_steps_value);
-  format_number_commas(target_buf, sizeof(target_buf), s_fitness_target_steps);
-  snprintf(total_buf, sizeof(total_buf), "%s / %s", steps_buf, target_buf);
-
-  draw_overlay_title(ctx, "STEPS TODAY");
-  draw_text(ctx, total_buf, s_font_complication, GRect(8, 26, SCREEN_W - 16, 24),
-            theme_fg_color(), GTextAlignmentCenter);
-  draw_step_graph_bars(ctx, hour_steps, 16);
-  draw_text(ctx, "6     9     12     3     6     9",
-            fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(0, 166, SCREEN_W, 18), fitness_muted_text_color(),
-            GTextAlignmentCenter);
-
-  int percent = s_fitness_target_steps > 0
-      ? (s_fitness_steps_value * 100) / s_fitness_target_steps
-      : 0;
-  if (percent > 999) {
-    percent = 999;
-  }
-  char pct_buf[24];
-  snprintf(pct_buf, sizeof(pct_buf), "%d%% to goal", percent);
-  draw_text(ctx, pct_buf, s_font_complication, GRect(8, 198, SCREEN_W - 16, 24),
-            theme_fg_color(), GTextAlignmentCenter);
-}
-
 static void shake_overlay_update_proc(Layer *layer, GContext *ctx) {
   (void)layer;
 
@@ -1930,9 +1882,6 @@ static void shake_overlay_update_proc(Layer *layer, GContext *ctx) {
       break;
     case ShakeBehaviorHeartRate:
       heart_rate_draw_overlay(ctx);
-      break;
-    case ShakeBehaviorStepGraph:
-      step_graph_draw_overlay(ctx);
       break;
     case ShakeBehaviorOff:
     default:

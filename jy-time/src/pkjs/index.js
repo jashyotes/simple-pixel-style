@@ -61,7 +61,7 @@ var DEFAULT_SETTINGS = {
   FITNESS_OVERLAY_DURATION_S: '5',
   ALT_TZ_LABEL: 'LONDON',
   ALT_TZ_OFFSET_MIN: '0',
-  YOUR_DAY_WINDOW_MODE: 'fixed',
+  YOUR_DAY_WINDOW_MODE: 'rolling',
   YOUR_DAY_WINDOW_HOURS: '10',
   YOUR_DAY_START_HOUR: '8',
   YOUR_DAY_END_HOUR: '17'
@@ -98,8 +98,7 @@ var SHAKE_BEHAVIOR_IDS = {
   your_day: 3,
   detailed_weather: 4,
   alt_timezone: 5,
-  heart_rate: 6,
-  step_graph: 7
+  heart_rate: 6
 };
 
 function clamp(value, min, max) {
