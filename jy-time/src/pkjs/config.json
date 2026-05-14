@@ -11,11 +11,28 @@
         "defaultValue": "Color Customization"
       },
       {
+        "type": "select",
+        "messageKey": "COLOR_MODE",
+        "label": "Color mode",
+        "defaultValue": "bw",
+        "options": [
+          {
+            "label": "Black & White (default)",
+            "value": "bw"
+          },
+          {
+            "label": "Color",
+            "value": "color"
+          }
+        ],
+        "description": "Black & White uses the Light mode toggle plus the five Invert toggles below. Color uses the per-section color pickers. Shake overlays always follow Light mode regardless of this setting."
+      },
+      {
         "type": "toggle",
         "messageKey": "LIGHT_MODE",
         "label": "Light mode",
         "defaultValue": false,
-        "description": "Uses a white background with black text and icons."
+        "description": "Uses a white background with black text and icons in Black & White mode and still applies to shake overlays in either color mode."
       },
       {
         "type": "toggle",
@@ -51,6 +68,75 @@
         "label": "Invert meeting bar",
         "defaultValue": false,
         "description": "Swaps the meeting bar colors."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Per-section colors (only applies when Color mode = Color)"
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_SECTION_BG_TOP_BAR",
+        "label": "Top bar background",
+        "defaultValue": 0
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_SECTION_FG_TOP_BAR",
+        "label": "Top bar text",
+        "defaultValue": 16777215
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_SECTION_BG_DATE_BAR",
+        "label": "Date bar background",
+        "defaultValue": 0
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_SECTION_FG_DATE_BAR",
+        "label": "Date bar text",
+        "defaultValue": 16777215
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_SECTION_BG_TIME",
+        "label": "Time background",
+        "defaultValue": 0
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_SECTION_FG_TIME",
+        "label": "Time text",
+        "defaultValue": 16777215
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_SECTION_BG_WEATHER",
+        "label": "Weather background",
+        "defaultValue": 0
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_SECTION_FG_WEATHER",
+        "label": "Weather text",
+        "defaultValue": 16777215
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_SECTION_BG_MEETING_BAR",
+        "label": "Meeting bar background",
+        "defaultValue": 0
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_SECTION_FG_MEETING_BAR",
+        "label": "Meeting bar text",
+        "defaultValue": 16777215
       }
     ]
   },
@@ -573,6 +659,94 @@
 	            "value": "5"
 	          }
 	        ]
+	      },
+	      {
+	        "type": "heading",
+	        "defaultValue": "Your Day settings"
+	      },
+	      {
+	        "type": "select",
+	        "messageKey": "YOUR_DAY_WINDOW_MODE",
+	        "label": "Hour window",
+	        "defaultValue": "fixed",
+	        "options": [
+	          {
+	            "label": "Fixed start/end",
+	            "value": "fixed"
+	          },
+	          {
+	            "label": "Rolling",
+	            "value": "rolling"
+	          }
+	        ]
+	      },
+	      {
+	        "type": "select",
+	        "messageKey": "YOUR_DAY_WINDOW_HOURS",
+	        "label": "Rolling window hours",
+	        "defaultValue": "10",
+	        "options": [
+	          {
+	            "label": "2 hours",
+	            "value": "2"
+	          },
+	          {
+	            "label": "3 hours",
+	            "value": "3"
+	          },
+	          {
+	            "label": "4 hours",
+	            "value": "4"
+	          },
+	          {
+	            "label": "5 hours",
+	            "value": "5"
+	          },
+	          {
+	            "label": "6 hours",
+	            "value": "6"
+	          },
+	          {
+	            "label": "7 hours",
+	            "value": "7"
+	          },
+	          {
+	            "label": "8 hours",
+	            "value": "8"
+	          },
+	          {
+	            "label": "9 hours",
+	            "value": "9"
+	          },
+	          {
+	            "label": "10 hours",
+	            "value": "10"
+	          }
+	        ]
+	      },
+	      {
+	        "type": "input",
+	        "messageKey": "YOUR_DAY_START_HOUR",
+	        "label": "Fixed start hour",
+	        "defaultValue": "8",
+	        "attributes": {
+	          "type": "number",
+	          "min": "0",
+	          "max": "23",
+	          "step": "1"
+	        }
+	      },
+	      {
+	        "type": "input",
+	        "messageKey": "YOUR_DAY_END_HOUR",
+	        "label": "Fixed end hour",
+	        "defaultValue": "17",
+	        "attributes": {
+	          "type": "number",
+	          "min": "0",
+	          "max": "23",
+	          "step": "1"
+	        }
 	      },
 	      {
 	        "type": "heading",

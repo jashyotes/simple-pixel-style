@@ -12,6 +12,17 @@ var messageQueue = [];
 var messageInFlight = false;
 
 var DEFAULT_SETTINGS = {
+  COLOR_MODE: 'bw',
+  COLOR_SECTION_BG_TOP_BAR: 0,
+  COLOR_SECTION_FG_TOP_BAR: 16777215,
+  COLOR_SECTION_BG_DATE_BAR: 0,
+  COLOR_SECTION_FG_DATE_BAR: 16777215,
+  COLOR_SECTION_BG_TIME: 0,
+  COLOR_SECTION_FG_TIME: 16777215,
+  COLOR_SECTION_BG_WEATHER: 0,
+  COLOR_SECTION_FG_WEATHER: 16777215,
+  COLOR_SECTION_BG_MEETING_BAR: 0,
+  COLOR_SECTION_FG_MEETING_BAR: 16777215,
   LIGHT_MODE: false,
   INVERT_TOP_BAR: false,
   INVERT_DATE_BAR: false,
@@ -49,7 +60,11 @@ var DEFAULT_SETTINGS = {
   FITNESS_COLOR_CALORIES: 0xFF0000,
   FITNESS_OVERLAY_DURATION_S: '5',
   ALT_TZ_LABEL: 'LONDON',
-  ALT_TZ_OFFSET_MIN: '0'
+  ALT_TZ_OFFSET_MIN: '0',
+  YOUR_DAY_WINDOW_MODE: 'fixed',
+  YOUR_DAY_WINDOW_HOURS: '10',
+  YOUR_DAY_START_HOUR: '8',
+  YOUR_DAY_END_HOUR: '17'
 };
 
 var COMPLICATION_IDS = {
@@ -107,6 +122,14 @@ function shakeBehaviorId(value) {
       : SHAKE_BEHAVIOR_IDS.off;
 }
 
+function colorModeId(value) {
+  return value === 'color' ? 1 : 0;
+}
+
+function yourDayWindowModeId(value) {
+  return value === 'fixed' ? 1 : 0;
+}
+
 function temperatureUnit(settings) {
   return settings.TEMPERATURE_UNIT === 'celsius' ? 'celsius' : 'fahrenheit';
 }
@@ -117,6 +140,10 @@ function numberSetting(value, fallback, min, max) {
     parsed = fallback;
   }
   return clamp(Math.round(parsed), min, max);
+}
+
+function colorSetting(value, fallback) {
+  return numberSetting(value, fallback, 0, 0xFFFFFF);
 }
 
 function readSettings() {
@@ -180,6 +207,24 @@ function sendLayoutSetting(settings) {
   sendToWatch(dict, 'Layout setting');
 }
 
+function sendColorSetting(settings) {
+  var dict = {};
+  dict[keys.COLOR_MODE] = colorModeId(settings.COLOR_MODE);
+  dict[keys.COLOR_SECTION_BG_TOP_BAR] = colorSetting(settings.COLOR_SECTION_BG_TOP_BAR, 0);
+  dict[keys.COLOR_SECTION_FG_TOP_BAR] = colorSetting(settings.COLOR_SECTION_FG_TOP_BAR, 16777215);
+  dict[keys.COLOR_SECTION_BG_DATE_BAR] = colorSetting(settings.COLOR_SECTION_BG_DATE_BAR, 0);
+  dict[keys.COLOR_SECTION_FG_DATE_BAR] = colorSetting(settings.COLOR_SECTION_FG_DATE_BAR, 16777215);
+  dict[keys.COLOR_SECTION_BG_TIME] = colorSetting(settings.COLOR_SECTION_BG_TIME, 0);
+  dict[keys.COLOR_SECTION_FG_TIME] = colorSetting(settings.COLOR_SECTION_FG_TIME, 16777215);
+  dict[keys.COLOR_SECTION_BG_WEATHER] = colorSetting(settings.COLOR_SECTION_BG_WEATHER, 0);
+  dict[keys.COLOR_SECTION_FG_WEATHER] = colorSetting(settings.COLOR_SECTION_FG_WEATHER, 16777215);
+  dict[keys.COLOR_SECTION_BG_MEETING_BAR] =
+      colorSetting(settings.COLOR_SECTION_BG_MEETING_BAR, 0);
+  dict[keys.COLOR_SECTION_FG_MEETING_BAR] =
+      colorSetting(settings.COLOR_SECTION_FG_MEETING_BAR, 16777215);
+  sendToWatch(dict, 'Color setting');
+}
+
 function sendShakeSetting(settings) {
   var dict = {};
   dict[keys.SHAKE_BEHAVIOR] = shakeBehaviorId(settings.SHAKE_BEHAVIOR);
@@ -196,6 +241,10 @@ function sendShakeSetting(settings) {
   dict[keys.CALENDAR_SHAKE_EVENT_COUNT] = numberSetting(settings.CALENDAR_SHAKE_EVENT_COUNT, 3, 3, 5) >= 5 ? 5 : 3;
   dict[keys.ALT_TZ_LABEL] = String(settings.ALT_TZ_LABEL || 'LONDON').slice(0, 16);
   dict[keys.ALT_TZ_OFFSET_MIN] = numberSetting(settings.ALT_TZ_OFFSET_MIN, 0, -720, 840);
+  dict[keys.YOUR_DAY_WINDOW_MODE] = yourDayWindowModeId(settings.YOUR_DAY_WINDOW_MODE);
+  dict[keys.YOUR_DAY_WINDOW_HOURS] = numberSetting(settings.YOUR_DAY_WINDOW_HOURS, 10, 2, 10);
+  dict[keys.YOUR_DAY_START_HOUR] = numberSetting(settings.YOUR_DAY_START_HOUR, 8, 0, 23);
+  dict[keys.YOUR_DAY_END_HOUR] = numberSetting(settings.YOUR_DAY_END_HOUR, 17, 0, 23);
   sendToWatch(dict, 'Shake setting');
 }
 
@@ -1128,16 +1177,15 @@ function startOfLocalDay(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
-function workdayBusyHoursBitmap(events) {
-  var today = startOfLocalDay(new Date());
+function dayBusyHoursBitmap(events, day) {
   var bitmap = 0;
   events.forEach(function(event) {
     if (!event || !event.start) {
       return;
     }
-    for (var hour = 8; hour <= 17; hour++) {
-      var slotStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hour, 0, 0);
-      var slotEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hour + 1, 0, 0);
+    for (var hour = 0; hour < 24; hour++) {
+      var slotStart = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour, 0, 0);
+      var slotEnd = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour + 1, 0, 0);
       if (event.start.getTime() < slotEnd.getTime() && eventEndTime(event) > slotStart.getTime()) {
         bitmap |= (1 << hour);
       }
@@ -1146,14 +1194,41 @@ function workdayBusyHoursBitmap(events) {
   return bitmap;
 }
 
-function remainingTodayCount(events) {
+function yourDayFixedHourCount(settings) {
+  var startHour = numberSetting(settings.YOUR_DAY_START_HOUR, 8, 0, 23);
+  var endHour = numberSetting(settings.YOUR_DAY_END_HOUR, 17, 0, 23);
+  var span = endHour - startHour;
+  if (span < 0) {
+    span += 24;
+  }
+  return numberSetting(span + 1, 10, 2, 10);
+}
+
+function yourDayWindowRange(settings) {
   var now = new Date();
-  var today = startOfLocalDay(now);
-  var tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  var start;
+  var hourCount;
+  if (settings.YOUR_DAY_WINDOW_MODE === 'fixed') {
+    var startHour = numberSetting(settings.YOUR_DAY_START_HOUR, 8, 0, 23);
+    hourCount = yourDayFixedHourCount(settings);
+    var today = startOfLocalDay(now);
+    start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), startHour, 0, 0);
+  } else {
+    hourCount = numberSetting(settings.YOUR_DAY_WINDOW_HOURS, 10, 2, 10);
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() - 1, 0, 0);
+  }
+  return {
+    start: start,
+    end: new Date(start.getTime() + (hourCount * 60 * 60 * 1000))
+  };
+}
+
+function yourDayWindowEventCount(events, settings) {
+  var range = yourDayWindowRange(settings);
   return events.filter(function(event) {
     return event && event.start
-        && event.start.getTime() > now.getTime()
-        && event.start.getTime() < tomorrow.getTime();
+        && event.start.getTime() < range.end.getTime()
+        && eventEndTime(event) > range.start.getTime();
   }).length;
 }
 
@@ -1165,7 +1240,8 @@ function optionalEventDelta(event) {
   return event ? formatEventDelta(event) : '';
 }
 
-function sendCalendarEvents(events) {
+function sendCalendarEvents(events, settings) {
+  settings = settings || readSettings();
   var sorted = (events || []).slice().sort(function(a, b) {
     var startDiff = a.start.getTime() - b.start.getTime();
     if (startDiff !== 0) return startDiff;
@@ -1176,10 +1252,15 @@ function sendCalendarEvents(events) {
   var displayEvents = sorted.slice(0, 5);
 
   var summaryDict = {};
+  var today = startOfLocalDay(new Date());
+  var yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+  var tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
   summaryDict[keys.NEXT_EVENT] = formatEvent(displayEvents[0]);
   summaryDict[keys.NEXT_EVENT_DELTA] = formatEventDelta(displayEvents[0]);
-  summaryDict[keys.DAY_EVENT_HOURS_BITMAP] = workdayBusyHoursBitmap(sorted);
-  summaryDict[keys.DAY_EVENT_COUNT_TODAY] = remainingTodayCount(sorted);
+  summaryDict[keys.DAY_EVENT_HOURS_BITMAP_YESTERDAY] = dayBusyHoursBitmap(sorted, yesterday);
+  summaryDict[keys.DAY_EVENT_HOURS_BITMAP] = dayBusyHoursBitmap(sorted, today);
+  summaryDict[keys.DAY_EVENT_HOURS_BITMAP_TOMORROW] = dayBusyHoursBitmap(sorted, tomorrow);
+  summaryDict[keys.DAY_EVENT_COUNT_TODAY] = yourDayWindowEventCount(sorted, settings);
   sendToWatch(summaryDict, 'Calendar summary');
 
   var middleDict = {};
@@ -1205,7 +1286,7 @@ function refreshCalendar() {
 
   var urls = calendarUrls(settings);
   if (!urls.length) {
-    sendCalendarEvents([]);
+    sendCalendarEvents([], settings);
     return;
   }
 
@@ -1224,7 +1305,7 @@ function refreshCalendar() {
       return;
     }
 
-    sendCalendarEvents(events);
+    sendCalendarEvents(events, settings);
   }
 
   urls.forEach(function(url) {
@@ -1274,6 +1355,7 @@ function scheduleRefreshes() {
 Pebble.addEventListener('ready', function() {
   var settings = readSettings();
   sendLayoutSetting(settings);
+  sendColorSetting(settings);
   sendShakeSetting(settings);
   refreshWeather();
   refreshCalendar();
@@ -1292,6 +1374,7 @@ Pebble.addEventListener('webviewclosed', function(event) {
   clay.getSettings(event.response, false);
   var settings = readSettings();
   sendLayoutSetting(settings);
+  sendColorSetting(settings);
   sendShakeSetting(settings);
   refreshWeather();
   refreshCalendar();
