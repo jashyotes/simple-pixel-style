@@ -839,6 +839,16 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   const int time_frame_y = TIME_FRAME_Y + content_offset_y;
   const int weather_y = weather_band_y();
   const GRect date_frame = GRect(0, DATE_FRAME_Y + content_offset_y, SCREEN_W, 29);
+  const bool large_weather_meeting_color_break =
+      s_verbose_weather_enabled &&
+      s_verbose_weather_large &&
+      section_backgrounds_differ(ColorSectionWeather, ColorSectionMeetingBar);
+  const int meeting_bar_y = large_weather_meeting_color_break
+      ? EVENT_SEPARATOR_Y + 2
+      : EVENT_SEPARATOR_Y;
+  const int verbose_weather_bottom = large_weather_meeting_color_break
+      ? meeting_bar_y
+      : EVENT_SEPARATOR_Y;
 
   set_draw_section(ColorSectionDateBar);
   fill_inverted_section_background(
@@ -858,7 +868,7 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
     set_draw_section(ColorSectionWeather);
     fill_inverted_section_background(
         ctx, ColorSectionWeather,
-        GRect(0, weather_y, SCREEN_W, EVENT_SEPARATOR_Y - weather_y));
+        GRect(0, weather_y, SCREEN_W, verbose_weather_bottom - weather_y));
     draw_verbose_weather_row(ctx);
   } else {
     draw_time_row(ctx);
@@ -872,18 +882,12 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
     draw_complication(ctx, GPoint(160, COMPLICATION_CENTER_Y), s_complication_slots[2]);
   }
 
-  const int meeting_bar_y =
-      s_verbose_weather_enabled &&
-      s_verbose_weather_large &&
-      section_backgrounds_differ(ColorSectionWeather, ColorSectionMeetingBar)
-          ? EVENT_SEPARATOR_Y + 2
-          : EVENT_SEPARATOR_Y;
-
   set_draw_section(ColorSectionMeetingBar);
   fill_inverted_section_background(
       ctx, ColorSectionMeetingBar,
       GRect(0, meeting_bar_y, SCREEN_W, SCREEN_H - meeting_bar_y));
-  if (!section_inverted(ColorSectionMeetingBar)) {
+  if (!section_inverted(ColorSectionMeetingBar) &&
+      !large_weather_meeting_color_break) {
     graphics_context_set_stroke_color(ctx, draw_fg_color());
     graphics_context_set_stroke_width(ctx, 1);
     graphics_draw_line(ctx, GPoint(8, meeting_bar_y), GPoint(192, meeting_bar_y));
