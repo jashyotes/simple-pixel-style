@@ -1,4 +1,5 @@
 #include <pebble.h>
+#include <stdlib.h>
 #include <string.h>
 
 // JY Time watchface
@@ -32,7 +33,8 @@
 #define PERSIST_KEY_INVERT_TIME    121
 #define PERSIST_KEY_INVERT_WEATHER 122
 #define PERSIST_KEY_INVERT_MEETING_BAR 123
-#define PERSIST_KEY_FITNESS_SHAKE_ENABLED 124
+// Persist key 124 is intentionally unused after the shake behavior selector
+// replaced the old boolean gate.
 #define PERSIST_KEY_FITNESS_RING_STEPS_ON 125
 #define PERSIST_KEY_FITNESS_RING_ACTIVE_ON 126
 #define PERSIST_KEY_FITNESS_RING_CALORIES_ON 127
@@ -44,6 +46,24 @@
 #define PERSIST_KEY_FITNESS_COLOR_CALORIES 133
 #define PERSIST_KEY_FITNESS_OVERLAY_DURATION_S 134
 #define PERSIST_KEY_MILITARY_TIME 135
+#define PERSIST_KEY_SHAKE_BEHAVIOR 136
+#define PERSIST_KEY_LOW_TEMP 137
+#define PERSIST_KEY_SUNRISE_T 138
+#define PERSIST_KEY_SUNSET_T 139
+#define PERSIST_KEY_CALENDAR_EVENT_TITLE_2 140
+#define PERSIST_KEY_CALENDAR_EVENT_DELTA_2 141
+#define PERSIST_KEY_CALENDAR_EVENT_TITLE_3 142
+#define PERSIST_KEY_CALENDAR_EVENT_DELTA_3 143
+#define PERSIST_KEY_CALENDAR_EVENT_TITLE_4 144
+#define PERSIST_KEY_CALENDAR_EVENT_DELTA_4 145
+#define PERSIST_KEY_CALENDAR_EVENT_TITLE_5 146
+#define PERSIST_KEY_CALENDAR_EVENT_DELTA_5 147
+#define PERSIST_KEY_CALENDAR_SHAKE_EVENT_COUNT 148
+#define PERSIST_KEY_DAY_EVENT_HOURS_BITMAP 149
+#define PERSIST_KEY_DAY_EVENT_COUNT_TODAY 150
+#define PERSIST_KEY_ALT_TZ_LABEL 151
+#define PERSIST_KEY_ALT_TZ_OFFSET_MIN 152
+#define PERSIST_KEY_REMOVE_LEADING_ZERO 153
 
 #define SCREEN_W 200
 #define SCREEN_H 228
@@ -84,8 +104,24 @@ typedef enum {
   ComplicationWeatherIcon = 12,
   ComplicationFitnessRings = 13,
   ComplicationWeatherCircle = 14,
-  ComplicationBatteryCircle = 15,
+  ComplicationBatteryRing = 15,
+  ComplicationHighLowCombined = 16,
+  ComplicationActiveMinutes = 17,
+  ComplicationActiveCalories = 18,
+  ComplicationSleepLastNight = 19,
+  ComplicationDistanceToday = 20,
 } ComplicationType;
+
+typedef enum {
+  ShakeBehaviorOff = 0,
+  ShakeBehaviorFitnessRings = 1,
+  ShakeBehaviorCalendarEvents = 2,
+  ShakeBehaviorYourDay = 3,
+  ShakeBehaviorDetailedWeather = 4,
+  ShakeBehaviorAltTimezone = 5,
+  ShakeBehaviorHeartRate = 6,
+  ShakeBehaviorStepGraph = 7,
+} ShakeBehavior;
 
 typedef enum {
   WeatherIconSunny = 0,
@@ -115,8 +151,8 @@ typedef enum {
 
 static Window *s_window;
 static Layer *s_face_layer;
-static Layer *s_fitness_layer;
-static AppTimer *s_fitness_overlay_timer;
+static Layer *s_shake_overlay_layer;
+static AppTimer *s_shake_overlay_timer;
 
 static GFont s_font_top;
 static GFont s_font_date;
@@ -143,10 +179,14 @@ static char s_rain_buf[8];
 static char s_bpm_buf[12];
 static char s_feels_like_buf[8];
 static char s_high_temp_buf[8];
+static char s_low_temp_buf[8];
 static char s_wind_buf[8];
 static char s_uv_buf[8];
 static char s_event_delta_buf[8];
 static char s_weather_summary_buf[32] = "CLOUDY";
+static char s_calendar_event_titles[4][80];
+static char s_calendar_event_deltas[4][16];
+static char s_alt_tz_label[24] = "LONDON";
 
 static uint8_t s_phone_battery_pct = 0;
 static bool s_phone_battery_known = false;
@@ -159,6 +199,12 @@ static int8_t s_feels_like = 0;
 static bool s_feels_like_known = false;
 static int8_t s_high_temp = 0;
 static bool s_high_temp_known = false;
+static int8_t s_low_temp = 0;
+static bool s_low_temp_known = false;
+static time_t s_sunrise_t = 0;
+static bool s_sunrise_known = false;
+static time_t s_sunset_t = 0;
+static bool s_sunset_known = false;
 static uint8_t s_weather_code = 0;
 static bool s_weather_known = false;
 static uint8_t s_rain_chance = 0;
@@ -176,11 +222,12 @@ static bool s_invert_top_bar = false;
 static bool s_invert_date_bar = false;
 static bool s_invert_time = false;
 static bool s_military_time_enabled = false;
+static bool s_remove_leading_zero = false;
 static bool s_invert_weather = false;
 static bool s_invert_meeting_bar = false;
-static bool s_fitness_shake_enabled = false;
-static bool s_fitness_tap_subscribed = false;
-static bool s_fitness_overlay_visible = false;
+static ShakeBehavior s_shake_behavior = ShakeBehaviorOff;
+static bool s_shake_tap_subscribed = false;
+static bool s_shake_overlay_visible = false;
 static bool s_fitness_ring_steps_on = true;
 static bool s_fitness_ring_active_on = true;
 static bool s_fitness_ring_calories_on = true;
@@ -197,6 +244,11 @@ static int s_fitness_color_steps_hex = FITNESS_DEFAULT_COLOR_STEPS;
 static int s_fitness_color_active_hex = FITNESS_DEFAULT_COLOR_ACTIVE;
 static int s_fitness_color_calories_hex = FITNESS_DEFAULT_COLOR_CALORIES;
 static int s_fitness_overlay_duration_ms = 5000;
+static int s_calendar_shake_event_count = 3;
+static int s_day_event_hours_bitmap = 0;
+static int s_day_event_count_today = 0;
+static int s_alt_tz_offset_min = 0;
+static time_t s_last_hr_sample_time = 0;
 static ComplicationType s_complication_slots[COMPLICATION_COUNT] = {
   ComplicationWeather,
   ComplicationRainChance,
@@ -204,6 +256,8 @@ static ComplicationType s_complication_slots[COMPLICATION_COUNT] = {
 };
 
 static void apply_light_mode(bool enabled);
+static void update_stats(void);
+static void format_temp_with_degree(char *buf, size_t len, bool known, int value);
 
 static void mark_face_dirty(void) {
   if (s_face_layer) {
@@ -307,9 +361,15 @@ static void draw_text(GContext *ctx, const char *text, GFont font, GRect frame,
 }
 
 static ComplicationType sanitize_complication(int value, ComplicationType fallback) {
-  return value >= ComplicationTemperature && value <= ComplicationBatteryCircle
+  return value >= ComplicationTemperature && value <= ComplicationDistanceToday
       ? (ComplicationType)value
       : fallback;
+}
+
+static ShakeBehavior sanitize_shake_behavior(int value) {
+  return value >= ShakeBehaviorOff && value <= ShakeBehaviorStepGraph
+      ? (ShakeBehavior)value
+      : ShakeBehaviorOff;
 }
 
 static void format_unknown(char *buf, size_t len) {
@@ -563,62 +623,70 @@ static void fitness_read_health_values(void) {
 #endif
 }
 
-static void fitness_hide_overlay(bool cancel_timer) {
-  if (cancel_timer && s_fitness_overlay_timer) {
-    app_timer_cancel(s_fitness_overlay_timer);
-    s_fitness_overlay_timer = NULL;
+static void shake_hide_overlay(bool cancel_timer) {
+  if (cancel_timer && s_shake_overlay_timer) {
+    app_timer_cancel(s_shake_overlay_timer);
+    s_shake_overlay_timer = NULL;
   }
-  s_fitness_overlay_visible = false;
-  if (s_fitness_layer) {
-    layer_set_hidden(s_fitness_layer, true);
+  s_shake_overlay_visible = false;
+  if (s_shake_overlay_layer) {
+    layer_set_hidden(s_shake_overlay_layer, true);
   }
 }
 
-static void fitness_overlay_timer_handler(void *context) {
+static void shake_overlay_timer_handler(void *context) {
   (void)context;
-  s_fitness_overlay_timer = NULL;
-  fitness_hide_overlay(false);
+  s_shake_overlay_timer = NULL;
+  shake_hide_overlay(false);
 }
 
-static void fitness_schedule_hide_timer(void) {
-  if (s_fitness_overlay_timer &&
-      app_timer_reschedule(s_fitness_overlay_timer, s_fitness_overlay_duration_ms)) {
+static void shake_schedule_hide_timer(void) {
+  if (s_shake_overlay_timer &&
+      app_timer_reschedule(s_shake_overlay_timer, s_fitness_overlay_duration_ms)) {
     return;
   }
-  s_fitness_overlay_timer = app_timer_register(
-      s_fitness_overlay_duration_ms, fitness_overlay_timer_handler, NULL);
+  s_shake_overlay_timer = app_timer_register(
+      s_fitness_overlay_duration_ms, shake_overlay_timer_handler, NULL);
 }
 
-static void fitness_show_overlay(void) {
-  if (!s_fitness_shake_enabled || !s_fitness_layer) {
+static void shake_show_overlay(void) {
+  if (s_shake_behavior == ShakeBehaviorOff || !s_shake_overlay_layer) {
     return;
   }
 
-  fitness_read_health_values();
-  s_fitness_overlay_visible = true;
-  layer_set_hidden(s_fitness_layer, false);
-  layer_mark_dirty(s_fitness_layer);
-  fitness_schedule_hide_timer();
+  if (s_shake_behavior == ShakeBehaviorFitnessRings ||
+      s_shake_behavior == ShakeBehaviorStepGraph) {
+    fitness_read_health_values();
+  } else if (s_shake_behavior == ShakeBehaviorHeartRate) {
+    update_stats();
+#if defined(PBL_HEALTH)
+    health_service_set_heart_rate_sample_period(15);
+#endif
+  }
+
+  s_shake_overlay_visible = true;
+  layer_set_hidden(s_shake_overlay_layer, false);
+  layer_mark_dirty(s_shake_overlay_layer);
+  shake_schedule_hide_timer();
 }
 
-static void fitness_tap_handler(AccelAxisType axis, int32_t direction) {
-  APP_LOG(APP_LOG_LEVEL_INFO, "Fitness tap axis=%d direction=%ld", (int)axis, (long)direction);
-  fitness_show_overlay();
+static void shake_tap_handler(AccelAxisType axis, int32_t direction) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "Shake tap axis=%d direction=%ld behavior=%d",
+          (int)axis, (long)direction, (int)s_shake_behavior);
+  shake_show_overlay();
 }
 
-static void fitness_configure_tap_service(void) {
-  if (s_fitness_shake_enabled && !s_fitness_tap_subscribed) {
-    accel_tap_service_subscribe(fitness_tap_handler);
-    s_fitness_tap_subscribed = true;
-  } else if (!s_fitness_shake_enabled && s_fitness_tap_subscribed) {
+static void shake_configure_tap_service(void) {
+  if (s_shake_behavior != ShakeBehaviorOff && !s_shake_tap_subscribed) {
+    accel_tap_service_subscribe(shake_tap_handler);
+    s_shake_tap_subscribed = true;
+  } else if (s_shake_behavior == ShakeBehaviorOff && s_shake_tap_subscribed) {
     accel_tap_service_unsubscribe();
-    s_fitness_tap_subscribed = false;
+    s_shake_tap_subscribed = false;
   }
 }
 
-static void fitness_update_proc(Layer *layer, GContext *ctx) {
-  (void)layer;
-
+static void fitness_draw_overlay(GContext *ctx) {
   GColor steps_color = fitness_color_from_hex(
       s_fitness_color_steps_hex, FITNESS_DEFAULT_COLOR_STEPS);
   GColor active_color = fitness_color_from_hex(
@@ -885,13 +953,10 @@ static void draw_icon_block(GContext *ctx, GPoint origin, int x, int y, int w, i
   graphics_fill_rect(ctx, GRect(origin.x + x, origin.y + y, w, h), 0, GCornerNone);
 }
 
-static void draw_sun_icon(GContext *ctx, GPoint origin) {
-  graphics_context_set_fill_color(ctx, draw_fg_color());
-  draw_icon_block(ctx, origin, 7, 1, 2, 3);
-  draw_icon_block(ctx, origin, 7, 13, 2, 3);
-  draw_icon_block(ctx, origin, 1, 7, 3, 2);
-  draw_icon_block(ctx, origin, 12, 7, 3, 2);
-  draw_icon_block(ctx, origin, 5, 5, 6, 6);
+static void draw_uv_icon_centered(GContext *ctx, GPoint center) {
+  draw_text(ctx, "UV", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(center.x - 13, center.y - 8, 26, 14),
+            draw_fg_color(), GTextAlignmentCenter);
 }
 
 static WeatherIconBitmap weather_icon_for_code(void) {
@@ -1044,7 +1109,7 @@ static void draw_complication_weather_circle(GContext *ctx, GPoint center) {
             draw_fg_color(), GTextAlignmentCenter);
 }
 
-static void draw_complication_battery_circle(GContext *ctx, GPoint center) {
+static void draw_complication_battery_ring(GContext *ctx, GPoint center) {
   int battery_pct = s_watch_battery_pct;
   if (battery_pct < 0) {
     battery_pct = 0;
@@ -1061,6 +1126,73 @@ static void draw_complication_battery_circle(GContext *ctx, GPoint center) {
                        DEG_TO_TRIGANGLE(empty_angle), DEG_TO_TRIGANGLE(360));
   draw_text(ctx, s_watch_battery_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
             GRect(center.x - 22, center.y - 9, 44, 18),
+            draw_fg_color(), GTextAlignmentCenter);
+}
+
+static int health_sum_today_int(HealthMetric metric) {
+#if defined(PBL_HEALTH)
+  HealthValue value = health_service_sum_today(metric);
+  return value > 0 ? (int)value : 0;
+#else
+  (void)metric;
+  return 0;
+#endif
+}
+
+static void draw_complication_high_low_combined(GContext *ctx, GPoint center) {
+  char hi_buf[8];
+  char lo_buf[8];
+  format_temp_with_degree(hi_buf, sizeof(hi_buf), s_high_temp_known, s_high_temp);
+  format_temp_with_degree(lo_buf, sizeof(lo_buf), s_low_temp_known, s_low_temp);
+
+  draw_text(ctx, hi_buf, s_font_complication, GRect(center.x - 23, center.y - 18, 46, 20),
+            draw_fg_color(), GTextAlignmentCenter);
+  draw_text(ctx, lo_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(center.x - 23, center.y + 2, 46, 18),
+            draw_fg_color(), GTextAlignmentCenter);
+}
+
+static void draw_complication_active_minutes(GContext *ctx, GPoint center) {
+  char value_buf[8];
+  int minutes = health_sum_today_int(HealthMetricActiveSeconds) / 60;
+  format_int_3(value_buf, sizeof(value_buf), true, minutes);
+  draw_text(ctx, value_buf, s_font_complication,
+            GRect(center.x - 23, center.y - 14, 46, 20),
+            draw_fg_color(), GTextAlignmentCenter);
+  draw_text(ctx, "min", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(center.x - 23, center.y + 4, 46, 18),
+            draw_fg_color(), GTextAlignmentCenter);
+}
+
+static void draw_complication_active_calories(GContext *ctx, GPoint center) {
+  char value_buf[8];
+  format_int_3(value_buf, sizeof(value_buf), true,
+               health_sum_today_int(HealthMetricActiveKCalories));
+  draw_text(ctx, value_buf, s_font_complication,
+            GRect(center.x - 23, center.y - 14, 46, 20),
+            draw_fg_color(), GTextAlignmentCenter);
+  draw_text(ctx, "Cal", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(center.x - 23, center.y + 4, 46, 18),
+            draw_fg_color(), GTextAlignmentCenter);
+}
+
+static void draw_complication_sleep_last_night(GContext *ctx, GPoint center) {
+  int minutes = health_sum_today_int(HealthMetricSleepSeconds) / 60;
+  int hours = minutes / 60;
+  int mins = minutes % 60;
+  char value_buf[12];
+  snprintf(value_buf, sizeof(value_buf), "%dh%02dm", hours, mins);
+  draw_text(ctx, value_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(center.x - 23, center.y - 8, 46, 18),
+            draw_fg_color(), GTextAlignmentCenter);
+}
+
+static void draw_complication_distance_today(GContext *ctx, GPoint center) {
+  char value_buf[16];
+  format_distance_km(value_buf, sizeof(value_buf),
+                     health_sum_today_int(HealthMetricWalkedDistanceMeters));
+  draw_text(ctx, value_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(center.x - 23, center.y - 8, 46, 18),
             draw_fg_color(), GTextAlignmentCenter);
 }
 
@@ -1082,7 +1214,7 @@ static void draw_complication_icon(GContext *ctx, ComplicationType type, GPoint 
   } else if (type == ComplicationWindSpeed) {
     draw_wind_icon_centered(ctx, center);
   } else if (type == ComplicationUvIndex) {
-    draw_sun_icon(ctx, GPoint(center.x - 8, center.y - 8));
+    draw_uv_icon_centered(ctx, center);
   } else if (type == ComplicationNextEvent) {
     draw_calendar_icon_centered(ctx, center);
   } else if (type == ComplicationWeather) {
@@ -1121,7 +1253,12 @@ static const char *value_for_complication(ComplicationType type) {
     return "";
   } else if (type == ComplicationFitnessRings ||
              type == ComplicationWeatherCircle ||
-             type == ComplicationBatteryCircle) {
+             type == ComplicationBatteryRing ||
+             type == ComplicationHighLowCombined ||
+             type == ComplicationActiveMinutes ||
+             type == ComplicationActiveCalories ||
+             type == ComplicationSleepLastNight ||
+             type == ComplicationDistanceToday) {
     return "";
   }
   return "--";
@@ -1143,8 +1280,23 @@ static void draw_complication(GContext *ctx, GPoint center, ComplicationType typ
   } else if (type == ComplicationWeatherCircle) {
     draw_complication_weather_circle(ctx, center);
     return;
-  } else if (type == ComplicationBatteryCircle) {
-    draw_complication_battery_circle(ctx, center);
+  } else if (type == ComplicationBatteryRing) {
+    draw_complication_battery_ring(ctx, center);
+    return;
+  } else if (type == ComplicationHighLowCombined) {
+    draw_complication_high_low_combined(ctx, center);
+    return;
+  } else if (type == ComplicationActiveMinutes) {
+    draw_complication_active_minutes(ctx, center);
+    return;
+  } else if (type == ComplicationActiveCalories) {
+    draw_complication_active_calories(ctx, center);
+    return;
+  } else if (type == ComplicationSleepLastNight) {
+    draw_complication_sleep_last_night(ctx, center);
+    return;
+  } else if (type == ComplicationDistanceToday) {
+    draw_complication_distance_today(ctx, center);
     return;
   }
 
@@ -1156,6 +1308,465 @@ static void draw_complication(GContext *ctx, GPoint center, ComplicationType typ
   draw_text(ctx, value, value_font,
             GRect(center.x - 23, center.y - 6, 46, 18),
             draw_fg_color(), GTextAlignmentCenter);
+}
+
+static void format_temp_with_degree(char *buf, size_t len, bool known, int value) {
+  if (!known) {
+    format_unknown(buf, len);
+    return;
+  }
+  snprintf(buf, len, "%d\xC2\xB0", value);
+}
+
+static void format_time_short(char *buf, size_t len, time_t timestamp, bool known) {
+  if (!known || timestamp <= 0) {
+    snprintf(buf, len, "--:--");
+    return;
+  }
+
+  struct tm *time_info = localtime(&timestamp);
+  if (!time_info) {
+    snprintf(buf, len, "--:--");
+    return;
+  }
+
+  if (s_military_time_enabled) {
+    strftime(buf, len, "%H:%M", time_info);
+  } else {
+    char tmp[12];
+    strftime(tmp, sizeof(tmp), "%I:%M%p", time_info);
+    if (tmp[0] == '0') {
+      memmove(tmp, tmp + 1, strlen(tmp));
+    }
+    snprintf(buf, len, "%s", tmp);
+  }
+}
+
+static void draw_overlay_title(GContext *ctx, const char *title) {
+  draw_text(ctx, title, s_font_top, GRect(8, 2, SCREEN_W - 16, 24),
+            fitness_muted_text_color(), GTextAlignmentCenter);
+}
+
+static const char *calendar_title_for_index(int index) {
+  if (index == 0) {
+    return s_event_buf;
+  }
+  return s_calendar_event_titles[index - 1];
+}
+
+static const char *calendar_delta_for_index(int index) {
+  if (index == 0) {
+    return s_event_delta_buf;
+  }
+  return s_calendar_event_deltas[index - 1];
+}
+
+static bool calendar_title_is_empty(const char *title) {
+  return !title || title[0] == '\0' || strcmp(title, "[None]") == 0;
+}
+
+static void calendar_draw_overlay(GContext *ctx) {
+  draw_overlay_title(ctx, "UPCOMING");
+
+  int row_count = s_calendar_shake_event_count == 5 ? 5 : 3;
+  int visible_count = 0;
+  for (int i = 0; i < row_count; i++) {
+    if (!calendar_title_is_empty(calendar_title_for_index(i))) {
+      visible_count++;
+    }
+  }
+
+  if (visible_count == 0) {
+    draw_text(ctx, "[No Events]", s_font_complication,
+              GRect(8, 96, SCREEN_W - 16, 28), theme_fg_color(), GTextAlignmentCenter);
+    return;
+  }
+
+  int row_h = row_count == 5 ? 38 : 54;
+  int y = row_count == 5 ? 27 : 34;
+  for (int i = 0; i < row_count; i++) {
+    const char *title = calendar_title_for_index(i);
+    const char *delta = calendar_delta_for_index(i);
+    if (calendar_title_is_empty(title)) {
+      continue;
+    }
+
+    draw_text(ctx, title, s_font_event, GRect(8, y, SCREEN_W - 16, 22),
+              theme_fg_color(), GTextAlignmentLeft);
+    draw_text(ctx, delta && delta[0] ? delta : "--",
+              fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+              GRect(8, y + 19, SCREEN_W - 16, 18),
+              fitness_muted_text_color(), GTextAlignmentLeft);
+
+    if (i < row_count - 1) {
+      graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
+      graphics_context_set_stroke_width(ctx, 1);
+      graphics_draw_line(ctx, GPoint(8, y + row_h - 2), GPoint(192, y + row_h - 2));
+    }
+    y += row_h;
+  }
+}
+
+static void draw_workday_pips(GContext *ctx) {
+  time_t now = time(NULL);
+  struct tm *now_tm = localtime(&now);
+  int current_hour = now_tm ? now_tm->tm_hour : -1;
+
+  const int first_hour = 8;
+  const int pip_count = 9;
+  const int start_x = 12;
+  const int gap_x = 22;
+  const int y = 96;
+  GFont label_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+
+  for (int i = 0; i < pip_count; i++) {
+    int hour = first_hour + i;
+    int x = start_x + (i * gap_x);
+    bool busy = (s_day_event_hours_bitmap & (1 << hour)) != 0;
+    bool current = hour == current_hour;
+
+    graphics_context_set_stroke_color(ctx, theme_fg_color());
+    graphics_context_set_fill_color(ctx, theme_fg_color());
+    graphics_context_set_stroke_width(ctx, current ? 3 : 1);
+    if (busy) {
+      graphics_fill_circle(ctx, GPoint(x, y), 6);
+    } else {
+      graphics_draw_circle(ctx, GPoint(x, y), 6);
+    }
+    if (current && busy) {
+      graphics_context_set_stroke_color(ctx, fitness_track_color());
+      graphics_context_set_stroke_width(ctx, 1);
+      graphics_draw_circle(ctx, GPoint(x, y), 3);
+    }
+
+    char label[4];
+    int display_hour = hour > 12 ? hour - 12 : hour;
+    snprintf(label, sizeof(label), "%d", display_hour);
+    draw_text(ctx, label, label_font, GRect(x - 10, y + 10, 20, 16),
+              fitness_muted_text_color(), GTextAlignmentCenter);
+  }
+}
+
+static void your_day_draw_overlay(GContext *ctx) {
+  char hi_buf[8];
+  char lo_buf[8];
+  char rain_buf[8];
+  char weather_buf[32];
+  format_temp_with_degree(hi_buf, sizeof(hi_buf), s_high_temp_known, s_high_temp);
+  format_temp_with_degree(lo_buf, sizeof(lo_buf), s_low_temp_known, s_low_temp);
+  format_percent_3(rain_buf, sizeof(rain_buf), s_rain_known, s_rain_chance);
+  snprintf(weather_buf, sizeof(weather_buf), "%s/%s  %s rain", hi_buf, lo_buf, rain_buf);
+
+  draw_weather_icon_centered(ctx, GPoint(38, 30), true);
+  draw_text(ctx, weather_buf, s_font_complication, GRect(64, 18, 128, 28),
+            theme_fg_color(), GTextAlignmentLeft);
+
+  graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_line(ctx, GPoint(8, 58), GPoint(192, 58));
+
+  draw_text(ctx, "WORKDAY", s_font_top, GRect(8, 64, SCREEN_W - 16, 24),
+            fitness_muted_text_color(), GTextAlignmentCenter);
+  draw_workday_pips(ctx);
+
+  time_t now = time(NULL);
+  struct tm *now_tm = localtime(&now);
+  char now_buf[24];
+  if (now_tm) {
+    if (s_military_time_enabled) {
+      strftime(now_buf, sizeof(now_buf), "Now: %H:%M", now_tm);
+    } else {
+      strftime(now_buf, sizeof(now_buf), "Now: %I:%M%p", now_tm);
+      if (now_buf[5] == '0') {
+        memmove(now_buf + 5, now_buf + 6, strlen(now_buf + 5));
+      }
+    }
+  } else {
+    snprintf(now_buf, sizeof(now_buf), "Now: --:--");
+  }
+  draw_text(ctx, now_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18),
+            GRect(8, 126, SCREEN_W - 16, 22), theme_fg_color(), GTextAlignmentCenter);
+
+  graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
+  graphics_draw_line(ctx, GPoint(8, 154), GPoint(192, 154));
+
+  char count_buf[28];
+  snprintf(count_buf, sizeof(count_buf), "%d events remaining", s_day_event_count_today);
+  draw_text(ctx, count_buf, s_font_complication, GRect(8, 162, SCREEN_W - 16, 24),
+            theme_fg_color(), GTextAlignmentCenter);
+
+  char next_buf[96];
+  snprintf(next_buf, sizeof(next_buf), "Next: %s",
+           calendar_title_is_empty(s_event_buf) ? "[None]" : s_event_buf);
+  draw_text(ctx, next_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(8, 190, SCREEN_W - 16, 28), fitness_muted_text_color(),
+            GTextAlignmentCenter);
+}
+
+static void draw_small_sun(GContext *ctx, GPoint center, GColor color) {
+  graphics_context_set_stroke_color(ctx, color);
+  graphics_context_set_fill_color(ctx, color);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_fill_circle(ctx, center, 3);
+  graphics_draw_line(ctx, GPoint(center.x - 6, center.y), GPoint(center.x - 4, center.y));
+  graphics_draw_line(ctx, GPoint(center.x + 4, center.y), GPoint(center.x + 6, center.y));
+  graphics_draw_line(ctx, GPoint(center.x, center.y - 6), GPoint(center.x, center.y - 4));
+  graphics_draw_line(ctx, GPoint(center.x, center.y + 4), GPoint(center.x, center.y + 6));
+}
+
+static void draw_small_moon(GContext *ctx, GPoint center, GColor color) {
+  graphics_context_set_fill_color(ctx, color);
+  graphics_fill_circle(ctx, center, 5);
+  graphics_context_set_fill_color(ctx, theme_bg_color());
+  graphics_fill_circle(ctx, GPoint(center.x + 3, center.y - 1), 5);
+}
+
+static void detailed_weather_draw_overlay(GContext *ctx) {
+  char temp_buf[10];
+  char feels_buf[20];
+  char hi_buf[8];
+  char lo_buf[8];
+  char forecast_buf[48];
+  char wind_uv_buf[40];
+  char sunrise_buf[12];
+  char sunset_buf[12];
+
+  format_temp_with_degree(temp_buf, sizeof(temp_buf), s_temperature_known, s_temperature);
+  format_temp_with_degree(hi_buf, sizeof(hi_buf), s_high_temp_known, s_high_temp);
+  format_temp_with_degree(lo_buf, sizeof(lo_buf), s_low_temp_known, s_low_temp);
+  if (s_feels_like_known) {
+    snprintf(feels_buf, sizeof(feels_buf), "Feels %d\xC2\xB0", s_feels_like);
+  } else {
+    snprintf(feels_buf, sizeof(feels_buf), "Feels --");
+  }
+  snprintf(forecast_buf, sizeof(forecast_buf), "Hi %s   Lo %s   Rain %s",
+           hi_buf, lo_buf, s_rain_buf);
+  snprintf(wind_uv_buf, sizeof(wind_uv_buf), "Wind %s mph    UV %s", s_wind_buf, s_uv_buf);
+  format_time_short(sunrise_buf, sizeof(sunrise_buf), s_sunrise_t, s_sunrise_known);
+  format_time_short(sunset_buf, sizeof(sunset_buf), s_sunset_t, s_sunset_known);
+
+  draw_weather_icon_centered(ctx, GPoint(100, 28), true);
+  draw_text(ctx, temp_buf, s_font_time, GRect(0, 54, SCREEN_W, 52),
+            theme_fg_color(), GTextAlignmentCenter);
+  draw_text(ctx, feels_buf, s_font_complication, GRect(8, 98, SCREEN_W - 16, 24),
+            fitness_muted_text_color(), GTextAlignmentCenter);
+  draw_text(ctx, forecast_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+            GRect(6, 128, SCREEN_W - 12, 22), theme_fg_color(), GTextAlignmentCenter);
+  draw_text(ctx, wind_uv_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+            GRect(6, 154, SCREEN_W - 12, 22), theme_fg_color(), GTextAlignmentCenter);
+
+  draw_small_sun(ctx, GPoint(43, 194), theme_fg_color());
+  draw_text(ctx, sunrise_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+            GRect(54, 184, 48, 24), theme_fg_color(), GTextAlignmentLeft);
+  draw_small_moon(ctx, GPoint(122, 194), theme_fg_color());
+  draw_text(ctx, sunset_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+            GRect(133, 184, 58, 24), theme_fg_color(), GTextAlignmentLeft);
+}
+
+static void alt_timezone_draw_overlay(GContext *ctx) {
+  time_t adjusted = time(NULL) + (s_alt_tz_offset_min * 60);
+  struct tm *alt_tm = gmtime(&adjusted);
+  char time_buf[12];
+  char date_buf[32];
+  if (alt_tm) {
+    if (s_military_time_enabled) {
+      strftime(time_buf, sizeof(time_buf), "%H:%M", alt_tm);
+    } else {
+      strftime(time_buf, sizeof(time_buf), "%I:%M %p", alt_tm);
+      if (time_buf[0] == '0') {
+        memmove(time_buf, time_buf + 1, strlen(time_buf));
+      }
+    }
+    strftime(date_buf, sizeof(date_buf), "%a, %b %d", alt_tm);
+  } else {
+    snprintf(time_buf, sizeof(time_buf), "--:--");
+    snprintf(date_buf, sizeof(date_buf), "---");
+  }
+
+  int abs_offset = s_alt_tz_offset_min < 0 ? -s_alt_tz_offset_min : s_alt_tz_offset_min;
+  int hours = abs_offset / 60;
+  int minutes = abs_offset % 60;
+  char offset_buf[32];
+  if (s_alt_tz_offset_min == 0) {
+    snprintf(offset_buf, sizeof(offset_buf), "UTC");
+  } else if (minutes == 0) {
+    snprintf(offset_buf, sizeof(offset_buf), "%d hours %s", hours,
+             s_alt_tz_offset_min > 0 ? "ahead" : "behind");
+  } else {
+    snprintf(offset_buf, sizeof(offset_buf), "%d:%02d %s", hours, minutes,
+             s_alt_tz_offset_min > 0 ? "ahead" : "behind");
+  }
+
+  draw_text(ctx, s_alt_tz_label, s_font_top, GRect(8, 22, SCREEN_W - 16, 24),
+            fitness_muted_text_color(), GTextAlignmentCenter);
+  draw_text(ctx, time_buf, s_font_time, GRect(0, 62, SCREEN_W, 58),
+            theme_fg_color(), GTextAlignmentCenter);
+  draw_text(ctx, date_buf, s_font_complication, GRect(8, 132, SCREEN_W - 16, 24),
+            theme_fg_color(), GTextAlignmentCenter);
+  draw_text(ctx, offset_buf, s_font_complication, GRect(8, 172, SCREEN_W - 16, 24),
+            fitness_muted_text_color(), GTextAlignmentCenter);
+}
+
+static void draw_large_heart(GContext *ctx, GPoint origin, GColor color) {
+  graphics_context_set_fill_color(ctx, color);
+  draw_pixel_block(ctx, origin, 6, 0, 10, 4);
+  draw_pixel_block(ctx, origin, 22, 0, 10, 4);
+  draw_pixel_block(ctx, origin, 2, 4, 34, 8);
+  draw_pixel_block(ctx, origin, 6, 12, 26, 4);
+  draw_pixel_block(ctx, origin, 10, 16, 18, 4);
+  draw_pixel_block(ctx, origin, 14, 20, 10, 4);
+  draw_pixel_block(ctx, origin, 18, 24, 2, 2);
+}
+
+static const char *heart_rate_zone(int bpm) {
+  if (bpm <= 0) {
+    return "No reading";
+  }
+  if (bpm < 80) {
+    return "Resting";
+  }
+  if (bpm < 120) {
+    return "Light";
+  }
+  if (bpm < 150) {
+    return "Moderate";
+  }
+  return "Vigorous";
+}
+
+static void heart_rate_draw_overlay(GContext *ctx) {
+  int bpm = atoi(s_bpm_buf);
+  char last_buf[32];
+  if (s_last_hr_sample_time > 0) {
+    int diff = (int)(time(NULL) - s_last_hr_sample_time);
+    if (diff < 0) {
+      diff = 0;
+    }
+    snprintf(last_buf, sizeof(last_buf), "Last: %d sec ago", diff);
+  } else {
+    snprintf(last_buf, sizeof(last_buf), "Last: --");
+  }
+
+  draw_large_heart(ctx, GPoint(82, 24), GColorRed);
+  draw_text(ctx, s_bpm_buf, s_font_time, GRect(0, 66, SCREEN_W, 58),
+            theme_fg_color(), GTextAlignmentCenter);
+  draw_text(ctx, "BPM", s_font_complication, GRect(8, 120, SCREEN_W - 16, 24),
+            fitness_muted_text_color(), GTextAlignmentCenter);
+  draw_text(ctx, heart_rate_zone(bpm), s_font_complication,
+            GRect(8, 154, SCREEN_W - 16, 24), theme_fg_color(), GTextAlignmentCenter);
+  draw_text(ctx, last_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18),
+            GRect(8, 188, SCREEN_W - 16, 24), fitness_muted_text_color(),
+            GTextAlignmentCenter);
+}
+
+static void draw_step_graph_bars(GContext *ctx, int *hour_steps, int count) {
+  int max_steps = 1;
+  for (int i = 0; i < count; i++) {
+    if (hour_steps[i] > max_steps) {
+      max_steps = hour_steps[i];
+    }
+  }
+
+  const int graph_bottom = 162;
+  const int max_h = 94;
+  const int bar_w = 9;
+  const int gap = 3;
+  const int start_x = 5;
+  graphics_context_set_fill_color(ctx, theme_fg_color());
+  for (int i = 0; i < count; i++) {
+    int h = (hour_steps[i] * max_h) / max_steps;
+    if (hour_steps[i] > 0 && h < 2) {
+      h = 2;
+    }
+    graphics_fill_rect(ctx, GRect(start_x + (i * (bar_w + gap)),
+                                  graph_bottom - h, bar_w, h),
+                       0, GCornerNone);
+  }
+}
+
+static void step_graph_draw_overlay(GContext *ctx) {
+  int hour_steps[16];
+  memset(hour_steps, 0, sizeof(hour_steps));
+
+#if defined(PBL_HEALTH)
+  time_t now = time(NULL);
+  struct tm start_tm = *localtime(&now);
+  start_tm.tm_min = 0;
+  start_tm.tm_sec = 0;
+  for (int i = 0; i < 16; i++) {
+    start_tm.tm_hour = 6 + i;
+    time_t start = mktime(&start_tm);
+    time_t end = start + 3600;
+    HealthMinuteData records[60];
+    uint32_t count = health_service_get_minute_history(records, 60, &start, &end);
+    for (uint32_t j = 0; j < count; j++) {
+      if (!records[j].is_invalid) {
+        hour_steps[i] += records[j].steps;
+      }
+    }
+  }
+#endif
+
+  char total_buf[36];
+  char steps_buf[16];
+  char target_buf[16];
+  format_number_commas(steps_buf, sizeof(steps_buf), s_fitness_steps_value);
+  format_number_commas(target_buf, sizeof(target_buf), s_fitness_target_steps);
+  snprintf(total_buf, sizeof(total_buf), "%s / %s", steps_buf, target_buf);
+
+  draw_overlay_title(ctx, "STEPS TODAY");
+  draw_text(ctx, total_buf, s_font_complication, GRect(8, 26, SCREEN_W - 16, 24),
+            theme_fg_color(), GTextAlignmentCenter);
+  draw_step_graph_bars(ctx, hour_steps, 16);
+  draw_text(ctx, "6     9     12     3     6     9",
+            fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(0, 166, SCREEN_W, 18), fitness_muted_text_color(),
+            GTextAlignmentCenter);
+
+  int percent = s_fitness_target_steps > 0
+      ? (s_fitness_steps_value * 100) / s_fitness_target_steps
+      : 0;
+  if (percent > 999) {
+    percent = 999;
+  }
+  char pct_buf[24];
+  snprintf(pct_buf, sizeof(pct_buf), "%d%% to goal", percent);
+  draw_text(ctx, pct_buf, s_font_complication, GRect(8, 198, SCREEN_W - 16, 24),
+            theme_fg_color(), GTextAlignmentCenter);
+}
+
+static void shake_overlay_update_proc(Layer *layer, GContext *ctx) {
+  (void)layer;
+
+  graphics_context_set_fill_color(ctx, theme_bg_color());
+  graphics_fill_rect(ctx, GRect(0, 0, SCREEN_W, SCREEN_H), 0, GCornerNone);
+
+  switch (s_shake_behavior) {
+    case ShakeBehaviorFitnessRings:
+      fitness_draw_overlay(ctx);
+      break;
+    case ShakeBehaviorCalendarEvents:
+      calendar_draw_overlay(ctx);
+      break;
+    case ShakeBehaviorYourDay:
+      your_day_draw_overlay(ctx);
+      break;
+    case ShakeBehaviorDetailedWeather:
+      detailed_weather_draw_overlay(ctx);
+      break;
+    case ShakeBehaviorAltTimezone:
+      alt_timezone_draw_overlay(ctx);
+      break;
+    case ShakeBehaviorHeartRate:
+      heart_rate_draw_overlay(ctx);
+      break;
+    case ShakeBehaviorStepGraph:
+      step_graph_draw_overlay(ctx);
+      break;
+    case ShakeBehaviorOff:
+    default:
+      break;
+  }
 }
 
 static void draw_verbose_weather_row(GContext *ctx) {
@@ -1335,6 +1946,9 @@ static void update_time_date(struct tm *t) {
     strftime(s_time_buf, sizeof(s_time_buf), "%I:%M", t);
     strftime(s_ampm_buf, sizeof(s_ampm_buf), "%p", t);
   }
+  if (s_remove_leading_zero && s_time_buf[0] == '0') {
+    memmove(s_time_buf, s_time_buf + 1, strlen(s_time_buf));
+  }
 
   static const char *days[] = {
     "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
@@ -1360,6 +1974,7 @@ static void update_weather_widget(void) {
   format_rain_chance(s_rain_buf, sizeof(s_rain_buf), s_rain_known, s_rain_chance);
   format_int_3(s_feels_like_buf, sizeof(s_feels_like_buf), s_feels_like_known, s_feels_like);
   format_int_3(s_high_temp_buf, sizeof(s_high_temp_buf), s_high_temp_known, s_high_temp);
+  format_int_3(s_low_temp_buf, sizeof(s_low_temp_buf), s_low_temp_known, s_low_temp);
   format_capped_99_plus(s_wind_buf, sizeof(s_wind_buf), s_wind_known, s_wind_speed);
   if (s_uv_known && s_uv_index > 11) {
     snprintf(s_uv_buf, sizeof(s_uv_buf), "11+");
@@ -1396,6 +2011,16 @@ static void update_event_delta(const char *delta) {
   mark_face_dirty();
 }
 
+static void store_overlay_string(char *dest, size_t dest_len, uint32_t persist_key,
+                                 const char *value) {
+  if (!value) {
+    value = "";
+  }
+  strncpy(dest, value, dest_len - 1);
+  dest[dest_len - 1] = '\0';
+  persist_write_string(persist_key, dest);
+}
+
 static void update_stats(void) {
 #if defined(PBL_HEALTH)
   int steps = (int) health_service_sum_today(HealthMetricStepCount);
@@ -1413,6 +2038,7 @@ static void update_stats(void) {
 
   if (bpm > 0) {
     snprintf(s_bpm_buf, sizeof(s_bpm_buf), "%ld", (long)bpm);
+    s_last_hr_sample_time = time(NULL);
   } else {
     snprintf(s_bpm_buf, sizeof(s_bpm_buf), "--");
   }
@@ -1503,6 +2129,13 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_int(PERSIST_KEY_HIGH_TEMP, s_high_temp);
   }
 
+  t = dict_find(iter, MESSAGE_KEY_LOW_TEMP);
+  if (t) {
+    s_low_temp = (int8_t)t->value->int32;
+    s_low_temp_known = true;
+    persist_write_int(PERSIST_KEY_LOW_TEMP, s_low_temp);
+  }
+
   t = dict_find(iter, MESSAGE_KEY_WIND_SPEED);
   if (t) {
     s_wind_speed = (uint8_t)t->value->int32;
@@ -1517,10 +2150,72 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_int(PERSIST_KEY_UV_INDEX, s_uv_index);
   }
 
+  t = dict_find(iter, MESSAGE_KEY_SUNRISE_T);
+  if (t) {
+    s_sunrise_t = (time_t)t->value->int32;
+    s_sunrise_known = s_sunrise_t > 0;
+    persist_write_int(PERSIST_KEY_SUNRISE_T, (int)s_sunrise_t);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_SUNSET_T);
+  if (t) {
+    s_sunset_t = (time_t)t->value->int32;
+    s_sunset_known = s_sunset_t > 0;
+    persist_write_int(PERSIST_KEY_SUNSET_T, (int)s_sunset_t);
+  }
+
   t = dict_find(iter, MESSAGE_KEY_NEXT_EVENT_DELTA);
   if (t && t->type == TUPLE_CSTRING) {
     persist_write_string(PERSIST_KEY_EVENT_DELTA, t->value->cstring);
     update_event_delta(t->value->cstring);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_CALENDAR_EVENT_TITLE_2);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_calendar_event_titles[0], sizeof(s_calendar_event_titles[0]),
+                         PERSIST_KEY_CALENDAR_EVENT_TITLE_2, t->value->cstring);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_CALENDAR_EVENT_DELTA_2);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_calendar_event_deltas[0], sizeof(s_calendar_event_deltas[0]),
+                         PERSIST_KEY_CALENDAR_EVENT_DELTA_2, t->value->cstring);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_CALENDAR_EVENT_TITLE_3);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_calendar_event_titles[1], sizeof(s_calendar_event_titles[1]),
+                         PERSIST_KEY_CALENDAR_EVENT_TITLE_3, t->value->cstring);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_CALENDAR_EVENT_DELTA_3);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_calendar_event_deltas[1], sizeof(s_calendar_event_deltas[1]),
+                         PERSIST_KEY_CALENDAR_EVENT_DELTA_3, t->value->cstring);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_CALENDAR_EVENT_TITLE_4);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_calendar_event_titles[2], sizeof(s_calendar_event_titles[2]),
+                         PERSIST_KEY_CALENDAR_EVENT_TITLE_4, t->value->cstring);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_CALENDAR_EVENT_DELTA_4);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_calendar_event_deltas[2], sizeof(s_calendar_event_deltas[2]),
+                         PERSIST_KEY_CALENDAR_EVENT_DELTA_4, t->value->cstring);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_CALENDAR_EVENT_TITLE_5);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_calendar_event_titles[3], sizeof(s_calendar_event_titles[3]),
+                         PERSIST_KEY_CALENDAR_EVENT_TITLE_5, t->value->cstring);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_CALENDAR_EVENT_DELTA_5);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_calendar_event_deltas[3], sizeof(s_calendar_event_deltas[3]),
+                         PERSIST_KEY_CALENDAR_EVENT_DELTA_5, t->value->cstring);
   }
 
   t = dict_find(iter, MESSAGE_KEY_LIGHT_MODE);
@@ -1552,6 +2247,15 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   if (t) {
     s_military_time_enabled = t->value->int32 != 0;
     persist_write_bool(PERSIST_KEY_MILITARY_TIME, s_military_time_enabled);
+    time_t now = time(NULL);
+    struct tm *current_time = localtime(&now);
+    update_time_date(current_time);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_REMOVE_LEADING_ZERO);
+  if (t) {
+    s_remove_leading_zero = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_REMOVE_LEADING_ZERO, s_remove_leading_zero);
     time_t now = time(NULL);
     struct tm *current_time = localtime(&now);
     update_time_date(current_time);
@@ -1618,14 +2322,14 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_int(PERSIST_KEY_COMP_SLOT_3, s_complication_slots[2]);
   }
 
-  t = dict_find(iter, MESSAGE_KEY_FITNESS_SHAKE_ENABLED);
+  t = dict_find(iter, MESSAGE_KEY_SHAKE_BEHAVIOR);
   if (t) {
-    s_fitness_shake_enabled = t->value->int32 != 0;
-    persist_write_bool(PERSIST_KEY_FITNESS_SHAKE_ENABLED, s_fitness_shake_enabled);
-    if (!s_fitness_shake_enabled) {
-      fitness_hide_overlay(true);
+    s_shake_behavior = sanitize_shake_behavior(t->value->int32);
+    persist_write_int(PERSIST_KEY_SHAKE_BEHAVIOR, s_shake_behavior);
+    if (s_shake_behavior == ShakeBehaviorOff) {
+      shake_hide_overlay(true);
     }
-    fitness_configure_tap_service();
+    shake_configure_tap_service();
     fitness_settings_changed = true;
   }
 
@@ -1707,14 +2411,58 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
         fitness_overlay_duration_ms_from_seconds((int)t->value->int32);
     persist_write_int(PERSIST_KEY_FITNESS_OVERLAY_DURATION_S,
                       s_fitness_overlay_duration_ms / 1000);
-    if (s_fitness_overlay_visible) {
-      fitness_schedule_hide_timer();
+    if (s_shake_overlay_visible) {
+      shake_schedule_hide_timer();
     }
     fitness_settings_changed = true;
   }
 
-  if (fitness_settings_changed && s_fitness_overlay_visible && s_fitness_layer) {
-    layer_mark_dirty(s_fitness_layer);
+  t = dict_find(iter, MESSAGE_KEY_CALENDAR_SHAKE_EVENT_COUNT);
+  if (t) {
+    int count = (int)t->value->int32;
+    s_calendar_shake_event_count = count == 5 ? 5 : 3;
+    persist_write_int(PERSIST_KEY_CALENDAR_SHAKE_EVENT_COUNT, s_calendar_shake_event_count);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_DAY_EVENT_HOURS_BITMAP);
+  if (t) {
+    s_day_event_hours_bitmap = (int)t->value->int32;
+    persist_write_int(PERSIST_KEY_DAY_EVENT_HOURS_BITMAP, s_day_event_hours_bitmap);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_DAY_EVENT_COUNT_TODAY);
+  if (t) {
+    s_day_event_count_today = (int)t->value->int32;
+    if (s_day_event_count_today < 0) {
+      s_day_event_count_today = 0;
+    }
+    persist_write_int(PERSIST_KEY_DAY_EVENT_COUNT_TODAY, s_day_event_count_today);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_ALT_TZ_LABEL);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_alt_tz_label, sizeof(s_alt_tz_label),
+                         PERSIST_KEY_ALT_TZ_LABEL, t->value->cstring);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_ALT_TZ_OFFSET_MIN);
+  if (t) {
+    s_alt_tz_offset_min = (int)t->value->int32;
+    if (s_alt_tz_offset_min < -720) {
+      s_alt_tz_offset_min = -720;
+    } else if (s_alt_tz_offset_min > 840) {
+      s_alt_tz_offset_min = 840;
+    }
+    persist_write_int(PERSIST_KEY_ALT_TZ_OFFSET_MIN, s_alt_tz_offset_min);
+    fitness_settings_changed = true;
+  }
+
+  if (fitness_settings_changed && s_shake_overlay_visible && s_shake_overlay_layer) {
+    layer_mark_dirty(s_shake_overlay_layer);
   }
 
   update_weather_widget();
@@ -1750,6 +2498,10 @@ static void load_persisted(void) {
     s_high_temp = (int8_t)persist_read_int(PERSIST_KEY_HIGH_TEMP);
     s_high_temp_known = true;
   }
+  if (persist_exists(PERSIST_KEY_LOW_TEMP)) {
+    s_low_temp = (int8_t)persist_read_int(PERSIST_KEY_LOW_TEMP);
+    s_low_temp_known = true;
+  }
   if (persist_exists(PERSIST_KEY_WIND_SPEED)) {
     s_wind_speed = (uint8_t)persist_read_int(PERSIST_KEY_WIND_SPEED);
     s_wind_known = true;
@@ -1757,6 +2509,14 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_UV_INDEX)) {
     s_uv_index = (uint8_t)persist_read_int(PERSIST_KEY_UV_INDEX);
     s_uv_known = true;
+  }
+  if (persist_exists(PERSIST_KEY_SUNRISE_T)) {
+    s_sunrise_t = (time_t)persist_read_int(PERSIST_KEY_SUNRISE_T);
+    s_sunrise_known = s_sunrise_t > 0;
+  }
+  if (persist_exists(PERSIST_KEY_SUNSET_T)) {
+    s_sunset_t = (time_t)persist_read_int(PERSIST_KEY_SUNSET_T);
+    s_sunset_known = s_sunset_t > 0;
   }
   if (persist_exists(PERSIST_KEY_TOP_STEPS)) {
     s_w800_steps_top_enabled = persist_read_bool(PERSIST_KEY_TOP_STEPS);
@@ -1785,6 +2545,9 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_MILITARY_TIME)) {
     s_military_time_enabled = persist_read_bool(PERSIST_KEY_MILITARY_TIME);
   }
+  if (persist_exists(PERSIST_KEY_REMOVE_LEADING_ZERO)) {
+    s_remove_leading_zero = persist_read_bool(PERSIST_KEY_REMOVE_LEADING_ZERO);
+  }
   if (persist_exists(PERSIST_KEY_INVERT_WEATHER)) {
     s_invert_weather = persist_read_bool(PERSIST_KEY_INVERT_WEATHER);
   }
@@ -1804,6 +2567,46 @@ static void load_persisted(void) {
     persist_read_string(PERSIST_KEY_EVENT_DELTA, s_event_delta_buf, sizeof(s_event_delta_buf));
     s_event_delta_buf[sizeof(s_event_delta_buf) - 1] = '\0';
   }
+  if (persist_exists(PERSIST_KEY_CALENDAR_EVENT_TITLE_2)) {
+    persist_read_string(PERSIST_KEY_CALENDAR_EVENT_TITLE_2, s_calendar_event_titles[0],
+                        sizeof(s_calendar_event_titles[0]));
+    s_calendar_event_titles[0][sizeof(s_calendar_event_titles[0]) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_CALENDAR_EVENT_DELTA_2)) {
+    persist_read_string(PERSIST_KEY_CALENDAR_EVENT_DELTA_2, s_calendar_event_deltas[0],
+                        sizeof(s_calendar_event_deltas[0]));
+    s_calendar_event_deltas[0][sizeof(s_calendar_event_deltas[0]) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_CALENDAR_EVENT_TITLE_3)) {
+    persist_read_string(PERSIST_KEY_CALENDAR_EVENT_TITLE_3, s_calendar_event_titles[1],
+                        sizeof(s_calendar_event_titles[1]));
+    s_calendar_event_titles[1][sizeof(s_calendar_event_titles[1]) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_CALENDAR_EVENT_DELTA_3)) {
+    persist_read_string(PERSIST_KEY_CALENDAR_EVENT_DELTA_3, s_calendar_event_deltas[1],
+                        sizeof(s_calendar_event_deltas[1]));
+    s_calendar_event_deltas[1][sizeof(s_calendar_event_deltas[1]) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_CALENDAR_EVENT_TITLE_4)) {
+    persist_read_string(PERSIST_KEY_CALENDAR_EVENT_TITLE_4, s_calendar_event_titles[2],
+                        sizeof(s_calendar_event_titles[2]));
+    s_calendar_event_titles[2][sizeof(s_calendar_event_titles[2]) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_CALENDAR_EVENT_DELTA_4)) {
+    persist_read_string(PERSIST_KEY_CALENDAR_EVENT_DELTA_4, s_calendar_event_deltas[2],
+                        sizeof(s_calendar_event_deltas[2]));
+    s_calendar_event_deltas[2][sizeof(s_calendar_event_deltas[2]) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_CALENDAR_EVENT_TITLE_5)) {
+    persist_read_string(PERSIST_KEY_CALENDAR_EVENT_TITLE_5, s_calendar_event_titles[3],
+                        sizeof(s_calendar_event_titles[3]));
+    s_calendar_event_titles[3][sizeof(s_calendar_event_titles[3]) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_CALENDAR_EVENT_DELTA_5)) {
+    persist_read_string(PERSIST_KEY_CALENDAR_EVENT_DELTA_5, s_calendar_event_deltas[3],
+                        sizeof(s_calendar_event_deltas[3]));
+    s_calendar_event_deltas[3][sizeof(s_calendar_event_deltas[3]) - 1] = '\0';
+  }
   if (persist_exists(PERSIST_KEY_COMP_SLOT_1)) {
     s_complication_slots[0] = sanitize_complication(
         persist_read_int(PERSIST_KEY_COMP_SLOT_1), ComplicationWeather);
@@ -1816,8 +2619,8 @@ static void load_persisted(void) {
     s_complication_slots[2] = sanitize_complication(
         persist_read_int(PERSIST_KEY_COMP_SLOT_3), ComplicationHeartRate);
   }
-  if (persist_exists(PERSIST_KEY_FITNESS_SHAKE_ENABLED)) {
-    s_fitness_shake_enabled = persist_read_bool(PERSIST_KEY_FITNESS_SHAKE_ENABLED);
+  if (persist_exists(PERSIST_KEY_SHAKE_BEHAVIOR)) {
+    s_shake_behavior = sanitize_shake_behavior(persist_read_int(PERSIST_KEY_SHAKE_BEHAVIOR));
   }
   if (persist_exists(PERSIST_KEY_FITNESS_RING_STEPS_ON)) {
     s_fitness_ring_steps_on = persist_read_bool(PERSIST_KEY_FITNESS_RING_STEPS_ON);
@@ -1855,6 +2658,31 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_FITNESS_OVERLAY_DURATION_S)) {
     s_fitness_overlay_duration_ms = fitness_overlay_duration_ms_from_seconds(
         persist_read_int(PERSIST_KEY_FITNESS_OVERLAY_DURATION_S));
+  }
+  if (persist_exists(PERSIST_KEY_CALENDAR_SHAKE_EVENT_COUNT)) {
+    s_calendar_shake_event_count =
+        persist_read_int(PERSIST_KEY_CALENDAR_SHAKE_EVENT_COUNT) == 5 ? 5 : 3;
+  }
+  if (persist_exists(PERSIST_KEY_DAY_EVENT_HOURS_BITMAP)) {
+    s_day_event_hours_bitmap = persist_read_int(PERSIST_KEY_DAY_EVENT_HOURS_BITMAP);
+  }
+  if (persist_exists(PERSIST_KEY_DAY_EVENT_COUNT_TODAY)) {
+    s_day_event_count_today = persist_read_int(PERSIST_KEY_DAY_EVENT_COUNT_TODAY);
+    if (s_day_event_count_today < 0) {
+      s_day_event_count_today = 0;
+    }
+  }
+  if (persist_exists(PERSIST_KEY_ALT_TZ_LABEL)) {
+    persist_read_string(PERSIST_KEY_ALT_TZ_LABEL, s_alt_tz_label, sizeof(s_alt_tz_label));
+    s_alt_tz_label[sizeof(s_alt_tz_label) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_ALT_TZ_OFFSET_MIN)) {
+    s_alt_tz_offset_min = persist_read_int(PERSIST_KEY_ALT_TZ_OFFSET_MIN);
+    if (s_alt_tz_offset_min < -720) {
+      s_alt_tz_offset_min = -720;
+    } else if (s_alt_tz_offset_min > 840) {
+      s_alt_tz_offset_min = 840;
+    }
   }
 }
 
@@ -2019,10 +2847,26 @@ static void apply_light_mode(bool enabled) {
   mark_face_dirty();
 }
 
+static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
+  (void)recognizer;
+  (void)context;
+  if (s_shake_overlay_visible) {
+    shake_hide_overlay(true);
+  } else if (s_window) {
+    window_stack_remove(s_window, true);
+  }
+}
+
+static void click_config_provider(void *context) {
+  (void)context;
+  window_single_click_subscribe(BUTTON_ID_BACK, back_click_handler);
+}
+
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
   window_set_background_color(window, theme_bg_color());
+  window_set_click_config_provider(window, click_config_provider);
 
   s_font_top = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   s_font_date = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
@@ -2035,10 +2879,10 @@ static void window_load(Window *window) {
   layer_set_update_proc(s_face_layer, face_update_proc);
   layer_add_child(root, s_face_layer);
 
-  s_fitness_layer = layer_create(bounds);
-  layer_set_update_proc(s_fitness_layer, fitness_update_proc);
-  layer_set_hidden(s_fitness_layer, true);
-  layer_add_child(root, s_fitness_layer);
+  s_shake_overlay_layer = layer_create(bounds);
+  layer_set_update_proc(s_shake_overlay_layer, shake_overlay_update_proc);
+  layer_set_hidden(s_shake_overlay_layer, true);
+  layer_add_child(root, s_shake_overlay_layer);
 
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
@@ -2058,8 +2902,8 @@ static void window_load(Window *window) {
 static void window_unload(Window *window) {
   (void)window;
   destroy_theme_bitmaps();
-  layer_destroy(s_fitness_layer);
-  s_fitness_layer = NULL;
+  layer_destroy(s_shake_overlay_layer);
+  s_shake_overlay_layer = NULL;
   layer_destroy(s_face_layer);
   s_face_layer = NULL;
 }
@@ -2085,7 +2929,7 @@ static void init(void) {
   health_service_set_heart_rate_sample_period(60);
 #endif
 
-  fitness_configure_tap_service();
+  shake_configure_tap_service();
 
   app_message_register_inbox_received(inbox_received_handler);
   app_message_register_inbox_dropped(inbox_dropped_handler);
@@ -2094,10 +2938,10 @@ static void init(void) {
 
 static void deinit(void) {
   app_message_deregister_callbacks();
-  fitness_hide_overlay(true);
-  if (s_fitness_tap_subscribed) {
+  shake_hide_overlay(true);
+  if (s_shake_tap_subscribed) {
     accel_tap_service_unsubscribe();
-    s_fitness_tap_subscribed = false;
+    s_shake_tap_subscribed = false;
   }
 #if defined(PBL_HEALTH)
   health_service_set_heart_rate_sample_period(0);

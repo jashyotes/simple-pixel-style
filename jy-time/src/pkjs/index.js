@@ -17,6 +17,7 @@ var DEFAULT_SETTINGS = {
   INVERT_DATE_BAR: false,
   INVERT_TIME: false,
   MILITARY_TIME: false,
+  REMOVE_LEADING_ZERO: false,
   INVERT_WEATHER: false,
   INVERT_MEETING_BAR: false,
   TOP_STEPS: true,
@@ -35,7 +36,8 @@ var DEFAULT_SETTINGS = {
   CALENDAR_ICS_URL: '',
   CALENDAR_ICS_URL_2: '',
   CALENDAR_LOOKAHEAD_HOURS: '48',
-  FITNESS_SHAKE_ENABLED: false,
+  SHAKE_BEHAVIOR: 'off',
+  CALENDAR_SHAKE_EVENT_COUNT: '3',
   FITNESS_RING_STEPS_ON: true,
   FITNESS_RING_ACTIVE_ON: true,
   FITNESS_RING_CALORIES_ON: true,
@@ -45,7 +47,9 @@ var DEFAULT_SETTINGS = {
   FITNESS_COLOR_STEPS: 0x00FF00,
   FITNESS_COLOR_ACTIVE: 0x00AAFF,
   FITNESS_COLOR_CALORIES: 0xFF0000,
-  FITNESS_OVERLAY_DURATION_S: '5'
+  FITNESS_OVERLAY_DURATION_S: '5',
+  ALT_TZ_LABEL: 'LONDON',
+  ALT_TZ_OFFSET_MIN: '0'
 };
 
 var COMPLICATION_IDS = {
@@ -54,7 +58,6 @@ var COMPLICATION_IDS = {
   heart_rate: 2,
   steps: 3,
   watch_battery: 4,
-  phone_battery: 5,
   feels_like: 6,
   high_temp: 7,
   wind: 8,
@@ -64,7 +67,24 @@ var COMPLICATION_IDS = {
   weather_icon: 12,
   fitness_rings: 13,
   weather_circle: 14,
-  battery_circle: 15
+  battery_ring: 15,
+  battery_circle: 15,
+  high_low_combined: 16,
+  active_minutes: 17,
+  active_calories: 18,
+  sleep_last_night: 19,
+  distance_today: 20
+};
+
+var SHAKE_BEHAVIOR_IDS = {
+  off: 0,
+  fitness_rings: 1,
+  calendar_events: 2,
+  your_day: 3,
+  detailed_weather: 4,
+  alt_timezone: 5,
+  heart_rate: 6,
+  step_graph: 7
 };
 
 function clamp(value, min, max) {
@@ -79,6 +99,12 @@ function complicationId(value, fallback) {
   return typeof COMPLICATION_IDS[value] !== 'undefined'
       ? COMPLICATION_IDS[value]
       : fallback;
+}
+
+function shakeBehaviorId(value) {
+  return typeof SHAKE_BEHAVIOR_IDS[value] !== 'undefined'
+      ? SHAKE_BEHAVIOR_IDS[value]
+      : SHAKE_BEHAVIOR_IDS.off;
 }
 
 function temperatureUnit(settings) {
@@ -141,6 +167,7 @@ function sendLayoutSetting(settings) {
   dict[keys.INVERT_DATE_BAR] = settings.INVERT_DATE_BAR ? 1 : 0;
   dict[keys.INVERT_TIME] = settings.INVERT_TIME ? 1 : 0;
   dict[keys.MILITARY_TIME] = settings.MILITARY_TIME ? 1 : 0;
+  dict[keys.REMOVE_LEADING_ZERO] = settings.REMOVE_LEADING_ZERO ? 1 : 0;
   dict[keys.INVERT_WEATHER] = settings.INVERT_WEATHER ? 1 : 0;
   dict[keys.INVERT_MEETING_BAR] = settings.INVERT_MEETING_BAR ? 1 : 0;
   dict[keys.TOP_STEPS] = settings.TOP_STEPS ? 1 : 0;
@@ -153,9 +180,9 @@ function sendLayoutSetting(settings) {
   sendToWatch(dict, 'Layout setting');
 }
 
-function sendFitnessSetting(settings) {
+function sendShakeSetting(settings) {
   var dict = {};
-  dict[keys.FITNESS_SHAKE_ENABLED] = settings.FITNESS_SHAKE_ENABLED ? 1 : 0;
+  dict[keys.SHAKE_BEHAVIOR] = shakeBehaviorId(settings.SHAKE_BEHAVIOR);
   dict[keys.FITNESS_RING_STEPS_ON] = settings.FITNESS_RING_STEPS_ON ? 1 : 0;
   dict[keys.FITNESS_RING_ACTIVE_ON] = settings.FITNESS_RING_ACTIVE_ON ? 1 : 0;
   dict[keys.FITNESS_RING_CALORIES_ON] = settings.FITNESS_RING_CALORIES_ON ? 1 : 0;
@@ -166,7 +193,10 @@ function sendFitnessSetting(settings) {
   dict[keys.FITNESS_COLOR_ACTIVE] = numberSetting(settings.FITNESS_COLOR_ACTIVE, 0x00AAFF, 0, 0xFFFFFF);
   dict[keys.FITNESS_COLOR_CALORIES] = numberSetting(settings.FITNESS_COLOR_CALORIES, 0xFF0000, 0, 0xFFFFFF);
   dict[keys.FITNESS_OVERLAY_DURATION_S] = numberSetting(settings.FITNESS_OVERLAY_DURATION_S, 5, 3, 30);
-  sendToWatch(dict, 'Fitness setting');
+  dict[keys.CALENDAR_SHAKE_EVENT_COUNT] = numberSetting(settings.CALENDAR_SHAKE_EVENT_COUNT, 3, 3, 5) >= 5 ? 5 : 3;
+  dict[keys.ALT_TZ_LABEL] = String(settings.ALT_TZ_LABEL || 'LONDON').slice(0, 16);
+  dict[keys.ALT_TZ_OFFSET_MIN] = numberSetting(settings.ALT_TZ_OFFSET_MIN, 0, -720, 840);
+  sendToWatch(dict, 'Shake setting');
 }
 
 function nearestRainChance(hourly) {
@@ -337,6 +367,14 @@ function firstDailyValue(daily, field) {
   return isFinite(value) ? value : null;
 }
 
+function firstDailyTimestamp(daily, field) {
+  if (!daily || !daily[field] || !daily[field].length) {
+    return null;
+  }
+  var timestamp = Math.floor(new Date(daily[field][0]).getTime() / 1000);
+  return isFinite(timestamp) ? timestamp : null;
+}
+
 function addRounded(dict, key, value, min, max) {
   if (isNumber(value)) {
     dict[key] = clamp(Math.round(value), min, max);
@@ -350,7 +388,7 @@ function fetchWeatherForCoordinates(lat, lon, unit) {
       + '&longitude=' + encodeURIComponent(lon)
       + '&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m'
       + '&hourly=precipitation_probability,weather_code'
-      + '&daily=temperature_2m_max,uv_index_max'
+      + '&daily=temperature_2m_max,temperature_2m_min,uv_index_max,sunrise,sunset'
       + '&temperature_unit=' + encodeURIComponent(unitParam)
       + '&wind_speed_unit=mph'
       + '&forecast_days=1'
@@ -370,7 +408,10 @@ function fetchWeatherForCoordinates(lat, lon, unit) {
       addRounded(dict, keys.WEATHER_CODE, data.current.weather_code, 0, 255);
       addRounded(dict, keys.WIND_SPEED, data.current.wind_speed_10m, 0, 255);
       addRounded(dict, keys.HIGH_TEMP, firstDailyValue(data.daily, 'temperature_2m_max'), -99, 127);
+      addRounded(dict, keys.LOW_TEMP, firstDailyValue(data.daily, 'temperature_2m_min'), -99, 127);
       addRounded(dict, keys.UV_INDEX, firstDailyValue(data.daily, 'uv_index_max'), 0, 255);
+      addRounded(dict, keys.SUNRISE_T, firstDailyTimestamp(data.daily, 'sunrise'), 0, 2147483647);
+      addRounded(dict, keys.SUNSET_T, firstDailyTimestamp(data.daily, 'sunset'), 0, 2147483647);
       dict[keys.RAIN_CHANCE] = nearestRainChance(data.hourly);
       dict[keys.WEATHER_SUMMARY] = verboseWeatherSummary(data.hourly, data.current.weather_code);
       sendToWatch(dict, 'Weather');
@@ -941,7 +982,7 @@ function expandRecurringEvent(event, now, maxTime, exceptionKeys) {
   return occurrences;
 }
 
-function parseNextEvent(icsText, lookaheadHours) {
+function parseCalendarEvents(icsText, lookaheadHours) {
   var lines = unfoldIcs(icsText);
   var rawEvents = [];
   var events = [];
@@ -995,6 +1036,22 @@ function parseNextEvent(icsText, lookaheadHours) {
     });
   });
 
+  return events.filter(function(event) {
+    return event && event.start && eventEndTime(event) > now.getTime()
+        && event.start.getTime() <= maxTime;
+  }).sort(function(a, b) {
+    var startDiff = a.start.getTime() - b.start.getTime();
+    if (startDiff !== 0) return startDiff;
+    var endDiff = eventEndTime(a) - eventEndTime(b);
+    if (endDiff !== 0) return endDiff;
+    return compareCalendarTitles(a, b);
+  });
+}
+
+function parseNextEvent(icsText, lookaheadHours) {
+  var events = parseCalendarEvents(icsText, lookaheadHours);
+  var now = new Date();
+  var maxTime = now.getTime() + (Number(lookaheadHours) || 48) * 60 * 60 * 1000;
   return chooseBestCalendarEvent(events, now.getTime(), maxTime);
 }
 
@@ -1067,11 +1124,77 @@ function calendarUrls(settings) {
   return urls;
 }
 
-function sendCalendarEvent(event) {
-  var dict = {};
-  dict[keys.NEXT_EVENT] = formatEvent(event);
-  dict[keys.NEXT_EVENT_DELTA] = formatEventDelta(event);
-  sendToWatch(dict, 'Calendar');
+function startOfLocalDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function workdayBusyHoursBitmap(events) {
+  var today = startOfLocalDay(new Date());
+  var bitmap = 0;
+  events.forEach(function(event) {
+    if (!event || !event.start) {
+      return;
+    }
+    for (var hour = 8; hour <= 17; hour++) {
+      var slotStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hour, 0, 0);
+      var slotEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hour + 1, 0, 0);
+      if (event.start.getTime() < slotEnd.getTime() && eventEndTime(event) > slotStart.getTime()) {
+        bitmap |= (1 << hour);
+      }
+    }
+  });
+  return bitmap;
+}
+
+function remainingTodayCount(events) {
+  var now = new Date();
+  var today = startOfLocalDay(now);
+  var tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  return events.filter(function(event) {
+    return event && event.start
+        && event.start.getTime() > now.getTime()
+        && event.start.getTime() < tomorrow.getTime();
+  }).length;
+}
+
+function optionalEventTitle(event) {
+  return event ? formatEvent(event) : '';
+}
+
+function optionalEventDelta(event) {
+  return event ? formatEventDelta(event) : '';
+}
+
+function sendCalendarEvents(events) {
+  var sorted = (events || []).slice().sort(function(a, b) {
+    var startDiff = a.start.getTime() - b.start.getTime();
+    if (startDiff !== 0) return startDiff;
+    var endDiff = eventEndTime(a) - eventEndTime(b);
+    if (endDiff !== 0) return endDiff;
+    return compareCalendarTitles(a, b);
+  });
+  var displayEvents = sorted.slice(0, 5);
+
+  var summaryDict = {};
+  summaryDict[keys.NEXT_EVENT] = formatEvent(displayEvents[0]);
+  summaryDict[keys.NEXT_EVENT_DELTA] = formatEventDelta(displayEvents[0]);
+  summaryDict[keys.DAY_EVENT_HOURS_BITMAP] = workdayBusyHoursBitmap(sorted);
+  summaryDict[keys.DAY_EVENT_COUNT_TODAY] = remainingTodayCount(sorted);
+  sendToWatch(summaryDict, 'Calendar summary');
+
+  var middleDict = {};
+  middleDict[keys.CALENDAR_EVENT_TITLE_2] = optionalEventTitle(displayEvents[1]);
+  middleDict[keys.CALENDAR_EVENT_DELTA_2] = optionalEventDelta(displayEvents[1]);
+  middleDict[keys.CALENDAR_EVENT_TITLE_3] = optionalEventTitle(displayEvents[2]);
+  middleDict[keys.CALENDAR_EVENT_DELTA_3] = optionalEventDelta(displayEvents[2]);
+  sendToWatch(middleDict, 'Calendar events 2-3');
+
+  var endDict = {};
+  endDict[keys.CALENDAR_EVENT_TITLE_4] = optionalEventTitle(displayEvents[3]);
+  endDict[keys.CALENDAR_EVENT_DELTA_4] = optionalEventDelta(displayEvents[3]);
+  endDict[keys.CALENDAR_EVENT_TITLE_5] = optionalEventTitle(displayEvents[4]);
+  endDict[keys.CALENDAR_EVENT_DELTA_5] = optionalEventDelta(displayEvents[4]);
+  sendToWatch(endDict, 'Calendar events 4-5');
 }
 
 function refreshCalendar() {
@@ -1082,7 +1205,7 @@ function refreshCalendar() {
 
   var urls = calendarUrls(settings);
   if (!urls.length) {
-    sendCalendarEvent(null);
+    sendCalendarEvents([]);
     return;
   }
 
@@ -1101,7 +1224,7 @@ function refreshCalendar() {
       return;
     }
 
-    sendCalendarEvent(nextSortedEvent(events));
+    sendCalendarEvents(events);
   }
 
   urls.forEach(function(url) {
@@ -1115,10 +1238,10 @@ function refreshCalendar() {
 
       successCount++;
       try {
-        var event = parseNextEvent(xhr.responseText, settings.CALENDAR_LOOKAHEAD_HOURS);
-        if (event) {
-          events.push(event);
-        }
+        parseCalendarEvents(xhr.responseText, settings.CALENDAR_LOOKAHEAD_HOURS)
+          .forEach(function(event) {
+            events.push(event);
+          });
       } catch (e) {
         console.log('Calendar parse failed: ' + e);
       }
@@ -1151,7 +1274,7 @@ function scheduleRefreshes() {
 Pebble.addEventListener('ready', function() {
   var settings = readSettings();
   sendLayoutSetting(settings);
-  sendFitnessSetting(settings);
+  sendShakeSetting(settings);
   refreshWeather();
   refreshCalendar();
   scheduleRefreshes();
@@ -1169,7 +1292,7 @@ Pebble.addEventListener('webviewclosed', function(event) {
   clay.getSettings(event.response, false);
   var settings = readSettings();
   sendLayoutSetting(settings);
-  sendFitnessSetting(settings);
+  sendShakeSetting(settings);
   refreshWeather();
   refreshCalendar();
   scheduleRefreshes();

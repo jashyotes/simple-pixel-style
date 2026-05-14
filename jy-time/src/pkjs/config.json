@@ -77,6 +77,13 @@
       },
       {
         "type": "toggle",
+        "messageKey": "REMOVE_LEADING_ZERO",
+        "label": "Remove leading zero",
+        "defaultValue": false,
+        "description": "Shows 9:05 instead of 09:05 on the main time."
+      },
+      {
+        "type": "toggle",
         "messageKey": "VERBOSE_WEATHER",
         "label": "Verbose weather, centered time",
         "defaultValue": false,
@@ -104,22 +111,51 @@
         "label": "Left circle",
         "defaultValue": "weather",
         "options": [
-          { "label": "Temperature", "value": "temperature" },
-          { "label": "Weather", "value": "weather" },
-          { "label": "Weather icon", "value": "weather_icon" },
-          { "label": "Fitness rings", "value": "fitness_rings" },
-          { "label": "Weather circle", "value": "weather_circle" },
-          { "label": "Battery circle", "value": "battery_circle" },
-          { "label": "Rain chance", "value": "rain" },
-          { "label": "Heart rate", "value": "heart_rate" },
-          { "label": "Steps", "value": "steps" },
-          { "label": "Watch battery", "value": "watch_battery" },
-          { "label": "Phone battery", "value": "phone_battery" },
-          { "label": "Feels like", "value": "feels_like" },
-          { "label": "High temp", "value": "high_temp" },
-          { "label": "Wind", "value": "wind" },
-          { "label": "UV index", "value": "uv" },
-          { "label": "Next event", "value": "next_event" }
+          {
+            "label": "Rich visuals",
+            "value": [
+              { "label": "Fitness rings", "value": "fitness_rings" },
+              { "label": "Weather circle", "value": "weather_circle" },
+              { "label": "Battery ring", "value": "battery_ring" }
+            ]
+          },
+          {
+            "label": "Weather",
+            "value": [
+              { "label": "Weather", "value": "weather" },
+              { "label": "Weather icon", "value": "weather_icon" },
+              { "label": "Temperature", "value": "temperature" },
+              { "label": "Feels like", "value": "feels_like" },
+              { "label": "High temp", "value": "high_temp" },
+              { "label": "High/low temp", "value": "high_low_combined" },
+              { "label": "Rain chance", "value": "rain" },
+              { "label": "Wind", "value": "wind" },
+              { "label": "UV index", "value": "uv" }
+            ]
+          },
+          {
+            "label": "Fitness",
+            "value": [
+              { "label": "Steps", "value": "steps" },
+              { "label": "Heart rate", "value": "heart_rate" },
+              { "label": "Active minutes", "value": "active_minutes" },
+              { "label": "Active calories", "value": "active_calories" },
+              { "label": "Sleep last night", "value": "sleep_last_night" },
+              { "label": "Distance today", "value": "distance_today" }
+            ]
+          },
+          {
+            "label": "Device",
+            "value": [
+              { "label": "Watch battery", "value": "watch_battery" }
+            ]
+          },
+          {
+            "label": "Calendar",
+            "value": [
+              { "label": "Next event", "value": "next_event" }
+            ]
+          }
         ]
       },
       {
@@ -128,22 +164,51 @@
         "label": "Middle circle",
         "defaultValue": "rain",
         "options": [
-          { "label": "Temperature", "value": "temperature" },
-          { "label": "Weather", "value": "weather" },
-          { "label": "Weather icon", "value": "weather_icon" },
-          { "label": "Fitness rings", "value": "fitness_rings" },
-          { "label": "Weather circle", "value": "weather_circle" },
-          { "label": "Battery circle", "value": "battery_circle" },
-          { "label": "Rain chance", "value": "rain" },
-          { "label": "Heart rate", "value": "heart_rate" },
-          { "label": "Steps", "value": "steps" },
-          { "label": "Watch battery", "value": "watch_battery" },
-          { "label": "Phone battery", "value": "phone_battery" },
-          { "label": "Feels like", "value": "feels_like" },
-          { "label": "High temp", "value": "high_temp" },
-          { "label": "Wind", "value": "wind" },
-          { "label": "UV index", "value": "uv" },
-          { "label": "Next event", "value": "next_event" }
+          {
+            "label": "Rich visuals",
+            "value": [
+              { "label": "Fitness rings", "value": "fitness_rings" },
+              { "label": "Weather circle", "value": "weather_circle" },
+              { "label": "Battery ring", "value": "battery_ring" }
+            ]
+          },
+          {
+            "label": "Weather",
+            "value": [
+              { "label": "Weather", "value": "weather" },
+              { "label": "Weather icon", "value": "weather_icon" },
+              { "label": "Temperature", "value": "temperature" },
+              { "label": "Feels like", "value": "feels_like" },
+              { "label": "High temp", "value": "high_temp" },
+              { "label": "High/low temp", "value": "high_low_combined" },
+              { "label": "Rain chance", "value": "rain" },
+              { "label": "Wind", "value": "wind" },
+              { "label": "UV index", "value": "uv" }
+            ]
+          },
+          {
+            "label": "Fitness",
+            "value": [
+              { "label": "Steps", "value": "steps" },
+              { "label": "Heart rate", "value": "heart_rate" },
+              { "label": "Active minutes", "value": "active_minutes" },
+              { "label": "Active calories", "value": "active_calories" },
+              { "label": "Sleep last night", "value": "sleep_last_night" },
+              { "label": "Distance today", "value": "distance_today" }
+            ]
+          },
+          {
+            "label": "Device",
+            "value": [
+              { "label": "Watch battery", "value": "watch_battery" }
+            ]
+          },
+          {
+            "label": "Calendar",
+            "value": [
+              { "label": "Next event", "value": "next_event" }
+            ]
+          }
         ]
       },
       {
@@ -152,22 +217,51 @@
         "label": "Right circle",
         "defaultValue": "heart_rate",
         "options": [
-          { "label": "Temperature", "value": "temperature" },
-          { "label": "Weather", "value": "weather" },
-          { "label": "Weather icon", "value": "weather_icon" },
-          { "label": "Fitness rings", "value": "fitness_rings" },
-          { "label": "Weather circle", "value": "weather_circle" },
-          { "label": "Battery circle", "value": "battery_circle" },
-          { "label": "Rain chance", "value": "rain" },
-          { "label": "Heart rate", "value": "heart_rate" },
-          { "label": "Steps", "value": "steps" },
-          { "label": "Watch battery", "value": "watch_battery" },
-          { "label": "Phone battery", "value": "phone_battery" },
-          { "label": "Feels like", "value": "feels_like" },
-          { "label": "High temp", "value": "high_temp" },
-          { "label": "Wind", "value": "wind" },
-          { "label": "UV index", "value": "uv" },
-          { "label": "Next event", "value": "next_event" }
+          {
+            "label": "Rich visuals",
+            "value": [
+              { "label": "Fitness rings", "value": "fitness_rings" },
+              { "label": "Weather circle", "value": "weather_circle" },
+              { "label": "Battery ring", "value": "battery_ring" }
+            ]
+          },
+          {
+            "label": "Weather",
+            "value": [
+              { "label": "Weather", "value": "weather" },
+              { "label": "Weather icon", "value": "weather_icon" },
+              { "label": "Temperature", "value": "temperature" },
+              { "label": "Feels like", "value": "feels_like" },
+              { "label": "High temp", "value": "high_temp" },
+              { "label": "High/low temp", "value": "high_low_combined" },
+              { "label": "Rain chance", "value": "rain" },
+              { "label": "Wind", "value": "wind" },
+              { "label": "UV index", "value": "uv" }
+            ]
+          },
+          {
+            "label": "Fitness",
+            "value": [
+              { "label": "Steps", "value": "steps" },
+              { "label": "Heart rate", "value": "heart_rate" },
+              { "label": "Active minutes", "value": "active_minutes" },
+              { "label": "Active calories", "value": "active_calories" },
+              { "label": "Sleep last night", "value": "sleep_last_night" },
+              { "label": "Distance today", "value": "distance_today" }
+            ]
+          },
+          {
+            "label": "Device",
+            "value": [
+              { "label": "Watch battery", "value": "watch_battery" }
+            ]
+          },
+          {
+            "label": "Calendar",
+            "value": [
+              { "label": "Next event", "value": "next_event" }
+            ]
+          }
         ]
       }
     ]
@@ -319,18 +413,80 @@
   {
     "type": "section",
     "items": [
-      {
-        "type": "heading",
-        "defaultValue": "Fitness Rings"
-      },
-      {
-        "type": "toggle",
-        "messageKey": "FITNESS_SHAKE_ENABLED",
-        "label": "Enable shake to show fitness rings",
-        "defaultValue": false
-      },
-      {
-        "type": "toggle",
+	      {
+	        "type": "heading",
+	        "defaultValue": "Shake"
+	      },
+	      {
+	        "type": "select",
+	        "messageKey": "SHAKE_BEHAVIOR",
+	        "label": "Shake behavior",
+	        "defaultValue": "off",
+	        "options": [
+	          {
+	            "label": "Off",
+	            "value": "off"
+	          },
+	          {
+	            "label": "Fitness rings",
+	            "value": "fitness_rings"
+	          },
+	          {
+	            "label": "Next calendar events",
+	            "value": "calendar_events"
+	          },
+	          {
+	            "label": "Your Day",
+	            "value": "your_day"
+	          },
+	          {
+	            "label": "Detailed weather",
+	            "value": "detailed_weather"
+	          },
+	          {
+	            "label": "Alt timezone",
+	            "value": "alt_timezone"
+	          },
+	          {
+	            "label": "Heart rate big",
+	            "value": "heart_rate"
+	          },
+	          {
+	            "label": "Step graph today",
+	            "value": "step_graph"
+	          }
+	        ]
+	      },
+	      {
+	        "type": "select",
+	        "messageKey": "FITNESS_OVERLAY_DURATION_S",
+	        "label": "Shake overlay duration",
+	        "defaultValue": "5",
+	        "options": [
+	          {
+	            "label": "3 seconds",
+	            "value": "3"
+	          },
+	          {
+	            "label": "5 seconds (default)",
+	            "value": "5"
+	          },
+	          {
+	            "label": "7 seconds",
+	            "value": "7"
+	          },
+	          {
+	            "label": "10 seconds",
+	            "value": "10"
+	          }
+	        ]
+	      },
+	      {
+	        "type": "heading",
+	        "defaultValue": "Fitness rings settings"
+	      },
+	      {
+	        "type": "toggle",
         "messageKey": "FITNESS_RING_STEPS_ON",
         "label": "Show steps ring",
         "defaultValue": true
@@ -392,36 +548,58 @@
         "label": "Active ring color",
         "defaultValue": 43775
       },
-      {
-        "type": "color",
-        "messageKey": "FITNESS_COLOR_CALORIES",
-        "label": "Calories ring color",
-        "defaultValue": 16711680
-      },
-      {
-        "type": "select",
-        "messageKey": "FITNESS_OVERLAY_DURATION_S",
-        "label": "Shake overlay duration",
-        "defaultValue": "5",
-        "options": [
-          {
-            "label": "3 seconds",
-            "value": "3"
-          },
-          {
-            "label": "5 seconds (default)",
-            "value": "5"
-          },
-          {
-            "label": "7 seconds",
-            "value": "7"
-          },
-          {
-            "label": "10 seconds",
-            "value": "10"
-          }
-        ]
-      }
+	      {
+	        "type": "color",
+	        "messageKey": "FITNESS_COLOR_CALORIES",
+	        "label": "Calories ring color",
+	        "defaultValue": 16711680
+	      },
+	      {
+	        "type": "heading",
+	        "defaultValue": "Calendar events settings"
+	      },
+	      {
+	        "type": "select",
+	        "messageKey": "CALENDAR_SHAKE_EVENT_COUNT",
+	        "label": "Number of events to show",
+	        "defaultValue": "3",
+	        "options": [
+	          {
+	            "label": "3 events",
+	            "value": "3"
+	          },
+	          {
+	            "label": "5 events",
+	            "value": "5"
+	          }
+	        ]
+	      },
+	      {
+	        "type": "heading",
+	        "defaultValue": "Alt timezone settings"
+	      },
+	      {
+	        "type": "input",
+	        "messageKey": "ALT_TZ_LABEL",
+	        "label": "Alt timezone label",
+	        "defaultValue": "LONDON",
+	        "attributes": {
+	          "type": "text",
+	          "maxLength": 16
+	        }
+	      },
+	      {
+	        "type": "input",
+	        "messageKey": "ALT_TZ_OFFSET_MIN",
+	        "label": "UTC offset minutes",
+	        "defaultValue": "0",
+	        "attributes": {
+	          "type": "number",
+	          "min": "-720",
+	          "max": "840",
+	          "step": "15"
+	        }
+	      }
     ]
   },
   {

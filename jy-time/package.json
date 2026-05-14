@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "0.55.0",
+  "version": "0.56.0",
   "keywords": [
     "pebble-app"
   ],
@@ -50,7 +50,7 @@
       "MILITARY_TIME",
       "INVERT_WEATHER",
       "INVERT_MEETING_BAR",
-      "FITNESS_SHAKE_ENABLED",
+      "SHAKE_BEHAVIOR",
       "FITNESS_RING_STEPS_ON",
       "FITNESS_RING_ACTIVE_ON",
       "FITNESS_RING_CALORIES_ON",
@@ -60,7 +60,24 @@
       "FITNESS_COLOR_STEPS",
       "FITNESS_COLOR_ACTIVE",
       "FITNESS_COLOR_CALORIES",
-      "FITNESS_OVERLAY_DURATION_S"
+      "FITNESS_OVERLAY_DURATION_S",
+      "LOW_TEMP",
+      "SUNRISE_T",
+      "SUNSET_T",
+      "CALENDAR_SHAKE_EVENT_COUNT",
+      "CALENDAR_EVENT_TITLE_2",
+      "CALENDAR_EVENT_DELTA_2",
+      "CALENDAR_EVENT_TITLE_3",
+      "CALENDAR_EVENT_DELTA_3",
+      "CALENDAR_EVENT_TITLE_4",
+      "CALENDAR_EVENT_DELTA_4",
+      "CALENDAR_EVENT_TITLE_5",
+      "CALENDAR_EVENT_DELTA_5",
+      "DAY_EVENT_HOURS_BITMAP",
+      "DAY_EVENT_COUNT_TODAY",
+      "ALT_TZ_LABEL",
+      "ALT_TZ_OFFSET_MIN",
+      "REMOVE_LEADING_ZERO"
     ],
     "resources": {
       "media": [
