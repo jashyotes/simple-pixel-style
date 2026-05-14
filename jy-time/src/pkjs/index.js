@@ -1352,8 +1352,6 @@ function scheduleRefreshes() {
 }
 
 Pebble.addEventListener('ready', function() {
-  console.log('Banner screenshot seed active; skipping JS sync');
-  return;
   var settings = readSettings();
   sendLayoutSetting(settings);
   sendColorSetting(settings);

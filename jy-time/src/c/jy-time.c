@@ -1588,6 +1588,11 @@ static void draw_your_day_hour_pips(GContext *ctx, const char *now_text, GFont n
     bool busy = day_event_hour_busy(day_offset, hour);
     bool current = day_offset == 0 && hour == current_hour;
 
+    if (current) {
+      current_x = x;
+      continue;
+    }
+
     graphics_context_set_stroke_color(ctx, theme_fg_color());
     graphics_context_set_fill_color(ctx, theme_fg_color());
     graphics_context_set_stroke_width(ctx, 1);
@@ -1595,11 +1600,6 @@ static void draw_your_day_hour_pips(GContext *ctx, const char *now_text, GFont n
       graphics_fill_circle(ctx, GPoint(x, y), 5);
     } else {
       graphics_draw_circle(ctx, GPoint(x, y), 5);
-    }
-
-    if (current) {
-      current_x = x;
-      continue;
     }
 
     char label[4];
@@ -1628,15 +1628,20 @@ static void draw_your_day_hour_pips(GContext *ctx, const char *now_text, GFont n
     now_right = SCREEN_W - 8;
   }
 
-  const int elbow_y = y + 23;
-  const int target_x = current_x <= ((now_left + now_right) / 2)
-      ? now_left - 4
-      : now_right + 4;
+  const int elbow_y = 124;
+  int target_x = current_x;
+  if (current_x < now_left - 4) {
+    target_x = now_left - 4;
+  } else if (current_x > now_right + 4) {
+    target_x = now_right + 4;
+  }
 
   graphics_context_set_stroke_color(ctx, theme_fg_color());
   graphics_context_set_stroke_width(ctx, 1);
-  graphics_draw_line(ctx, GPoint(current_x, y - 18), GPoint(current_x, elbow_y));
-  graphics_draw_line(ctx, GPoint(current_x, elbow_y), GPoint(target_x, elbow_y));
+  graphics_draw_line(ctx, GPoint(current_x, y - 14), GPoint(current_x, elbow_y));
+  if (target_x != current_x) {
+    graphics_draw_line(ctx, GPoint(current_x, elbow_y), GPoint(target_x, elbow_y));
+  }
 }
 
 static void your_day_draw_overlay(GContext *ctx) {
@@ -2135,72 +2140,6 @@ static void store_overlay_string(char *dest, size_t dest_len, uint32_t persist_k
   persist_write_string(persist_key, dest);
 }
 
-#define BANNER_SCREENSHOT_SEED 1
-
-#if BANNER_SCREENSHOT_SEED
-static void banner_seed_sample_state(void) {
-  s_phone_connected = true;
-  s_phone_battery_known = false;
-  s_weather_code = 0;
-  s_weather_known = true;
-  s_temperature = 69;
-  s_temperature_known = true;
-  s_rain_chance = 42;
-  s_rain_known = true;
-  s_feels_like = 69;
-  s_feels_like_known = true;
-  s_high_temp = 69;
-  s_high_temp_known = true;
-  s_low_temp = 54;
-  s_low_temp_known = true;
-  s_wind_speed = 8;
-  s_wind_known = true;
-  s_uv_index = 4;
-  s_uv_known = true;
-
-  s_w800_steps_top_enabled = true;
-  s_steps_count = 6767;
-  snprintf(s_steps_buf, sizeof(s_steps_buf), "6k");
-  s_fitness_steps_value = 6767;
-  snprintf(s_bpm_buf, sizeof(s_bpm_buf), "88");
-
-  update_event("8PM @ Eric's Mom's");
-  update_event_delta("Tonight");
-  snprintf(s_weather_summary_buf, sizeof(s_weather_summary_buf), "CLEAR");
-
-  s_shake_behavior = ShakeBehaviorYourDay;
-  s_fitness_overlay_duration_ms = 300000;
-  s_day_event_hours_bitmap =
-      (1 << 8) | (1 << 9) | (1 << 11) | (1 << 12) | (1 << 15);
-  s_day_event_hours_bitmap_yesterday = 0;
-  s_day_event_hours_bitmap_tomorrow = 0;
-  s_day_event_count_today = 4;
-  s_your_day_window_mode = 1;
-  s_your_day_start_hour = 8;
-  s_your_day_end_hour = 17;
-
-  s_color_mode = ColorModeColor;
-  s_light_mode_enabled = false;
-  s_invert_top_bar = false;
-  s_invert_date_bar = false;
-  s_invert_time = false;
-  s_invert_weather = false;
-  s_invert_meeting_bar = false;
-  s_color_section_bg[ColorSectionTopBar] = 0x00AA99;
-  s_color_section_fg[ColorSectionTopBar] = 0x001111;
-  s_color_section_bg[ColorSectionDateBar] = 0xF4F1DC;
-  s_color_section_fg[ColorSectionDateBar] = 0x111111;
-  s_color_section_bg[ColorSectionTime] = 0x111111;
-  s_color_section_fg[ColorSectionTime] = 0xFFFFFF;
-  s_color_section_bg[ColorSectionWeather] = 0x2E9FE6;
-  s_color_section_fg[ColorSectionWeather] = 0x001111;
-  s_color_section_bg[ColorSectionMeetingBar] = 0xB51F2A;
-  s_color_section_fg[ColorSectionMeetingBar] = 0xFFFFFF;
-
-  update_weather_widget();
-}
-#endif
-
 static void update_stats(void) {
 #if defined(PBL_HEALTH)
   int steps = (int) health_service_sum_today(HealthMetricStepCount);
@@ -2226,12 +2165,6 @@ static void update_stats(void) {
   s_steps_count = 0;
   snprintf(s_steps_buf, sizeof(s_steps_buf), "--");
   snprintf(s_bpm_buf, sizeof(s_bpm_buf), "--");
-#endif
-#if BANNER_SCREENSHOT_SEED
-  s_steps_count = 6767;
-  s_fitness_steps_value = 6767;
-  snprintf(s_steps_buf, sizeof(s_steps_buf), "6k");
-  snprintf(s_bpm_buf, sizeof(s_bpm_buf), "88");
 #endif
   mark_face_dirty();
 }
@@ -3258,10 +3191,6 @@ static void window_load(Window *window) {
   update_event(s_event_buf[0] ? s_event_buf : NULL);
   update_event_delta(s_event_delta_buf[0] ? s_event_delta_buf : NULL);
   update_stats();
-#if BANNER_SCREENSHOT_SEED
-  banner_seed_sample_state();
-  shake_show_overlay();
-#endif
 }
 
 static void window_unload(Window *window) {
@@ -3294,9 +3223,6 @@ static void init(void) {
   health_service_set_heart_rate_sample_period(60);
 #endif
 
-#if BANNER_SCREENSHOT_SEED
-  banner_seed_sample_state();
-#endif
   shake_configure_tap_service();
 
   app_message_register_inbox_received(inbox_received_handler);
