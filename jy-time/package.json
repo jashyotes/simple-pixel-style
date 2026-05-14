@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "0.51.0",
+  "version": "0.52.0",
   "keywords": [
     "pebble-app"
   ],
@@ -48,7 +48,17 @@
       "INVERT_DATE_BAR",
       "INVERT_TIME",
       "INVERT_WEATHER",
-      "INVERT_MEETING_BAR"
+      "INVERT_MEETING_BAR",
+      "FITNESS_SHAKE_ENABLED",
+      "FITNESS_RING_STEPS_ON",
+      "FITNESS_RING_ACTIVE_ON",
+      "FITNESS_RING_CALORIES_ON",
+      "FITNESS_TARGET_STEPS",
+      "FITNESS_TARGET_ACTIVE_MIN",
+      "FITNESS_TARGET_CALORIES",
+      "FITNESS_COLOR_STEPS",
+      "FITNESS_COLOR_ACTIVE",
+      "FITNESS_COLOR_CALORIES"
     ],
     "resources": {
       "media": [

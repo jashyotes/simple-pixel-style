@@ -32,9 +32,26 @@
 #define PERSIST_KEY_INVERT_TIME    121
 #define PERSIST_KEY_INVERT_WEATHER 122
 #define PERSIST_KEY_INVERT_MEETING_BAR 123
+#define PERSIST_KEY_FITNESS_SHAKE_ENABLED 124
+#define PERSIST_KEY_FITNESS_RING_STEPS_ON 125
+#define PERSIST_KEY_FITNESS_RING_ACTIVE_ON 126
+#define PERSIST_KEY_FITNESS_RING_CALORIES_ON 127
+#define PERSIST_KEY_FITNESS_TARGET_STEPS 128
+#define PERSIST_KEY_FITNESS_TARGET_ACTIVE_MIN 129
+#define PERSIST_KEY_FITNESS_TARGET_CALORIES 130
+#define PERSIST_KEY_FITNESS_COLOR_STEPS 131
+#define PERSIST_KEY_FITNESS_COLOR_ACTIVE 132
+#define PERSIST_KEY_FITNESS_COLOR_CALORIES 133
 
 #define SCREEN_W 200
 #define SCREEN_H 228
+#define FITNESS_OVERLAY_VISIBLE_MS 6000
+#define FITNESS_DEFAULT_TARGET_STEPS 10000
+#define FITNESS_DEFAULT_TARGET_ACTIVE_MIN 30
+#define FITNESS_DEFAULT_TARGET_CALORIES 500
+#define FITNESS_DEFAULT_COLOR_STEPS 0x00FF00
+#define FITNESS_DEFAULT_COLOR_ACTIVE 0x00AAFF
+#define FITNESS_DEFAULT_COLOR_CALORIES 0xFF0000
 #define DATE_FRAME_Y 36
 #define TIME_FRAME_Y 69
 #define TIME_FRAME_H 60
@@ -94,6 +111,8 @@ typedef enum {
 
 static Window *s_window;
 static Layer *s_face_layer;
+static Layer *s_fitness_layer;
+static AppTimer *s_fitness_overlay_timer;
 
 static GFont s_font_top;
 static GFont s_font_date;
@@ -154,8 +173,25 @@ static bool s_invert_date_bar = false;
 static bool s_invert_time = false;
 static bool s_invert_weather = false;
 static bool s_invert_meeting_bar = false;
+static bool s_fitness_shake_enabled = false;
+static bool s_fitness_tap_subscribed = false;
+static bool s_fitness_overlay_visible = false;
+static bool s_fitness_ring_steps_on = true;
+static bool s_fitness_ring_active_on = true;
+static bool s_fitness_ring_calories_on = true;
 static ColorSection s_draw_section = ColorSectionBase;
 static int s_steps_count = 0;
+static int s_fitness_steps_value = 0;
+static int s_fitness_active_minutes_value = 0;
+static int s_fitness_active_calories_value = 0;
+static int s_fitness_resting_calories_value = 0;
+static int s_fitness_distance_meters_value = 0;
+static int s_fitness_target_steps = FITNESS_DEFAULT_TARGET_STEPS;
+static int s_fitness_target_active_min = FITNESS_DEFAULT_TARGET_ACTIVE_MIN;
+static int s_fitness_target_calories = FITNESS_DEFAULT_TARGET_CALORIES;
+static int s_fitness_color_steps_hex = FITNESS_DEFAULT_COLOR_STEPS;
+static int s_fitness_color_active_hex = FITNESS_DEFAULT_COLOR_ACTIVE;
+static int s_fitness_color_calories_hex = FITNESS_DEFAULT_COLOR_CALORIES;
 static ComplicationType s_complication_slots[COMPLICATION_COUNT] = {
   ComplicationWeather,
   ComplicationRainChance,
@@ -333,6 +369,325 @@ static void format_capped_99_plus(char *buf, size_t len, bool known, int value) 
 
 static void draw_pixel_block(GContext *ctx, GPoint origin, int x, int y, int w, int h) {
   graphics_fill_rect(ctx, GRect(origin.x + x, origin.y + y, w, h), 0, GCornerNone);
+}
+
+static int fitness_sanitize_target(int value, int fallback) {
+  if (value < 1) {
+    return fallback;
+  }
+  if (value > 999999) {
+    return 999999;
+  }
+  return value;
+}
+
+static int fitness_sanitize_color(int value, int fallback) {
+  if (value < 0 || value > 0xFFFFFF) {
+    return fallback;
+  }
+  return value;
+}
+
+static GColor fitness_color_from_hex(int value, int fallback) {
+  return GColorFromHEX((uint32_t)fitness_sanitize_color(value, fallback));
+}
+
+static GColor fitness_dim_color(GColor color) {
+  if (color.r > 0) {
+    color.r -= 1;
+  }
+  if (color.g > 0) {
+    color.g -= 1;
+  }
+  if (color.b > 0) {
+    color.b -= 1;
+  }
+  color.a = 3;
+  return color;
+}
+
+static GColor fitness_muted_text_color(void) {
+  return s_light_mode_enabled ? GColorDarkGray : GColorLightGray;
+}
+
+static void format_number_commas(char *buf, size_t len, int value) {
+  if (value < 0) {
+    value = 0;
+  }
+  if (value > 999999) {
+    snprintf(buf, len, "999,999");
+  } else if (value >= 1000) {
+    snprintf(buf, len, "%d,%03d", value / 1000, value % 1000);
+  } else {
+    snprintf(buf, len, "%d", value);
+  }
+}
+
+static void format_distance_km(char *buf, size_t len, int meters) {
+  if (meters < 0) {
+    meters = 0;
+  }
+  int whole = meters / 1000;
+  int hundredths = (meters % 1000) / 10;
+  snprintf(buf, len, "%d.%02d km", whole, hundredths);
+}
+
+static void fitness_draw_ring(GContext *ctx, GPoint center, int radius, int stroke_width,
+                              int value, int target, GColor color) {
+  GRect frame = GRect(center.x - radius, center.y - radius, radius * 2, radius * 2);
+  graphics_context_set_stroke_width(ctx, stroke_width);
+  graphics_context_set_stroke_color(ctx, fitness_dim_color(color));
+  graphics_draw_arc(ctx, frame, GOvalScaleModeFitCircle, 0, TRIG_MAX_ANGLE);
+
+  if (target < 1 || value < 1) {
+    return;
+  }
+
+  int32_t end_angle = TRIG_MAX_ANGLE;
+  if (value < target) {
+    end_angle = (int32_t)(((int64_t)TRIG_MAX_ANGLE * value) / target);
+  }
+  graphics_context_set_stroke_color(ctx, color);
+  graphics_draw_arc(ctx, frame, GOvalScaleModeFitCircle, 0, end_angle);
+}
+
+static void fitness_draw_leaf_icon(GContext *ctx, GPoint origin, GColor color) {
+  graphics_context_set_fill_color(ctx, color);
+  draw_pixel_block(ctx, origin, 7, 1, 4, 2);
+  draw_pixel_block(ctx, origin, 5, 3, 8, 2);
+  draw_pixel_block(ctx, origin, 3, 5, 9, 2);
+  draw_pixel_block(ctx, origin, 2, 7, 7, 2);
+  draw_pixel_block(ctx, origin, 1, 9, 5, 2);
+  draw_pixel_block(ctx, origin, 5, 10, 2, 2);
+  draw_pixel_block(ctx, origin, 7, 8, 2, 2);
+  draw_pixel_block(ctx, origin, 9, 6, 2, 2);
+  draw_pixel_block(ctx, origin, 11, 4, 2, 2);
+}
+
+static void fitness_draw_clock_icon(GContext *ctx, GPoint origin, GColor color) {
+  graphics_context_set_stroke_color(ctx, color);
+  graphics_context_set_stroke_width(ctx, 2);
+  graphics_draw_circle(ctx, GPoint(origin.x + 7, origin.y + 7), 6);
+  graphics_draw_line(ctx, GPoint(origin.x + 7, origin.y + 7), GPoint(origin.x + 7, origin.y + 3));
+  graphics_draw_line(ctx, GPoint(origin.x + 7, origin.y + 7), GPoint(origin.x + 11, origin.y + 7));
+}
+
+static void fitness_draw_flame_icon(GContext *ctx, GPoint origin, GColor color) {
+  graphics_context_set_fill_color(ctx, color);
+  draw_pixel_block(ctx, origin, 7, 0, 2, 3);
+  draw_pixel_block(ctx, origin, 5, 3, 6, 2);
+  draw_pixel_block(ctx, origin, 4, 5, 8, 2);
+  draw_pixel_block(ctx, origin, 3, 7, 10, 3);
+  draw_pixel_block(ctx, origin, 4, 10, 8, 2);
+  draw_pixel_block(ctx, origin, 6, 12, 4, 2);
+  graphics_context_set_fill_color(ctx, theme_bg_color());
+  draw_pixel_block(ctx, origin, 7, 7, 2, 4);
+}
+
+static void fitness_draw_metric_row(GContext *ctx, int y, int metric,
+                                    int value, int target, const char *unit, GColor color) {
+  char value_buf[16];
+  char target_buf[16];
+  char suffix_buf[24];
+  format_number_commas(value_buf, sizeof(value_buf), value);
+  format_number_commas(target_buf, sizeof(target_buf), target);
+  if (unit && unit[0] != '\0') {
+    snprintf(suffix_buf, sizeof(suffix_buf), "/%s %s", target_buf, unit);
+  } else {
+    snprintf(suffix_buf, sizeof(suffix_buf), "/%s", target_buf);
+  }
+
+  GRect measure_frame = GRect(0, 0, SCREEN_W, 24);
+  GSize value_size = graphics_text_layout_get_content_size(
+      value_buf, s_font_complication, measure_frame,
+      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+  GSize suffix_size = graphics_text_layout_get_content_size(
+      suffix_buf, s_font_complication, measure_frame,
+      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+
+  const int icon_w = 16;
+  const int icon_gap = 8;
+  int row_width = icon_w + icon_gap + value_size.w + suffix_size.w;
+  int row_x = (SCREEN_W - row_width) / 2;
+  if (row_x < 6) {
+    row_x = 6;
+  }
+
+  GPoint icon_origin = GPoint(row_x, y + 4);
+  if (metric == 0) {
+    fitness_draw_leaf_icon(ctx, icon_origin, color);
+  } else if (metric == 1) {
+    fitness_draw_clock_icon(ctx, icon_origin, color);
+  } else {
+    fitness_draw_flame_icon(ctx, icon_origin, color);
+  }
+
+  int text_x = row_x + icon_w + icon_gap;
+  draw_text(ctx, value_buf, s_font_complication,
+            GRect(text_x, y - 1, value_size.w + 2, 24),
+            color, GTextAlignmentLeft);
+  draw_text(ctx, suffix_buf, s_font_complication,
+            GRect(text_x + value_size.w + 1, y - 1, suffix_size.w + 4, 24),
+            fitness_muted_text_color(), GTextAlignmentLeft);
+}
+
+static void fitness_draw_info_row(GContext *ctx, int y, const char *label, const char *value) {
+  GFont label_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  draw_text(ctx, label, label_font, GRect(8, y, 126, 18),
+            fitness_muted_text_color(), GTextAlignmentLeft);
+  draw_text(ctx, value, s_font_complication, GRect(126, y - 4, 66, 24),
+            theme_fg_color(), GTextAlignmentRight);
+}
+
+static void fitness_read_health_values(void) {
+#if defined(PBL_HEALTH)
+  HealthValue steps = health_service_sum_today(HealthMetricStepCount);
+  HealthValue active_seconds = health_service_sum_today(HealthMetricActiveSeconds);
+  HealthValue active_calories = health_service_sum_today(HealthMetricActiveKCalories);
+  HealthValue resting_calories = health_service_sum_today(HealthMetricRestingKCalories);
+  HealthValue distance_meters = health_service_sum_today(HealthMetricWalkedDistanceMeters);
+
+  s_fitness_steps_value = steps > 0 ? (int)steps : 0;
+  s_fitness_active_minutes_value = active_seconds > 0 ? (int)(active_seconds / 60) : 0;
+  s_fitness_active_calories_value = active_calories > 0 ? (int)active_calories : 0;
+  s_fitness_resting_calories_value = resting_calories > 0 ? (int)resting_calories : 0;
+  s_fitness_distance_meters_value = distance_meters > 0 ? (int)distance_meters : 0;
+#else
+  s_fitness_steps_value = 0;
+  s_fitness_active_minutes_value = 0;
+  s_fitness_active_calories_value = 0;
+  s_fitness_resting_calories_value = 0;
+  s_fitness_distance_meters_value = 0;
+#endif
+}
+
+static void fitness_hide_overlay(bool cancel_timer) {
+  if (cancel_timer && s_fitness_overlay_timer) {
+    app_timer_cancel(s_fitness_overlay_timer);
+    s_fitness_overlay_timer = NULL;
+  }
+  s_fitness_overlay_visible = false;
+  if (s_fitness_layer) {
+    layer_set_hidden(s_fitness_layer, true);
+  }
+}
+
+static void fitness_overlay_timer_handler(void *context) {
+  (void)context;
+  s_fitness_overlay_timer = NULL;
+  fitness_hide_overlay(false);
+}
+
+static void fitness_schedule_hide_timer(void) {
+  if (s_fitness_overlay_timer &&
+      app_timer_reschedule(s_fitness_overlay_timer, FITNESS_OVERLAY_VISIBLE_MS)) {
+    return;
+  }
+  s_fitness_overlay_timer = app_timer_register(
+      FITNESS_OVERLAY_VISIBLE_MS, fitness_overlay_timer_handler, NULL);
+}
+
+static void fitness_show_overlay(void) {
+  if (!s_fitness_shake_enabled || !s_fitness_layer) {
+    return;
+  }
+
+  fitness_read_health_values();
+  s_fitness_overlay_visible = true;
+  layer_set_hidden(s_fitness_layer, false);
+  layer_mark_dirty(s_fitness_layer);
+  fitness_schedule_hide_timer();
+}
+
+static void fitness_tap_handler(AccelAxisType axis, int32_t direction) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "Fitness tap axis=%d direction=%ld", (int)axis, (long)direction);
+  fitness_show_overlay();
+}
+
+static void fitness_configure_tap_service(void) {
+  if (s_fitness_shake_enabled && !s_fitness_tap_subscribed) {
+    accel_tap_service_subscribe(fitness_tap_handler);
+    s_fitness_tap_subscribed = true;
+  } else if (!s_fitness_shake_enabled && s_fitness_tap_subscribed) {
+    accel_tap_service_unsubscribe();
+    s_fitness_tap_subscribed = false;
+  }
+}
+
+static void fitness_update_proc(Layer *layer, GContext *ctx) {
+  (void)layer;
+
+  GColor steps_color = fitness_color_from_hex(
+      s_fitness_color_steps_hex, FITNESS_DEFAULT_COLOR_STEPS);
+  GColor active_color = fitness_color_from_hex(
+      s_fitness_color_active_hex, FITNESS_DEFAULT_COLOR_ACTIVE);
+  GColor calories_color = fitness_color_from_hex(
+      s_fitness_color_calories_hex, FITNESS_DEFAULT_COLOR_CALORIES);
+
+  graphics_context_set_fill_color(ctx, theme_bg_color());
+  graphics_fill_rect(ctx, GRect(0, 0, SCREEN_W, SCREEN_H), 0, GCornerNone);
+
+  if (s_fitness_ring_steps_on) {
+    fitness_draw_ring(ctx, GPoint(72, 52), 30, 8,
+                      s_fitness_steps_value, s_fitness_target_steps, steps_color);
+  }
+  if (s_fitness_ring_calories_on) {
+    fitness_draw_ring(ctx, GPoint(128, 52), 30, 8,
+                      s_fitness_active_calories_value, s_fitness_target_calories,
+                      calories_color);
+  }
+  if (s_fitness_ring_active_on) {
+    fitness_draw_ring(ctx, GPoint(100, 80), 30, 8,
+                      s_fitness_active_minutes_value, s_fitness_target_active_min,
+                      active_color);
+  }
+
+  int enabled_rows = 0;
+  if (s_fitness_ring_steps_on) {
+    enabled_rows++;
+  }
+  if (s_fitness_ring_active_on) {
+    enabled_rows++;
+  }
+  if (s_fitness_ring_calories_on) {
+    enabled_rows++;
+  }
+
+  const int separator_y = 181;
+  int row_y = separator_y - (enabled_rows * 22) - 4;
+  if (s_fitness_ring_steps_on) {
+    fitness_draw_metric_row(ctx, row_y, 0,
+                            s_fitness_steps_value, s_fitness_target_steps, "",
+                            steps_color);
+    row_y += 22;
+  }
+  if (s_fitness_ring_active_on) {
+    fitness_draw_metric_row(ctx, row_y, 1,
+                            s_fitness_active_minutes_value, s_fitness_target_active_min,
+                            "mins", active_color);
+    row_y += 22;
+  }
+  if (s_fitness_ring_calories_on) {
+    fitness_draw_metric_row(ctx, row_y, 2,
+                            s_fitness_active_calories_value, s_fitness_target_calories,
+                            "Cal", calories_color);
+  }
+
+  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_line(ctx, GPoint(8, separator_y), GPoint(192, separator_y));
+
+  char total_calories_buf[20];
+  char total_calories_number[16];
+  format_number_commas(total_calories_number, sizeof(total_calories_number),
+                       s_fitness_active_calories_value + s_fitness_resting_calories_value);
+  snprintf(total_calories_buf, sizeof(total_calories_buf), "%s Cal", total_calories_number);
+
+  char distance_buf[20];
+  format_distance_km(distance_buf, sizeof(distance_buf), s_fitness_distance_meters_value);
+
+  fitness_draw_info_row(ctx, 186, "Total burned calories", total_calories_buf);
+  fitness_draw_info_row(ctx, 207, "Distance while active", distance_buf);
 }
 
 static void draw_ampm_letter(GContext *ctx, char letter, GPoint origin) {
@@ -1029,6 +1384,7 @@ static void health_handler(HealthEventType event, void *context) {
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   (void)context;
   Tuple *t;
+  bool fitness_settings_changed = false;
 
   t = dict_find(iter, MESSAGE_KEY_NEXT_EVENT);
   if (t && t->type == TUPLE_CSTRING) {
@@ -1185,6 +1541,90 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_int(PERSIST_KEY_COMP_SLOT_3, s_complication_slots[2]);
   }
 
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_SHAKE_ENABLED);
+  if (t) {
+    s_fitness_shake_enabled = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_FITNESS_SHAKE_ENABLED, s_fitness_shake_enabled);
+    if (!s_fitness_shake_enabled) {
+      fitness_hide_overlay(true);
+    }
+    fitness_configure_tap_service();
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_RING_STEPS_ON);
+  if (t) {
+    s_fitness_ring_steps_on = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_FITNESS_RING_STEPS_ON, s_fitness_ring_steps_on);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_RING_ACTIVE_ON);
+  if (t) {
+    s_fitness_ring_active_on = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_FITNESS_RING_ACTIVE_ON, s_fitness_ring_active_on);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_RING_CALORIES_ON);
+  if (t) {
+    s_fitness_ring_calories_on = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_FITNESS_RING_CALORIES_ON, s_fitness_ring_calories_on);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_TARGET_STEPS);
+  if (t) {
+    s_fitness_target_steps =
+        fitness_sanitize_target(t->value->int32, FITNESS_DEFAULT_TARGET_STEPS);
+    persist_write_int(PERSIST_KEY_FITNESS_TARGET_STEPS, s_fitness_target_steps);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_TARGET_ACTIVE_MIN);
+  if (t) {
+    s_fitness_target_active_min =
+        fitness_sanitize_target(t->value->int32, FITNESS_DEFAULT_TARGET_ACTIVE_MIN);
+    persist_write_int(PERSIST_KEY_FITNESS_TARGET_ACTIVE_MIN, s_fitness_target_active_min);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_TARGET_CALORIES);
+  if (t) {
+    s_fitness_target_calories =
+        fitness_sanitize_target(t->value->int32, FITNESS_DEFAULT_TARGET_CALORIES);
+    persist_write_int(PERSIST_KEY_FITNESS_TARGET_CALORIES, s_fitness_target_calories);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_COLOR_STEPS);
+  if (t) {
+    s_fitness_color_steps_hex =
+        fitness_sanitize_color(t->value->int32, FITNESS_DEFAULT_COLOR_STEPS);
+    persist_write_int(PERSIST_KEY_FITNESS_COLOR_STEPS, s_fitness_color_steps_hex);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_COLOR_ACTIVE);
+  if (t) {
+    s_fitness_color_active_hex =
+        fitness_sanitize_color(t->value->int32, FITNESS_DEFAULT_COLOR_ACTIVE);
+    persist_write_int(PERSIST_KEY_FITNESS_COLOR_ACTIVE, s_fitness_color_active_hex);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_COLOR_CALORIES);
+  if (t) {
+    s_fitness_color_calories_hex =
+        fitness_sanitize_color(t->value->int32, FITNESS_DEFAULT_COLOR_CALORIES);
+    persist_write_int(PERSIST_KEY_FITNESS_COLOR_CALORIES, s_fitness_color_calories_hex);
+    fitness_settings_changed = true;
+  }
+
+  if (fitness_settings_changed && s_fitness_overlay_visible && s_fitness_layer) {
+    layer_mark_dirty(s_fitness_layer);
+  }
+
   update_weather_widget();
 }
 
@@ -1280,6 +1720,42 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_COMP_SLOT_3)) {
     s_complication_slots[2] = sanitize_complication(
         persist_read_int(PERSIST_KEY_COMP_SLOT_3), ComplicationHeartRate);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_SHAKE_ENABLED)) {
+    s_fitness_shake_enabled = persist_read_bool(PERSIST_KEY_FITNESS_SHAKE_ENABLED);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_RING_STEPS_ON)) {
+    s_fitness_ring_steps_on = persist_read_bool(PERSIST_KEY_FITNESS_RING_STEPS_ON);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_RING_ACTIVE_ON)) {
+    s_fitness_ring_active_on = persist_read_bool(PERSIST_KEY_FITNESS_RING_ACTIVE_ON);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_RING_CALORIES_ON)) {
+    s_fitness_ring_calories_on = persist_read_bool(PERSIST_KEY_FITNESS_RING_CALORIES_ON);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_TARGET_STEPS)) {
+    s_fitness_target_steps = fitness_sanitize_target(
+        persist_read_int(PERSIST_KEY_FITNESS_TARGET_STEPS), FITNESS_DEFAULT_TARGET_STEPS);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_TARGET_ACTIVE_MIN)) {
+    s_fitness_target_active_min = fitness_sanitize_target(
+        persist_read_int(PERSIST_KEY_FITNESS_TARGET_ACTIVE_MIN), FITNESS_DEFAULT_TARGET_ACTIVE_MIN);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_TARGET_CALORIES)) {
+    s_fitness_target_calories = fitness_sanitize_target(
+        persist_read_int(PERSIST_KEY_FITNESS_TARGET_CALORIES), FITNESS_DEFAULT_TARGET_CALORIES);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_COLOR_STEPS)) {
+    s_fitness_color_steps_hex = fitness_sanitize_color(
+        persist_read_int(PERSIST_KEY_FITNESS_COLOR_STEPS), FITNESS_DEFAULT_COLOR_STEPS);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_COLOR_ACTIVE)) {
+    s_fitness_color_active_hex = fitness_sanitize_color(
+        persist_read_int(PERSIST_KEY_FITNESS_COLOR_ACTIVE), FITNESS_DEFAULT_COLOR_ACTIVE);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_COLOR_CALORIES)) {
+    s_fitness_color_calories_hex = fitness_sanitize_color(
+        persist_read_int(PERSIST_KEY_FITNESS_COLOR_CALORIES), FITNESS_DEFAULT_COLOR_CALORIES);
   }
 }
 
@@ -1460,6 +1936,11 @@ static void window_load(Window *window) {
   layer_set_update_proc(s_face_layer, face_update_proc);
   layer_add_child(root, s_face_layer);
 
+  s_fitness_layer = layer_create(bounds);
+  layer_set_update_proc(s_fitness_layer, fitness_update_proc);
+  layer_set_hidden(s_fitness_layer, true);
+  layer_add_child(root, s_fitness_layer);
+
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
   update_time_date(t);
@@ -1478,7 +1959,10 @@ static void window_load(Window *window) {
 static void window_unload(Window *window) {
   (void)window;
   destroy_theme_bitmaps();
+  layer_destroy(s_fitness_layer);
+  s_fitness_layer = NULL;
   layer_destroy(s_face_layer);
+  s_face_layer = NULL;
 }
 
 static void init(void) {
@@ -1502,6 +1986,8 @@ static void init(void) {
   health_service_set_heart_rate_sample_period(60);
 #endif
 
+  fitness_configure_tap_service();
+
   app_message_register_inbox_received(inbox_received_handler);
   app_message_register_inbox_dropped(inbox_dropped_handler);
   app_message_open(256, 64);
@@ -1509,6 +1995,11 @@ static void init(void) {
 
 static void deinit(void) {
   app_message_deregister_callbacks();
+  fitness_hide_overlay(true);
+  if (s_fitness_tap_subscribed) {
+    accel_tap_service_unsubscribe();
+    s_fitness_tap_subscribed = false;
+  }
 #if defined(PBL_HEALTH)
   health_service_set_heart_rate_sample_period(0);
   health_service_events_unsubscribe();

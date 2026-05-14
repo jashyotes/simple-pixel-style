@@ -31,7 +31,17 @@ var DEFAULT_SETTINGS = {
   CALENDAR_ENABLED: false,
   CALENDAR_ICS_URL: '',
   CALENDAR_ICS_URL_2: '',
-  CALENDAR_LOOKAHEAD_HOURS: '48'
+  CALENDAR_LOOKAHEAD_HOURS: '48',
+  FITNESS_SHAKE_ENABLED: false,
+  FITNESS_RING_STEPS_ON: true,
+  FITNESS_RING_ACTIVE_ON: true,
+  FITNESS_RING_CALORIES_ON: true,
+  FITNESS_TARGET_STEPS: '10000',
+  FITNESS_TARGET_ACTIVE_MIN: '30',
+  FITNESS_TARGET_CALORIES: '500',
+  FITNESS_COLOR_STEPS: 0x00FF00,
+  FITNESS_COLOR_ACTIVE: 0x00AAFF,
+  FITNESS_COLOR_CALORIES: 0xFF0000
 };
 
 var COMPLICATION_IDS = {
@@ -66,6 +76,14 @@ function complicationId(value, fallback) {
 
 function temperatureUnit(settings) {
   return settings.TEMPERATURE_UNIT === 'celsius' ? 'celsius' : 'fahrenheit';
+}
+
+function numberSetting(value, fallback, min, max) {
+  var parsed = Number(value);
+  if (!isFinite(parsed)) {
+    parsed = fallback;
+  }
+  return clamp(Math.round(parsed), min, max);
 }
 
 function readSettings() {
@@ -107,6 +125,21 @@ function sendLayoutSetting(settings) {
   dict[keys.COMPLICATION_3] = complicationId(settings.COMPLICATION_3, COMPLICATION_IDS.heart_rate);
   dict[keys.TEMPERATURE_UNIT] = temperatureUnit(settings) === 'celsius' ? 1 : 0;
   sendToWatch(dict, 'Layout setting');
+}
+
+function sendFitnessSetting(settings) {
+  var dict = {};
+  dict[keys.FITNESS_SHAKE_ENABLED] = settings.FITNESS_SHAKE_ENABLED ? 1 : 0;
+  dict[keys.FITNESS_RING_STEPS_ON] = settings.FITNESS_RING_STEPS_ON ? 1 : 0;
+  dict[keys.FITNESS_RING_ACTIVE_ON] = settings.FITNESS_RING_ACTIVE_ON ? 1 : 0;
+  dict[keys.FITNESS_RING_CALORIES_ON] = settings.FITNESS_RING_CALORIES_ON ? 1 : 0;
+  dict[keys.FITNESS_TARGET_STEPS] = numberSetting(settings.FITNESS_TARGET_STEPS, 10000, 1, 999999);
+  dict[keys.FITNESS_TARGET_ACTIVE_MIN] = numberSetting(settings.FITNESS_TARGET_ACTIVE_MIN, 30, 1, 9999);
+  dict[keys.FITNESS_TARGET_CALORIES] = numberSetting(settings.FITNESS_TARGET_CALORIES, 500, 1, 999999);
+  dict[keys.FITNESS_COLOR_STEPS] = numberSetting(settings.FITNESS_COLOR_STEPS, 0x00FF00, 0, 0xFFFFFF);
+  dict[keys.FITNESS_COLOR_ACTIVE] = numberSetting(settings.FITNESS_COLOR_ACTIVE, 0x00AAFF, 0, 0xFFFFFF);
+  dict[keys.FITNESS_COLOR_CALORIES] = numberSetting(settings.FITNESS_COLOR_CALORIES, 0xFF0000, 0, 0xFFFFFF);
+  sendToWatch(dict, 'Fitness setting');
 }
 
 function nearestRainChance(hourly) {
@@ -1091,6 +1124,7 @@ function scheduleRefreshes() {
 Pebble.addEventListener('ready', function() {
   var settings = readSettings();
   sendLayoutSetting(settings);
+  sendFitnessSetting(settings);
   refreshWeather();
   refreshCalendar();
   scheduleRefreshes();
@@ -1108,6 +1142,7 @@ Pebble.addEventListener('webviewclosed', function(event) {
   clay.getSettings(event.response, false);
   var settings = readSettings();
   sendLayoutSetting(settings);
+  sendFitnessSetting(settings);
   refreshWeather();
   refreshCalendar();
   scheduleRefreshes();

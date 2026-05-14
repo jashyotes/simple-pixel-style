@@ -301,6 +301,90 @@
     ]
   },
   {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Fitness Rings"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "FITNESS_SHAKE_ENABLED",
+        "label": "Enable shake to show fitness rings",
+        "defaultValue": false
+      },
+      {
+        "type": "toggle",
+        "messageKey": "FITNESS_RING_STEPS_ON",
+        "label": "Show steps ring",
+        "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "messageKey": "FITNESS_RING_ACTIVE_ON",
+        "label": "Show active time ring",
+        "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "messageKey": "FITNESS_RING_CALORIES_ON",
+        "label": "Show active calories ring",
+        "defaultValue": true
+      },
+      {
+        "type": "input",
+        "messageKey": "FITNESS_TARGET_STEPS",
+        "label": "Steps target",
+        "defaultValue": "10000",
+        "attributes": {
+          "type": "number",
+          "min": "1",
+          "step": "1"
+        }
+      },
+      {
+        "type": "input",
+        "messageKey": "FITNESS_TARGET_ACTIVE_MIN",
+        "label": "Active minutes target",
+        "defaultValue": "30",
+        "attributes": {
+          "type": "number",
+          "min": "1",
+          "step": "1"
+        }
+      },
+      {
+        "type": "input",
+        "messageKey": "FITNESS_TARGET_CALORIES",
+        "label": "Active calories target",
+        "defaultValue": "500",
+        "attributes": {
+          "type": "number",
+          "min": "1",
+          "step": "1"
+        }
+      },
+      {
+        "type": "color",
+        "messageKey": "FITNESS_COLOR_STEPS",
+        "label": "Steps ring color",
+        "defaultValue": 65280
+      },
+      {
+        "type": "color",
+        "messageKey": "FITNESS_COLOR_ACTIVE",
+        "label": "Active ring color",
+        "defaultValue": 43775
+      },
+      {
+        "type": "color",
+        "messageKey": "FITNESS_COLOR_CALORIES",
+        "label": "Calories ring color",
+        "defaultValue": 16711680
+      }
+    ]
+  },
+  {
     "type": "submit",
     "defaultValue": "Save"
   }
