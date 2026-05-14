@@ -886,8 +886,10 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   fill_inverted_section_background(
       ctx, ColorSectionMeetingBar,
       GRect(0, meeting_bar_y, SCREEN_W, SCREEN_H - meeting_bar_y));
-  if (!section_inverted(ColorSectionMeetingBar) &&
-      !large_weather_meeting_color_break) {
+  const bool draw_meeting_separator = s_verbose_weather_enabled && s_verbose_weather_large
+      ? !large_weather_meeting_color_break
+      : !section_inverted(ColorSectionMeetingBar);
+  if (draw_meeting_separator) {
     graphics_context_set_stroke_color(ctx, draw_fg_color());
     graphics_context_set_stroke_width(ctx, 1);
     graphics_draw_line(ctx, GPoint(8, meeting_bar_y), GPoint(192, meeting_bar_y));
