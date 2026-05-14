@@ -2169,7 +2169,7 @@ static void banner_seed_sample_state(void) {
   snprintf(s_weather_summary_buf, sizeof(s_weather_summary_buf), "CLEAR");
 
   s_shake_behavior = ShakeBehaviorYourDay;
-  s_fitness_overlay_duration_ms = 30000;
+  s_fitness_overlay_duration_ms = 300000;
   s_day_event_hours_bitmap =
       (1 << 8) | (1 << 9) | (1 << 11) | (1 << 12) | (1 << 15);
   s_day_event_hours_bitmap_yesterday = 0;
@@ -3260,6 +3260,7 @@ static void window_load(Window *window) {
   update_stats();
 #if BANNER_SCREENSHOT_SEED
   banner_seed_sample_state();
+  shake_show_overlay();
 #endif
 }
 
