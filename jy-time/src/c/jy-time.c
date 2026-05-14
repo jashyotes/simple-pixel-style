@@ -251,7 +251,7 @@ static int weather_band_h(void) {
     return EVENT_SEPARATOR_Y - weather_band_y();
   }
 
-  return (COMPLICATION_RADIUS * 2) + 2;
+  return (COMPLICATION_RADIUS * 2) + 4;
 }
 
 static void set_text_color(GContext *ctx, GColor color) {
@@ -845,6 +845,10 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   const bool large_weather_meeting_color_break =
       s_verbose_weather_large && verbose_weather_meeting_color_break;
   const bool large_weather_layout = s_verbose_weather_enabled && s_verbose_weather_large;
+  const bool compact_weather_meeting_inverted =
+      !s_verbose_weather_enabled &&
+      section_inverted(ColorSectionWeather) &&
+      section_inverted(ColorSectionMeetingBar);
   const int meeting_bar_y = large_weather_layout
       ? (large_weather_meeting_color_break ? EVENT_SEPARATOR_Y + 3 : EVENT_SEPARATOR_Y + 1)
       : EVENT_SEPARATOR_Y;
@@ -876,9 +880,12 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
     draw_time_row(ctx);
 
     set_draw_section(ColorSectionWeather);
+    const int compact_weather_bottom = compact_weather_meeting_inverted
+        ? meeting_bar_y
+        : weather_y + weather_band_h();
     fill_inverted_section_background(
         ctx, ColorSectionWeather,
-        GRect(0, weather_y, SCREEN_W, weather_band_h()));
+        GRect(0, weather_y, SCREEN_W, compact_weather_bottom - weather_y));
     draw_complication(ctx, GPoint(40, COMPLICATION_CENTER_Y), s_complication_slots[0]);
     draw_complication(ctx, GPoint(100, COMPLICATION_CENTER_Y), s_complication_slots[1]);
     draw_complication(ctx, GPoint(160, COMPLICATION_CENTER_Y), s_complication_slots[2]);
@@ -890,7 +897,7 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
       GRect(0, meeting_bar_y, SCREEN_W, SCREEN_H - meeting_bar_y));
   const bool draw_meeting_separator = s_verbose_weather_enabled
       ? !verbose_weather_meeting_color_break
-      : !section_inverted(ColorSectionMeetingBar);
+      : (!section_inverted(ColorSectionMeetingBar) || compact_weather_meeting_inverted);
   if (draw_meeting_separator) {
     graphics_context_set_stroke_color(ctx, draw_fg_color());
     graphics_context_set_stroke_width(ctx, 1);
