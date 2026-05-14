@@ -46,7 +46,7 @@
 #define COMPLICATION_COUNT 3
 #define COMPLICATION_CENTER_Y 163
 #define WEATHER_ICON_SMALL_SIZE 18
-#define WEATHER_ICON_LARGE_SIZE 24
+#define WEATHER_ICON_LARGE_SIZE 32
 #define QUIET_TIME_ICON_SIZE 18
 #define QUIET_TIME_ICON_X 177
 
@@ -752,7 +752,7 @@ static void draw_verbose_weather_row(GContext *ctx) {
     snprintf(large_temp_text, sizeof(large_temp_text), "%s", temp_text);
 
     const int icon_size = WEATHER_ICON_LARGE_SIZE;
-    const int icon_gap = 7;
+    const int icon_gap = 8;
     GFont temp_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
     GFont summary_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
     const GRect measure_frame = GRect(0, 0, SCREEN_W, 28);
@@ -761,7 +761,7 @@ static void draw_verbose_weather_row(GContext *ctx) {
         GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
     int top_row_width = icon_size + icon_gap + temp_size.w;
     int top_row_x = (SCREEN_W - top_row_width) / 2;
-    const int top_center_y = VERBOSE_WEATHER_CENTER_Y - 15;
+    const int top_center_y = VERBOSE_WEATHER_CENTER_Y - 18;
 
     draw_weather_icon_centered(ctx,
                                GPoint(top_row_x + (icon_size / 2), top_center_y),
@@ -772,7 +772,7 @@ static void draw_verbose_weather_row(GContext *ctx) {
               draw_fg_color(), GTextAlignmentLeft);
 
     draw_text(ctx, summary, summary_font,
-              GRect(8, VERBOSE_WEATHER_CENTER_Y - 3, SCREEN_W - 16, 24),
+              GRect(8, VERBOSE_WEATHER_CENTER_Y - 1, SCREEN_W - 16, 20),
               draw_fg_color(), GTextAlignmentCenter);
     return;
   }
@@ -872,9 +872,11 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   fill_inverted_section_background(
       ctx, ColorSectionMeetingBar,
       GRect(0, EVENT_SEPARATOR_Y, SCREEN_W, SCREEN_H - EVENT_SEPARATOR_Y));
-  graphics_context_set_stroke_color(ctx, draw_fg_color());
-  graphics_context_set_stroke_width(ctx, 1);
-  graphics_draw_line(ctx, GPoint(8, EVENT_SEPARATOR_Y), GPoint(192, EVENT_SEPARATOR_Y));
+  if (!section_inverted(ColorSectionMeetingBar)) {
+    graphics_context_set_stroke_color(ctx, draw_fg_color());
+    graphics_context_set_stroke_width(ctx, 1);
+    graphics_draw_line(ctx, GPoint(8, EVENT_SEPARATOR_Y), GPoint(192, EVENT_SEPARATOR_Y));
+  }
 
   draw_text(ctx, s_event_buf, s_font_event, GRect(8, 203, 184, 25),
             draw_fg_color(), GTextAlignmentCenter);

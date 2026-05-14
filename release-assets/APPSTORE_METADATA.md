@@ -1,6 +1,6 @@
 Name: Simple Pixel Style
 
-Version: 0.42
+Version: 0.43
 
 Category: watchface
 
@@ -8,10 +8,10 @@ Description:
 Pixel-watch-inspired information-dense watchface for Pebble Time 2. Shows watch battery, Bluetooth status, full date, AM/PM time, a default top walking-man step counter, three configurable complication circles, and an optional bottom calendar event. Weather uses Open-Meteo through PebbleKit JS, verbose weather can replace the circles, the bottom event can merge one or two private iCalendar/ICS feed URLs, and color customization supports light mode plus per-section inversion.
 
 Release notes:
-0.42 fixes calendar event selection when meetings overlap or roll over close together. The bottom event now follows the latest-started active meeting through its real end time, then advances to the next future meeting, so the displayed title and next-event countdown stay paired to the same calendar event.
+0.43 enlarges the large verbose-weather icon set and tightens inverted meeting-bar layouts with circle complications. The watchface no longer draws a second contrasting separator over an inverted meeting bar; the filled bar edge now provides the divider below the circles.
 
 Artifacts:
-- `simple-pixel-style-0.42-emery.pbw`
+- `simple-pixel-style-0.43-emery.pbw`
 - `Current Screenshots/current-dark-default-3-circles-quiet-time.png`
 - `Current Screenshots/current-light-default-3-circles.png`
 - `Current Screenshots/current-light-inverted-bars-default-3-circles.png`
