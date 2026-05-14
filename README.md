@@ -4,7 +4,7 @@ Pebble Time 2 watchface with a pixel-watch layout: watch battery, Bluetooth stat
 
 ## Current Release
 
-Version `0.43` ships with:
+Version `0.44` ships with:
 
 - Color customization toggles for independently inverting the top bar, date bar, time, weather area, and meeting bar.
 - Cleaner date and time inversion bars, with contiguous edges when both are inverted.
@@ -13,6 +13,7 @@ Version `0.43` ships with:
 - Three configurable complication circles by default, with weather, rain chance, and heart rate selected out of the box.
 - Top walking-man W800 step counter enabled by default, including a Casio-style thousands comma.
 - Optional small or large verbose weather mode that replaces the circles with a centered weather line; the large style now uses larger weather icons.
+- Large verbose-weather layouts keep a 2px buffer above the meeting bar when those sections use different colors, so the weather description is not clipped at the boundary.
 - Built-in choices for weather, weather icon-only, temperature, rain chance, heart rate, steps, watch battery, phone battery, feels-like temperature, high temperature, wind speed, UV index, and next-event countdown.
 - Fahrenheit and Celsius selection for temperature-based complications.
 - Open-Meteo weather through PebbleKit JS.
@@ -26,7 +27,7 @@ Version `0.43` ships with:
 
 Current release artifacts:
 
-- `release-assets/simple-pixel-style-0.43-emery.pbw`
+- `release-assets/simple-pixel-style-0.44-emery.pbw`
 - `Current Screenshots/current-dark-default-3-circles-quiet-time.png`
 - `Current Screenshots/current-light-default-3-circles.png`
 - `Current Screenshots/current-light-inverted-bars-default-3-circles.png`
@@ -34,7 +35,7 @@ Current release artifacts:
 - `Current Screenshots/current-light-weather-meeting-inverted.png`
 - `Current Screenshots/current-light-small-verbose-weather.png`
 - `Current Screenshots/current-light-large-verbose-weather.png`
-- `release-assets/RELEASE_NOTES_0.43.md`
+- `release-assets/RELEASE_NOTES_0.44.md`
 
 ## Project Layout
 

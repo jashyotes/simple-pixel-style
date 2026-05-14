@@ -209,6 +209,10 @@ static BitmapTheme section_bitmap_theme(ColorSection section) {
   return section_uses_light_palette(section) ? BitmapThemeLight : BitmapThemeDark;
 }
 
+static bool section_backgrounds_differ(ColorSection first, ColorSection second) {
+  return section_uses_light_palette(first) != section_uses_light_palette(second);
+}
+
 static GColor draw_bg_color(void) {
   return section_bg_color(s_draw_section);
 }
@@ -868,14 +872,21 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
     draw_complication(ctx, GPoint(160, COMPLICATION_CENTER_Y), s_complication_slots[2]);
   }
 
+  const int meeting_bar_y =
+      s_verbose_weather_enabled &&
+      s_verbose_weather_large &&
+      section_backgrounds_differ(ColorSectionWeather, ColorSectionMeetingBar)
+          ? EVENT_SEPARATOR_Y + 2
+          : EVENT_SEPARATOR_Y;
+
   set_draw_section(ColorSectionMeetingBar);
   fill_inverted_section_background(
       ctx, ColorSectionMeetingBar,
-      GRect(0, EVENT_SEPARATOR_Y, SCREEN_W, SCREEN_H - EVENT_SEPARATOR_Y));
+      GRect(0, meeting_bar_y, SCREEN_W, SCREEN_H - meeting_bar_y));
   if (!section_inverted(ColorSectionMeetingBar)) {
     graphics_context_set_stroke_color(ctx, draw_fg_color());
     graphics_context_set_stroke_width(ctx, 1);
-    graphics_draw_line(ctx, GPoint(8, EVENT_SEPARATOR_Y), GPoint(192, EVENT_SEPARATOR_Y));
+    graphics_draw_line(ctx, GPoint(8, meeting_bar_y), GPoint(192, meeting_bar_y));
   }
 
   draw_text(ctx, s_event_buf, s_font_event, GRect(8, 203, 184, 25),
