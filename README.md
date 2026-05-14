@@ -4,7 +4,7 @@ Pebble Time 2 watchface with a pixel-watch layout: watch battery, Bluetooth stat
 
 ## Current Release
 
-Version `0.48` ships with:
+Version `0.49` ships with:
 
 - Color customization toggles for independently inverting the top bar, date bar, time, weather area, and meeting bar.
 - Cleaner date and time inversion bars, with contiguous edges when both are inverted.
@@ -14,6 +14,7 @@ Version `0.48` ships with:
 - Top walking-man W800 step counter enabled by default, including a Casio-style thousands comma.
 - Optional small or large verbose weather mode that replaces the circles with a centered weather line; the large style now uses larger weather icons.
 - Small and large verbose-weather layouts show the separator only when weather and meeting sections share a color; when they do not share a color, the separator is removed and large verbose weather keeps the 2px weather-owned buffer.
+- Large verbose weather has extra clearance between the weather row and meeting bar.
 - Built-in choices for weather, weather icon-only, temperature, rain chance, heart rate, steps, watch battery, phone battery, feels-like temperature, high temperature, wind speed, UV index, and next-event countdown.
 - Fahrenheit and Celsius selection for temperature-based complications.
 - Open-Meteo weather through PebbleKit JS.
@@ -27,7 +28,7 @@ Version `0.48` ships with:
 
 Current release artifacts:
 
-- `release-assets/simple-pixel-style-0.48-emery.pbw`
+- `release-assets/simple-pixel-style-0.49-emery.pbw`
 - `Current Screenshots/current-dark-default-3-circles-quiet-time.png`
 - `Current Screenshots/current-light-default-3-circles.png`
 - `Current Screenshots/current-light-inverted-bars-default-3-circles.png`
@@ -35,7 +36,7 @@ Current release artifacts:
 - `Current Screenshots/current-light-weather-meeting-inverted.png`
 - `Current Screenshots/current-light-small-verbose-weather.png`
 - `Current Screenshots/current-light-large-verbose-weather.png`
-- `release-assets/RELEASE_NOTES_0.48.md`
+- `release-assets/RELEASE_NOTES_0.49.md`
 
 ## Project Layout
 

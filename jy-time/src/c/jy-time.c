@@ -765,7 +765,7 @@ static void draw_verbose_weather_row(GContext *ctx) {
         GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
     int top_row_width = icon_size + icon_gap + temp_size.w;
     int top_row_x = (SCREEN_W - top_row_width) / 2;
-    const int top_center_y = VERBOSE_WEATHER_CENTER_Y - 18;
+    const int top_center_y = VERBOSE_WEATHER_CENTER_Y - 19;
 
     draw_weather_icon_centered(ctx,
                                GPoint(top_row_x + (icon_size / 2), top_center_y),
@@ -776,7 +776,7 @@ static void draw_verbose_weather_row(GContext *ctx) {
               draw_fg_color(), GTextAlignmentLeft);
 
     draw_text(ctx, summary, summary_font,
-              GRect(8, VERBOSE_WEATHER_CENTER_Y - 1, SCREEN_W - 16, 20),
+              GRect(8, VERBOSE_WEATHER_CENTER_Y - 2, SCREEN_W - 16, 20),
               draw_fg_color(), GTextAlignmentCenter);
     return;
   }
@@ -844,10 +844,11 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
       section_backgrounds_differ(ColorSectionWeather, ColorSectionMeetingBar);
   const bool large_weather_meeting_color_break =
       s_verbose_weather_large && verbose_weather_meeting_color_break;
-  const int meeting_bar_y = large_weather_meeting_color_break
-      ? EVENT_SEPARATOR_Y + 2
+  const bool large_weather_layout = s_verbose_weather_enabled && s_verbose_weather_large;
+  const int meeting_bar_y = large_weather_layout
+      ? (large_weather_meeting_color_break ? EVENT_SEPARATOR_Y + 3 : EVENT_SEPARATOR_Y + 1)
       : EVENT_SEPARATOR_Y;
-  const int verbose_weather_bottom = large_weather_meeting_color_break
+  const int verbose_weather_bottom = large_weather_layout
       ? meeting_bar_y
       : EVENT_SEPARATOR_Y;
 
