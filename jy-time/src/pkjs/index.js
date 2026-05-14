@@ -61,7 +61,10 @@ var COMPLICATION_IDS = {
   uv: 9,
   next_event: 10,
   weather: 11,
-  weather_icon: 12
+  weather_icon: 12,
+  fitness_rings: 13,
+  weather_circle: 14,
+  battery_circle: 15
 };
 
 function clamp(value, min, max) {

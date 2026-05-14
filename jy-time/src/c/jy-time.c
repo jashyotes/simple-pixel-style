@@ -82,6 +82,9 @@ typedef enum {
   ComplicationNextEvent = 10,
   ComplicationWeather = 11,
   ComplicationWeatherIcon = 12,
+  ComplicationFitnessRings = 13,
+  ComplicationWeatherCircle = 14,
+  ComplicationBatteryCircle = 15,
 } ComplicationType;
 
 typedef enum {
@@ -304,7 +307,7 @@ static void draw_text(GContext *ctx, const char *text, GFont font, GRect frame,
 }
 
 static ComplicationType sanitize_complication(int value, ComplicationType fallback) {
-  return value >= ComplicationTemperature && value <= ComplicationWeatherIcon
+  return value >= ComplicationTemperature && value <= ComplicationBatteryCircle
       ? (ComplicationType)value
       : fallback;
 }
@@ -1011,6 +1014,56 @@ static void draw_calendar_icon_centered(GContext *ctx, GPoint center) {
   draw_icon_block(ctx, GPoint(center.x - 7, center.y - 8), 8, 7, 2, 2);
 }
 
+static void draw_complication_fitness_rings(GContext *ctx, GPoint center) {
+  fitness_read_health_values();
+
+  GColor steps_color = fitness_color_from_hex(
+      s_fitness_color_steps_hex, FITNESS_DEFAULT_COLOR_STEPS);
+  GColor active_color = fitness_color_from_hex(
+      s_fitness_color_active_hex, FITNESS_DEFAULT_COLOR_ACTIVE);
+  GColor calories_color = fitness_color_from_hex(
+      s_fitness_color_calories_hex, FITNESS_DEFAULT_COLOR_CALORIES);
+
+  const int outer_radius = 22;
+  const int ring_gap = 5;
+  const int ring_stroke = 3;
+  fitness_draw_ring(ctx, center, outer_radius, ring_stroke,
+                    s_fitness_steps_value, s_fitness_target_steps, steps_color);
+  fitness_draw_ring(ctx, center, outer_radius - ring_gap, ring_stroke,
+                    s_fitness_active_minutes_value, s_fitness_target_active_min,
+                    active_color);
+  fitness_draw_ring(ctx, center, outer_radius - (ring_gap * 2), ring_stroke,
+                    s_fitness_active_calories_value, s_fitness_target_calories,
+                    calories_color);
+}
+
+static void draw_complication_weather_circle(GContext *ctx, GPoint center) {
+  draw_weather_icon_centered(ctx, GPoint(center.x, center.y - 7), false);
+  draw_text(ctx, s_temp_buf, s_font_complication,
+            GRect(center.x - 22, center.y + 2, 44, 18),
+            draw_fg_color(), GTextAlignmentCenter);
+}
+
+static void draw_complication_battery_circle(GContext *ctx, GPoint center) {
+  int battery_pct = s_watch_battery_pct;
+  if (battery_pct < 0) {
+    battery_pct = 0;
+  } else if (battery_pct > 100) {
+    battery_pct = 100;
+  }
+
+  const int radius = 22;
+  const int empty_angle = ((100 - battery_pct) * 360) / 100;
+  const GRect frame = GRect(center.x - radius, center.y - radius,
+                            radius * 2, radius * 2);
+  graphics_context_set_fill_color(ctx, battery_pct > 20 ? draw_fg_color() : GColorRed);
+  graphics_fill_radial(ctx, frame, GOvalScaleModeFitCircle, 4,
+                       DEG_TO_TRIGANGLE(empty_angle), DEG_TO_TRIGANGLE(360));
+  draw_text(ctx, s_watch_battery_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(center.x - 22, center.y - 9, 44, 18),
+            draw_fg_color(), GTextAlignmentCenter);
+}
+
 static void draw_complication_icon(GContext *ctx, ComplicationType type, GPoint center) {
   if (type == ComplicationSteps) {
     draw_step_icon_centered(ctx, center);
@@ -1066,6 +1119,10 @@ static const char *value_for_complication(ComplicationType type) {
     return s_temp_buf;
   } else if (type == ComplicationWeatherIcon) {
     return "";
+  } else if (type == ComplicationFitnessRings ||
+             type == ComplicationWeatherCircle ||
+             type == ComplicationBatteryCircle) {
+    return "";
   }
   return "--";
 }
@@ -1079,6 +1136,15 @@ static void draw_complication(GContext *ctx, GPoint center, ComplicationType typ
 
   if (type == ComplicationWeatherIcon) {
     draw_complication_icon(ctx, type, center);
+    return;
+  } else if (type == ComplicationFitnessRings) {
+    draw_complication_fitness_rings(ctx, center);
+    return;
+  } else if (type == ComplicationWeatherCircle) {
+    draw_complication_weather_circle(ctx, center);
+    return;
+  } else if (type == ComplicationBatteryCircle) {
+    draw_complication_battery_circle(ctx, center);
     return;
   }
 
