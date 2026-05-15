@@ -1576,6 +1576,7 @@ static void draw_your_day_hour_pips(GContext *ctx, const char *now_text, GFont n
   }
   const int start_x = (SCREEN_W - ((pip_count - 1) * gap_x)) / 2;
   const int y = 96;
+  const int elbow_y = y + 23;
   GFont label_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
   int current_x = -1;
 
@@ -1587,6 +1588,11 @@ static void draw_your_day_hour_pips(GContext *ctx, const char *now_text, GFont n
     bool busy = day_event_hour_busy(day_offset, hour);
     bool current = day_offset == 0 && hour == current_hour;
 
+    if (current) {
+      current_x = x;
+      continue;
+    }
+
     graphics_context_set_stroke_color(ctx, theme_fg_color());
     graphics_context_set_fill_color(ctx, theme_fg_color());
     graphics_context_set_stroke_width(ctx, 1);
@@ -1594,11 +1600,6 @@ static void draw_your_day_hour_pips(GContext *ctx, const char *now_text, GFont n
       graphics_fill_circle(ctx, GPoint(x, y), 5);
     } else {
       graphics_draw_circle(ctx, GPoint(x, y), 5);
-    }
-
-    if (current) {
-      current_x = x;
-      continue;
     }
 
     char label[4];
@@ -1627,7 +1628,6 @@ static void draw_your_day_hour_pips(GContext *ctx, const char *now_text, GFont n
     now_right = SCREEN_W - 8;
   }
 
-  const int elbow_y = y + 23;
   const int target_x = current_x <= ((now_left + now_right) / 2)
       ? now_left - 4
       : now_right + 4;
@@ -1661,7 +1661,7 @@ static void your_day_draw_overlay(GContext *ctx) {
   if (s_your_day_window_mode == 1) {
     snprintf(title_buf, sizeof(title_buf), "%d HOUR WORKDAY", span);
   } else {
-    snprintf(title_buf, sizeof(title_buf), "%d HOUR WINDOW", span);
+    snprintf(title_buf, sizeof(title_buf), "Future");
   }
   draw_text(ctx, title_buf, s_font_top, GRect(8, 64, SCREEN_W - 16, 24),
             fitness_muted_text_color(), GTextAlignmentCenter);
