@@ -4,7 +4,111 @@ var Clay = require('@rebble/clay');
 var clayConfig = require('./config.json');
 var keys = require('message_keys');
 
-var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
+var BW_ITEM_KEYS = [
+  'bw-heading',
+  'INVERT_TOP_BAR',
+  'INVERT_DATE_BAR',
+  'INVERT_TIME',
+  'INVERT_WEATHER',
+  'INVERT_MEETING_BAR'
+];
+
+var COLOR_ITEM_KEYS = [
+  'color-heading',
+  'COLOR_SECTION_BG_TOP_BAR',
+  'COLOR_SECTION_FG_TOP_BAR',
+  'COLOR_SECTION_BG_DATE_BAR',
+  'COLOR_SECTION_FG_DATE_BAR',
+  'COLOR_SECTION_BG_TIME',
+  'COLOR_SECTION_FG_TIME',
+  'COLOR_SECTION_BG_WEATHER',
+  'COLOR_SECTION_FG_WEATHER',
+  'COLOR_SECTION_BG_MEETING_BAR',
+  'COLOR_SECTION_FG_MEETING_BAR'
+];
+
+var SHAKE_FITNESS_ITEM_KEYS = [
+  'shake-fitness-heading',
+  'FITNESS_RING_STEPS_ON',
+  'FITNESS_RING_ACTIVE_ON',
+  'FITNESS_RING_CALORIES_ON',
+  'FITNESS_TARGET_STEPS',
+  'FITNESS_TARGET_ACTIVE_MIN',
+  'FITNESS_TARGET_CALORIES',
+  'FITNESS_COLOR_STEPS',
+  'FITNESS_COLOR_ACTIVE',
+  'FITNESS_COLOR_CALORIES'
+];
+
+var SHAKE_CALENDAR_ITEM_KEYS = [
+  'shake-calendar-heading',
+  'CALENDAR_SHAKE_EVENT_COUNT'
+];
+
+var SHAKE_YOURDAY_ITEM_KEYS = [
+  'shake-yourday-heading',
+  'YOUR_DAY_WINDOW_MODE',
+  'YOUR_DAY_WINDOW_HOURS',
+  'YOUR_DAY_START_HOUR',
+  'YOUR_DAY_END_HOUR'
+];
+
+var SHAKE_ALTTZ_ITEM_KEYS = [
+  'shake-alttz-heading',
+  'ALT_TZ_LABEL',
+  'ALT_TZ_OFFSET_MIN'
+];
+
+function getItem(clayCfg, key) {
+  return clayCfg.getItemById(key) || clayCfg.getItemByMessageKey(key);
+}
+
+function setGroupVisible(clayCfg, keysList, visible) {
+  keysList.forEach(function(key) {
+    var item = getItem(clayCfg, key);
+    if (!item) return;
+    if (visible) {
+      item.show();
+    } else {
+      item.hide();
+    }
+  });
+}
+
+function customClay() {
+  var clayCfg = this;
+
+  clayCfg.on(clayCfg.EVENTS.AFTER_BUILD, function() {
+    var colorModeItem = clayCfg.getItemByMessageKey('COLOR_MODE');
+    var shakeItem = clayCfg.getItemByMessageKey('SHAKE_BEHAVIOR');
+
+    function syncColorMode() {
+      var v = colorModeItem.get();
+      if (v === 'color') {
+        setGroupVisible(clayCfg, BW_ITEM_KEYS, false);
+        setGroupVisible(clayCfg, COLOR_ITEM_KEYS, true);
+      } else {
+        setGroupVisible(clayCfg, BW_ITEM_KEYS, true);
+        setGroupVisible(clayCfg, COLOR_ITEM_KEYS, false);
+      }
+    }
+
+    function syncShake() {
+      var v = shakeItem.get();
+      setGroupVisible(clayCfg, SHAKE_FITNESS_ITEM_KEYS, v === 'fitness_rings');
+      setGroupVisible(clayCfg, SHAKE_CALENDAR_ITEM_KEYS, v === 'calendar_events');
+      setGroupVisible(clayCfg, SHAKE_YOURDAY_ITEM_KEYS, v === 'your_day');
+      setGroupVisible(clayCfg, SHAKE_ALTTZ_ITEM_KEYS, v === 'alt_timezone');
+    }
+
+    colorModeItem.on('change', syncColorMode);
+    shakeItem.on('change', syncShake);
+    syncColorMode();
+    syncShake();
+  });
+}
+
+var clay = new Clay(clayConfig, customClay, { autoHandleEvents: false });
 var weatherTimer = null;
 var calendarTimer = null;
 var CURRENT_EVENT_DISPLAY_MINUTES = 15;

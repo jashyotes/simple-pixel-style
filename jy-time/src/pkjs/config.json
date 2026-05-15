@@ -8,31 +8,42 @@
     "items": [
       {
         "type": "heading",
-        "defaultValue": "Color Customization"
-      },
-      {
-        "type": "select",
-        "messageKey": "COLOR_MODE",
-        "label": "Color mode",
-        "defaultValue": "bw",
-        "options": [
-          {
-            "label": "Black & White (default)",
-            "value": "bw"
-          },
-          {
-            "label": "Color",
-            "value": "color"
-          }
-        ],
-        "description": "Black & White uses the Light mode toggle plus the five Invert toggles below. Color uses the per-section color pickers. Shake overlays always follow Light mode regardless of this setting."
+        "defaultValue": "Theme"
       },
       {
         "type": "toggle",
         "messageKey": "LIGHT_MODE",
         "label": "Light mode",
         "defaultValue": false,
-        "description": "Uses a white background with black text and icons in Black & White mode and still applies to shake overlays in either color mode."
+        "description": "Light = white background with black text. Dark = black background with white text. This setting drives the Black & White theme and every shake overlay."
+      },
+      {
+        "type": "select",
+        "messageKey": "COLOR_MODE",
+        "id": "color-mode-select",
+        "label": "Color mode",
+        "defaultValue": "bw",
+        "options": [
+          {
+            "label": "Black & White - Tuxedo",
+            "value": "bw"
+          },
+          {
+            "label": "Color - Poor & Irish",
+            "value": "color"
+          }
+        ],
+        "description": "Black & White uses the inversion toggles below. Color uses the per-section pickers below. Shake overlays always follow the Light mode toggle above."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "id": "bw-heading",
+        "defaultValue": "Black & White inversions"
       },
       {
         "type": "toggle",
@@ -76,7 +87,8 @@
     "items": [
       {
         "type": "heading",
-        "defaultValue": "Per-section colors (only applies when Color mode = Color)"
+        "id": "color-heading",
+        "defaultValue": "Per-section colors"
       },
       {
         "type": "color",
@@ -499,76 +511,84 @@
   {
     "type": "section",
     "items": [
-	      {
-	        "type": "heading",
-	        "defaultValue": "Shake"
-	      },
-	      {
-	        "type": "select",
-	        "messageKey": "SHAKE_BEHAVIOR",
-	        "label": "Shake behavior",
-	        "defaultValue": "off",
-	        "options": [
-	          {
-	            "label": "Off",
-	            "value": "off"
-	          },
-	          {
-	            "label": "Fitness rings",
-	            "value": "fitness_rings"
-	          },
-	          {
-	            "label": "Next calendar events",
-	            "value": "calendar_events"
-	          },
-	          {
-	            "label": "Your Day",
-	            "value": "your_day"
-	          },
-	          {
-	            "label": "Detailed weather",
-	            "value": "detailed_weather"
-	          },
-	          {
-	            "label": "Alt timezone",
-	            "value": "alt_timezone"
-	          },
-	          {
-	            "label": "Heart rate big",
-	            "value": "heart_rate"
-	          }
-	        ]
-	      },
-	      {
-	        "type": "select",
-	        "messageKey": "FITNESS_OVERLAY_DURATION_S",
-	        "label": "Shake overlay duration",
-	        "defaultValue": "5",
-	        "options": [
-	          {
-	            "label": "3 seconds",
-	            "value": "3"
-	          },
-	          {
-	            "label": "5 seconds (default)",
-	            "value": "5"
-	          },
-	          {
-	            "label": "7 seconds",
-	            "value": "7"
-	          },
-	          {
-	            "label": "10 seconds",
-	            "value": "10"
-	          }
-	        ]
-	      },
-	      {
-	        "type": "heading",
-	        "defaultValue": "Fitness rings settings"
-	      },
-	      {
-	        "type": "toggle",
+      {
+        "type": "heading",
+        "defaultValue": "Shake"
+      },
+      {
+        "type": "select",
+        "messageKey": "SHAKE_BEHAVIOR",
+        "id": "shake-behavior-select",
+        "label": "Shake behavior",
+        "defaultValue": "off",
+        "options": [
+          {
+            "label": "Off",
+            "value": "off"
+          },
+          {
+            "label": "Fitness rings",
+            "value": "fitness_rings"
+          },
+          {
+            "label": "Next calendar events",
+            "value": "calendar_events"
+          },
+          {
+            "label": "Your Day",
+            "value": "your_day"
+          },
+          {
+            "label": "Detailed weather",
+            "value": "detailed_weather"
+          },
+          {
+            "label": "Alt timezone",
+            "value": "alt_timezone"
+          },
+          {
+            "label": "Heart rate big",
+            "value": "heart_rate"
+          }
+        ],
+        "description": "Each overlay's color follows the Light mode toggle in the Theme section above. Fitness rings has its own three ring colors; every other overlay uses Light/Dark only."
+      },
+      {
+        "type": "select",
+        "messageKey": "FITNESS_OVERLAY_DURATION_S",
+        "label": "Shake overlay duration",
+        "defaultValue": "5",
+        "options": [
+          {
+            "label": "3 seconds",
+            "value": "3"
+          },
+          {
+            "label": "5 seconds (default)",
+            "value": "5"
+          },
+          {
+            "label": "7 seconds",
+            "value": "7"
+          },
+          {
+            "label": "10 seconds",
+            "value": "10"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "id": "shake-fitness-heading",
+        "defaultValue": "Fitness rings settings"
+      },
+      {
+        "type": "toggle",
         "messageKey": "FITNESS_RING_STEPS_ON",
         "label": "Show steps ring",
         "defaultValue": true
@@ -630,146 +650,164 @@
         "label": "Active ring color",
         "defaultValue": 43775
       },
-	      {
-	        "type": "color",
-	        "messageKey": "FITNESS_COLOR_CALORIES",
-	        "label": "Calories ring color",
-	        "defaultValue": 16711680
-	      },
-	      {
-	        "type": "heading",
-	        "defaultValue": "Calendar events settings"
-	      },
-	      {
-	        "type": "select",
-	        "messageKey": "CALENDAR_SHAKE_EVENT_COUNT",
-	        "label": "Number of events to show",
-	        "defaultValue": "3",
-	        "options": [
-	          {
-	            "label": "3 events",
-	            "value": "3"
-	          },
-	          {
-	            "label": "5 events",
-	            "value": "5"
-	          }
-	        ]
-	      },
-	      {
-	        "type": "heading",
-	        "defaultValue": "Your Day settings"
-	      },
-	      {
-	        "type": "select",
-	        "messageKey": "YOUR_DAY_WINDOW_MODE",
-	        "label": "Hour window",
-	        "defaultValue": "rolling",
-	        "options": [
-	          {
-	            "label": "Rolling",
-	            "value": "rolling"
-	          },
-	          {
-	            "label": "Fixed start/end",
-	            "value": "fixed"
-	          }
-	        ]
-	      },
-	      {
-	        "type": "select",
-	        "messageKey": "YOUR_DAY_WINDOW_HOURS",
-	        "label": "Rolling window hours",
-	        "defaultValue": "10",
-	        "options": [
-	          {
-	            "label": "2 hours",
-	            "value": "2"
-	          },
-	          {
-	            "label": "3 hours",
-	            "value": "3"
-	          },
-	          {
-	            "label": "4 hours",
-	            "value": "4"
-	          },
-	          {
-	            "label": "5 hours",
-	            "value": "5"
-	          },
-	          {
-	            "label": "6 hours",
-	            "value": "6"
-	          },
-	          {
-	            "label": "7 hours",
-	            "value": "7"
-	          },
-	          {
-	            "label": "8 hours",
-	            "value": "8"
-	          },
-	          {
-	            "label": "9 hours",
-	            "value": "9"
-	          },
-	          {
-	            "label": "10 hours",
-	            "value": "10"
-	          }
-	        ]
-	      },
-	      {
-	        "type": "input",
-	        "messageKey": "YOUR_DAY_START_HOUR",
-	        "label": "Fixed start hour",
-	        "defaultValue": "8",
-	        "attributes": {
-	          "type": "number",
-	          "min": "0",
-	          "max": "23",
-	          "step": "1"
-	        }
-	      },
-	      {
-	        "type": "input",
-	        "messageKey": "YOUR_DAY_END_HOUR",
-	        "label": "Fixed end hour",
-	        "defaultValue": "17",
-	        "attributes": {
-	          "type": "number",
-	          "min": "0",
-	          "max": "23",
-	          "step": "1"
-	        }
-	      },
-	      {
-	        "type": "heading",
-	        "defaultValue": "Alt timezone settings"
-	      },
-	      {
-	        "type": "input",
-	        "messageKey": "ALT_TZ_LABEL",
-	        "label": "Alt timezone label",
-	        "defaultValue": "LONDON",
-	        "attributes": {
-	          "type": "text",
-	          "maxLength": 16
-	        }
-	      },
-	      {
-	        "type": "input",
-	        "messageKey": "ALT_TZ_OFFSET_MIN",
-	        "label": "UTC offset minutes",
-	        "defaultValue": "0",
-	        "attributes": {
-	          "type": "number",
-	          "min": "-720",
-	          "max": "840",
-	          "step": "15"
-	        }
-	      }
+      {
+        "type": "color",
+        "messageKey": "FITNESS_COLOR_CALORIES",
+        "label": "Calories ring color",
+        "defaultValue": 16711680
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "id": "shake-calendar-heading",
+        "defaultValue": "Calendar events settings"
+      },
+      {
+        "type": "select",
+        "messageKey": "CALENDAR_SHAKE_EVENT_COUNT",
+        "label": "Number of events to show",
+        "defaultValue": "3",
+        "options": [
+          {
+            "label": "3 events",
+            "value": "3"
+          },
+          {
+            "label": "5 events",
+            "value": "5"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "id": "shake-yourday-heading",
+        "defaultValue": "Your Day settings"
+      },
+      {
+        "type": "select",
+        "messageKey": "YOUR_DAY_WINDOW_MODE",
+        "label": "Hour window",
+        "defaultValue": "rolling",
+        "options": [
+          {
+            "label": "Rolling",
+            "value": "rolling"
+          },
+          {
+            "label": "Fixed start/end",
+            "value": "fixed"
+          }
+        ]
+      },
+      {
+        "type": "select",
+        "messageKey": "YOUR_DAY_WINDOW_HOURS",
+        "label": "Rolling window hours",
+        "defaultValue": "10",
+        "options": [
+          {
+            "label": "2 hours",
+            "value": "2"
+          },
+          {
+            "label": "3 hours",
+            "value": "3"
+          },
+          {
+            "label": "4 hours",
+            "value": "4"
+          },
+          {
+            "label": "5 hours",
+            "value": "5"
+          },
+          {
+            "label": "6 hours",
+            "value": "6"
+          },
+          {
+            "label": "7 hours",
+            "value": "7"
+          },
+          {
+            "label": "8 hours",
+            "value": "8"
+          },
+          {
+            "label": "9 hours",
+            "value": "9"
+          },
+          {
+            "label": "10 hours",
+            "value": "10"
+          }
+        ]
+      },
+      {
+        "type": "input",
+        "messageKey": "YOUR_DAY_START_HOUR",
+        "label": "Fixed start hour",
+        "defaultValue": "8",
+        "attributes": {
+          "type": "number",
+          "min": "0",
+          "max": "23",
+          "step": "1"
+        }
+      },
+      {
+        "type": "input",
+        "messageKey": "YOUR_DAY_END_HOUR",
+        "label": "Fixed end hour",
+        "defaultValue": "17",
+        "attributes": {
+          "type": "number",
+          "min": "0",
+          "max": "23",
+          "step": "1"
+        }
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "id": "shake-alttz-heading",
+        "defaultValue": "Alt timezone settings"
+      },
+      {
+        "type": "input",
+        "messageKey": "ALT_TZ_LABEL",
+        "label": "Alt timezone label",
+        "defaultValue": "LONDON",
+        "attributes": {
+          "type": "text",
+          "maxLength": 16
+        }
+      },
+      {
+        "type": "input",
+        "messageKey": "ALT_TZ_OFFSET_MIN",
+        "label": "UTC offset minutes",
+        "defaultValue": "0",
+        "attributes": {
+          "type": "number",
+          "min": "-720",
+          "max": "840",
+          "step": "15"
+        }
+      }
     ]
   },
   {

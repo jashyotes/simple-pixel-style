@@ -1576,7 +1576,7 @@ static void draw_your_day_hour_pips(GContext *ctx, const char *now_text, GFont n
   }
   const int start_x = (SCREEN_W - ((pip_count - 1) * gap_x)) / 2;
   const int y = 96;
-  const int elbow_y = y + 23;
+  const int elbow_y = y + 43;
   GFont label_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
   int current_x = -1;
 
@@ -1661,7 +1661,7 @@ static void your_day_draw_overlay(GContext *ctx) {
   if (s_your_day_window_mode == 1) {
     snprintf(title_buf, sizeof(title_buf), "%d HOUR WORKDAY", span);
   } else {
-    snprintf(title_buf, sizeof(title_buf), "Future");
+    snprintf(title_buf, sizeof(title_buf), "FUTURE");
   }
   draw_text(ctx, title_buf, s_font_top, GRect(8, 64, SCREEN_W - 16, 24),
             fitness_muted_text_color(), GTextAlignmentCenter);
@@ -1863,6 +1863,11 @@ static void shake_overlay_update_proc(Layer *layer, GContext *ctx) {
 
   graphics_context_set_fill_color(ctx, theme_bg_color());
   graphics_fill_rect(ctx, GRect(0, 0, SCREEN_W, SCREEN_H), 0, GCornerNone);
+
+  // Shake overlays always follow LIGHT_MODE only, never the main-face section
+  // INVERT toggles. Reset the active section so bitmap theme lookups
+  // (draw_bitmap_theme) pick the right variant.
+  set_draw_section(ColorSectionBase);
 
   switch (s_shake_behavior) {
     case ShakeBehaviorFitnessRings:
