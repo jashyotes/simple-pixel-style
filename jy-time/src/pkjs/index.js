@@ -4,79 +4,80 @@ var Clay = require('@rebble/clay');
 var clayConfig = require('./config.json');
 var keys = require('message_keys');
 
-var BW_ITEM_KEYS = [
-  'bw-heading',
-  'INVERT_TOP_BAR',
-  'INVERT_DATE_BAR',
-  'INVERT_TIME',
-  'INVERT_WEATHER',
-  'INVERT_MEETING_BAR'
-];
-
-var COLOR_ITEM_KEYS = [
-  'color-heading',
-  'COLOR_SECTION_BG_TOP_BAR',
-  'COLOR_SECTION_FG_TOP_BAR',
-  'COLOR_SECTION_BG_DATE_BAR',
-  'COLOR_SECTION_FG_DATE_BAR',
-  'COLOR_SECTION_BG_TIME',
-  'COLOR_SECTION_FG_TIME',
-  'COLOR_SECTION_BG_WEATHER',
-  'COLOR_SECTION_FG_WEATHER',
-  'COLOR_SECTION_BG_MEETING_BAR',
-  'COLOR_SECTION_FG_MEETING_BAR'
-];
-
-var SHAKE_FITNESS_ITEM_KEYS = [
-  'shake-fitness-heading',
-  'FITNESS_RING_STEPS_ON',
-  'FITNESS_RING_ACTIVE_ON',
-  'FITNESS_RING_CALORIES_ON',
-  'FITNESS_TARGET_STEPS',
-  'FITNESS_TARGET_ACTIVE_MIN',
-  'FITNESS_TARGET_CALORIES',
-  'FITNESS_COLOR_STEPS',
-  'FITNESS_COLOR_ACTIVE',
-  'FITNESS_COLOR_CALORIES'
-];
-
-var SHAKE_CALENDAR_ITEM_KEYS = [
-  'shake-calendar-heading',
-  'CALENDAR_SHAKE_EVENT_COUNT'
-];
-
-var SHAKE_YOURDAY_ITEM_KEYS = [
-  'shake-yourday-heading',
-  'YOUR_DAY_WINDOW_MODE',
-  'YOUR_DAY_WINDOW_HOURS',
-  'YOUR_DAY_START_HOUR',
-  'YOUR_DAY_END_HOUR'
-];
-
-var SHAKE_ALTTZ_ITEM_KEYS = [
-  'shake-alttz-heading',
-  'ALT_TZ_LABEL',
-  'ALT_TZ_OFFSET_MIN'
-];
-
-function getItem(clayCfg, key) {
-  return clayCfg.getItemById(key) || clayCfg.getItemByMessageKey(key);
-}
-
-function setGroupVisible(clayCfg, keysList, visible) {
-  keysList.forEach(function(key) {
-    var item = getItem(clayCfg, key);
-    if (!item) return;
-    if (visible) {
-      item.show();
-    } else {
-      item.hide();
-    }
-  });
-}
-
 function customClay() {
   var clayCfg = this;
+
+  var BW_ITEM_KEYS = [
+    'bw-heading',
+    'INVERT_TOP_BAR',
+    'INVERT_DATE_BAR',
+    'INVERT_TIME',
+    'INVERT_WEATHER',
+    'INVERT_MEETING_BAR'
+  ];
+
+  var COLOR_ITEM_KEYS = [
+    'color-heading',
+    'COLOR_SECTION_BG_TOP_BAR',
+    'COLOR_SECTION_FG_TOP_BAR',
+    'COLOR_SECTION_BG_DATE_BAR',
+    'COLOR_SECTION_FG_DATE_BAR',
+    'COLOR_SECTION_BG_TIME',
+    'COLOR_SECTION_FG_TIME',
+    'COLOR_SECTION_BG_WEATHER',
+    'COLOR_SECTION_FG_WEATHER',
+    'COLOR_SECTION_BG_MEETING_BAR',
+    'COLOR_SECTION_FG_MEETING_BAR'
+  ];
+
+  var SHAKE_FITNESS_ITEM_KEYS = [
+    'shake-fitness-heading',
+    'FITNESS_RING_STEPS_ON',
+    'FITNESS_RING_ACTIVE_ON',
+    'FITNESS_RING_CALORIES_ON',
+    'FITNESS_TARGET_STEPS',
+    'FITNESS_TARGET_ACTIVE_MIN',
+    'FITNESS_TARGET_CALORIES',
+    'FITNESS_COLOR_STEPS',
+    'FITNESS_COLOR_ACTIVE',
+    'FITNESS_COLOR_CALORIES'
+  ];
+
+  var SHAKE_CALENDAR_ITEM_KEYS = [
+    'shake-calendar-heading',
+    'CALENDAR_SHAKE_EVENT_COUNT'
+  ];
+
+  var SHAKE_YOURDAY_ITEM_KEYS = [
+    'shake-yourday-heading',
+    'YOUR_DAY_WINDOW_MODE',
+    'YOUR_DAY_WINDOW_HOURS',
+    'YOUR_DAY_START_HOUR',
+    'YOUR_DAY_END_HOUR',
+    'YOUR_DAY_HALF_HOUR_PIPS'
+  ];
+
+  var SHAKE_ALTTZ_ITEM_KEYS = [
+    'shake-alttz-heading',
+    'ALT_TZ_LABEL',
+    'ALT_TZ_OFFSET_MIN'
+  ];
+
+  function getItem(key) {
+    return clayCfg.getItemById(key) || clayCfg.getItemByMessageKey(key);
+  }
+
+  function setGroupVisible(keysList, visible) {
+    keysList.forEach(function(key) {
+      var item = getItem(key);
+      if (!item) return;
+      if (visible) {
+        item.show();
+      } else {
+        item.hide();
+      }
+    });
+  }
 
   clayCfg.on(clayCfg.EVENTS.AFTER_BUILD, function() {
     var colorModeItem = clayCfg.getItemByMessageKey('COLOR_MODE');
@@ -85,20 +86,20 @@ function customClay() {
     function syncColorMode() {
       var v = colorModeItem.get();
       if (v === 'color') {
-        setGroupVisible(clayCfg, BW_ITEM_KEYS, false);
-        setGroupVisible(clayCfg, COLOR_ITEM_KEYS, true);
+        setGroupVisible(BW_ITEM_KEYS, false);
+        setGroupVisible(COLOR_ITEM_KEYS, true);
       } else {
-        setGroupVisible(clayCfg, BW_ITEM_KEYS, true);
-        setGroupVisible(clayCfg, COLOR_ITEM_KEYS, false);
+        setGroupVisible(BW_ITEM_KEYS, true);
+        setGroupVisible(COLOR_ITEM_KEYS, false);
       }
     }
 
     function syncShake() {
       var v = shakeItem.get();
-      setGroupVisible(clayCfg, SHAKE_FITNESS_ITEM_KEYS, v === 'fitness_rings');
-      setGroupVisible(clayCfg, SHAKE_CALENDAR_ITEM_KEYS, v === 'calendar_events');
-      setGroupVisible(clayCfg, SHAKE_YOURDAY_ITEM_KEYS, v === 'your_day');
-      setGroupVisible(clayCfg, SHAKE_ALTTZ_ITEM_KEYS, v === 'alt_timezone');
+      setGroupVisible(SHAKE_FITNESS_ITEM_KEYS, v === 'fitness_rings');
+      setGroupVisible(SHAKE_CALENDAR_ITEM_KEYS, v === 'calendar_events');
+      setGroupVisible(SHAKE_YOURDAY_ITEM_KEYS, v === 'your_day');
+      setGroupVisible(SHAKE_ALTTZ_ITEM_KEYS, v === 'alt_timezone');
     }
 
     colorModeItem.on('change', syncColorMode);
@@ -151,6 +152,7 @@ var DEFAULT_SETTINGS = {
   CALENDAR_ICS_URL: '',
   CALENDAR_ICS_URL_2: '',
   CALENDAR_LOOKAHEAD_HOURS: '48',
+  EMPTY_EVENT_LABEL: '[None]',
   SHAKE_BEHAVIOR: 'off',
   CALENDAR_SHAKE_EVENT_COUNT: '3',
   FITNESS_RING_STEPS_ON: true,
@@ -168,7 +170,8 @@ var DEFAULT_SETTINGS = {
   YOUR_DAY_WINDOW_MODE: 'rolling',
   YOUR_DAY_WINDOW_HOURS: '10',
   YOUR_DAY_START_HOUR: '8',
-  YOUR_DAY_END_HOUR: '17'
+  YOUR_DAY_END_HOUR: '17',
+  YOUR_DAY_HALF_HOUR_PIPS: false
 };
 
 var COMPLICATION_IDS = {
@@ -307,6 +310,9 @@ function sendLayoutSetting(settings) {
   dict[keys.COMPLICATION_2] = complicationId(settings.COMPLICATION_2, COMPLICATION_IDS.rain);
   dict[keys.COMPLICATION_3] = complicationId(settings.COMPLICATION_3, COMPLICATION_IDS.heart_rate);
   dict[keys.TEMPERATURE_UNIT] = temperatureUnit(settings) === 'celsius' ? 1 : 0;
+  var emptyLabel = String(settings.EMPTY_EVENT_LABEL || '').trim();
+  if (!emptyLabel) emptyLabel = '[None]';
+  dict[keys.EMPTY_EVENT_LABEL] = emptyLabel.slice(0, 24);
   sendToWatch(dict, 'Layout setting');
 }
 
@@ -348,6 +354,7 @@ function sendShakeSetting(settings) {
   dict[keys.YOUR_DAY_WINDOW_HOURS] = numberSetting(settings.YOUR_DAY_WINDOW_HOURS, 10, 2, 10);
   dict[keys.YOUR_DAY_START_HOUR] = numberSetting(settings.YOUR_DAY_START_HOUR, 8, 0, 23);
   dict[keys.YOUR_DAY_END_HOUR] = numberSetting(settings.YOUR_DAY_END_HOUR, 17, 0, 23);
+  dict[keys.YOUR_DAY_HALF_HOUR_PIPS] = settings.YOUR_DAY_HALF_HOUR_PIPS ? 1 : 0;
   sendToWatch(dict, 'Shake setting');
 }
 
@@ -1297,6 +1304,25 @@ function dayBusyHoursBitmap(events, day) {
   return bitmap;
 }
 
+function dayBusyHalfHoursBitmap(events, day, secondHalf) {
+  var bitmap = 0;
+  var halfStartMin = secondHalf ? 30 : 0;
+  var halfEndMin = secondHalf ? 60 : 30;
+  events.forEach(function(event) {
+    if (!event || !event.start) {
+      return;
+    }
+    for (var hour = 0; hour < 24; hour++) {
+      var slotStart = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour, halfStartMin, 0);
+      var slotEnd = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour, halfEndMin, 0);
+      if (event.start.getTime() < slotEnd.getTime() && eventEndTime(event) > slotStart.getTime()) {
+        bitmap |= (1 << hour);
+      }
+    }
+  });
+  return bitmap;
+}
+
 function yourDayFixedHourCount(settings) {
   var startHour = numberSetting(settings.YOUR_DAY_START_HOUR, 8, 0, 23);
   var endHour = numberSetting(settings.YOUR_DAY_END_HOUR, 17, 0, 23);
@@ -1363,6 +1389,12 @@ function sendCalendarEvents(events, settings) {
   summaryDict[keys.DAY_EVENT_HOURS_BITMAP_YESTERDAY] = dayBusyHoursBitmap(sorted, yesterday);
   summaryDict[keys.DAY_EVENT_HOURS_BITMAP] = dayBusyHoursBitmap(sorted, today);
   summaryDict[keys.DAY_EVENT_HOURS_BITMAP_TOMORROW] = dayBusyHoursBitmap(sorted, tomorrow);
+  summaryDict[keys.DAY_EVENT_HALF_HOURS_FIRST_BITMAP_YESTERDAY] = dayBusyHalfHoursBitmap(sorted, yesterday, false);
+  summaryDict[keys.DAY_EVENT_HALF_HOURS_FIRST_BITMAP] = dayBusyHalfHoursBitmap(sorted, today, false);
+  summaryDict[keys.DAY_EVENT_HALF_HOURS_FIRST_BITMAP_TOMORROW] = dayBusyHalfHoursBitmap(sorted, tomorrow, false);
+  summaryDict[keys.DAY_EVENT_HALF_HOURS_SECOND_BITMAP_YESTERDAY] = dayBusyHalfHoursBitmap(sorted, yesterday, true);
+  summaryDict[keys.DAY_EVENT_HALF_HOURS_SECOND_BITMAP] = dayBusyHalfHoursBitmap(sorted, today, true);
+  summaryDict[keys.DAY_EVENT_HALF_HOURS_SECOND_BITMAP_TOMORROW] = dayBusyHalfHoursBitmap(sorted, tomorrow, true);
   summaryDict[keys.DAY_EVENT_COUNT_TODAY] = yourDayWindowEventCount(sorted, settings);
   sendToWatch(summaryDict, 'Calendar summary');
 

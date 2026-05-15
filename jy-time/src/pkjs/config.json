@@ -505,6 +505,18 @@
             "value": "168"
           }
         ]
+      },
+      {
+        "type": "input",
+        "messageKey": "EMPTY_EVENT_LABEL",
+        "label": "No-events label",
+        "defaultValue": "[None]",
+        "attributes": {
+          "type": "text",
+          "maxLength": 24,
+          "placeholder": "[None]"
+        },
+        "description": "Shown on the meeting bar, the Your Day 'Next:' line, and the Upcoming shake overlay when there's nothing scheduled."
       }
     ]
   },
@@ -775,6 +787,13 @@
           "max": "23",
           "step": "1"
         }
+      },
+      {
+        "type": "toggle",
+        "messageKey": "YOUR_DAY_HALF_HOUR_PIPS",
+        "label": "Half-hour timeline pips",
+        "defaultValue": false,
+        "description": "Splits each hour pip into halves. Meetings at :00 to :29 fill the left half, meetings at :30 to :59 fill the right half. Hours with events spanning both halves stay fully filled."
       }
     ]
   },

@@ -81,6 +81,14 @@
 #define PERSIST_KEY_COLOR_SECTION_FG_WEATHER 168
 #define PERSIST_KEY_COLOR_SECTION_BG_MEETING_BAR 169
 #define PERSIST_KEY_COLOR_SECTION_FG_MEETING_BAR 170
+#define PERSIST_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP 171
+#define PERSIST_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP_TOMORROW 172
+#define PERSIST_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP_YESTERDAY 173
+#define PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP 174
+#define PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP_TOMORROW 175
+#define PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP_YESTERDAY 176
+#define PERSIST_KEY_YOUR_DAY_HALF_HOUR_PIPS 177
+#define PERSIST_KEY_EMPTY_EVENT_LABEL 178
 
 #define SCREEN_W 200
 #define SCREEN_H 228
@@ -270,12 +278,20 @@ static int s_calendar_shake_event_count = 3;
 static int s_day_event_hours_bitmap = 0;
 static int s_day_event_hours_bitmap_tomorrow = 0;
 static int s_day_event_hours_bitmap_yesterday = 0;
+static int s_day_event_half_hours_first_bitmap = 0;
+static int s_day_event_half_hours_first_bitmap_tomorrow = 0;
+static int s_day_event_half_hours_first_bitmap_yesterday = 0;
+static int s_day_event_half_hours_second_bitmap = 0;
+static int s_day_event_half_hours_second_bitmap_tomorrow = 0;
+static int s_day_event_half_hours_second_bitmap_yesterday = 0;
 static int s_day_event_count_today = 0;
 static int s_alt_tz_offset_min = 0;
 static int s_your_day_window_mode = 0;
 static int s_your_day_window_hours = 10;
 static int s_your_day_start_hour = 8;
 static int s_your_day_end_hour = 17;
+static bool s_your_day_half_hour_pips_enabled = false;
+static char s_empty_event_label[32] = "[None]";
 static int s_color_section_bg[ColorSectionMeetingBar + 1] = {
   0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000,
 };
@@ -1477,6 +1493,10 @@ static bool calendar_title_is_empty(const char *title) {
   return !title || title[0] == '\0' || strcmp(title, "[None]") == 0;
 }
 
+static const char *event_display_text(const char *buf) {
+  return calendar_title_is_empty(buf) ? s_empty_event_label : buf;
+}
+
 static void calendar_draw_overlay(GContext *ctx) {
   draw_overlay_title(ctx, "UPCOMING");
 
@@ -1489,7 +1509,7 @@ static void calendar_draw_overlay(GContext *ctx) {
   }
 
   if (visible_count == 0) {
-    draw_text(ctx, "[No Events]", s_font_complication,
+    draw_text(ctx, s_empty_event_label, s_font_complication,
               GRect(8, 96, SCREEN_W - 16, 28), theme_fg_color(), GTextAlignmentCenter);
     return;
   }
@@ -1527,6 +1547,28 @@ static bool day_event_hour_busy(int day_offset, int hour) {
     bitmap = s_day_event_hours_bitmap_tomorrow;
   } else {
     bitmap = s_day_event_hours_bitmap;
+  }
+  return (bitmap & (1 << hour)) != 0;
+}
+
+static bool day_event_half_hour_busy(int day_offset, int hour, bool second_half) {
+  int bitmap;
+  if (second_half) {
+    if (day_offset < 0) {
+      bitmap = s_day_event_half_hours_second_bitmap_yesterday;
+    } else if (day_offset > 0) {
+      bitmap = s_day_event_half_hours_second_bitmap_tomorrow;
+    } else {
+      bitmap = s_day_event_half_hours_second_bitmap;
+    }
+  } else {
+    if (day_offset < 0) {
+      bitmap = s_day_event_half_hours_first_bitmap_yesterday;
+    } else if (day_offset > 0) {
+      bitmap = s_day_event_half_hours_first_bitmap_tomorrow;
+    } else {
+      bitmap = s_day_event_half_hours_first_bitmap;
+    }
   }
   return (bitmap & (1 << hour)) != 0;
 }
@@ -1585,31 +1627,55 @@ static void draw_your_day_hour_pips(GContext *ctx, const char *now_text, GFont n
     int day_offset = 0;
     normalize_display_hour(&hour, &day_offset);
     int x = start_x + (i * gap_x);
-    bool busy = day_event_hour_busy(day_offset, hour);
     bool current = day_offset == 0 && hour == current_hour;
 
     if (current) {
       current_x = x;
-      continue;
     }
 
     graphics_context_set_stroke_color(ctx, theme_fg_color());
     graphics_context_set_fill_color(ctx, theme_fg_color());
     graphics_context_set_stroke_width(ctx, 1);
-    if (busy) {
-      graphics_fill_circle(ctx, GPoint(x, y), 5);
+
+    if (s_your_day_half_hour_pips_enabled) {
+      bool busy_first = day_event_half_hour_busy(day_offset, hour, false);
+      bool busy_second = day_event_half_hour_busy(day_offset, hour, true);
+      const GRect pip_frame = GRect(x - 5, y - 5, 11, 11);
+      if (busy_first && busy_second) {
+        graphics_fill_circle(ctx, GPoint(x, y), 5);
+      } else if (busy_first) {
+        // Left half (9 o'clock side). Pebble angles: 0=top, clockwise.
+        // Sweep from 180 (bottom) clockwise through 270 (left) to 360 (top).
+        graphics_fill_radial(ctx, pip_frame, GOvalScaleModeFitCircle, 11,
+                             DEG_TO_TRIGANGLE(180), DEG_TO_TRIGANGLE(360));
+        graphics_draw_circle(ctx, GPoint(x, y), 5);
+      } else if (busy_second) {
+        // Right half (3 o'clock side). 0 (top) clockwise through 90 to 180 (bottom).
+        graphics_fill_radial(ctx, pip_frame, GOvalScaleModeFitCircle, 11,
+                             DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE(180));
+        graphics_draw_circle(ctx, GPoint(x, y), 5);
+      } else {
+        graphics_draw_circle(ctx, GPoint(x, y), 5);
+      }
     } else {
-      graphics_draw_circle(ctx, GPoint(x, y), 5);
+      bool busy = day_event_hour_busy(day_offset, hour);
+      if (busy) {
+        graphics_fill_circle(ctx, GPoint(x, y), 5);
+      } else {
+        graphics_draw_circle(ctx, GPoint(x, y), 5);
+      }
     }
 
-    char label[4];
-    int display_hour = s_military_time_enabled ? hour : hour % 12;
-    if (!s_military_time_enabled && display_hour == 0) {
-      display_hour = 12;
+    if (!current) {
+      char label[4];
+      int display_hour = s_military_time_enabled ? hour : hour % 12;
+      if (!s_military_time_enabled && display_hour == 0) {
+        display_hour = 12;
+      }
+      snprintf(label, sizeof(label), "%d", display_hour);
+      draw_text(ctx, label, label_font, GRect(x - 8, y + 9, 16, 16),
+                fitness_muted_text_color(), GTextAlignmentCenter);
     }
-    snprintf(label, sizeof(label), "%d", display_hour);
-    draw_text(ctx, label, label_font, GRect(x - 8, y + 9, 16, 16),
-              fitness_muted_text_color(), GTextAlignmentCenter);
   }
 
   if (current_x < 0) {
@@ -1634,7 +1700,9 @@ static void draw_your_day_hour_pips(GContext *ctx, const char *now_text, GFont n
 
   graphics_context_set_stroke_color(ctx, theme_fg_color());
   graphics_context_set_stroke_width(ctx, 1);
-  graphics_draw_line(ctx, GPoint(current_x, y - 18), GPoint(current_x, elbow_y));
+  // Drop down from the bottom edge of the current-hour pip (y + 5) with a
+  // 1-pixel gap so the line doesn't overlap the pip outline.
+  graphics_draw_line(ctx, GPoint(current_x, y + 7), GPoint(current_x, elbow_y));
   graphics_draw_line(ctx, GPoint(current_x, elbow_y), GPoint(target_x, elbow_y));
 }
 
@@ -1695,8 +1763,7 @@ static void your_day_draw_overlay(GContext *ctx) {
             theme_fg_color(), GTextAlignmentCenter);
 
   char next_buf[96];
-  snprintf(next_buf, sizeof(next_buf), "Next: %s",
-           calendar_title_is_empty(s_event_buf) ? "[None]" : s_event_buf);
+  snprintf(next_buf, sizeof(next_buf), "Next: %s", event_display_text(s_event_buf));
   draw_text(ctx, next_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
             GRect(8, 190, SCREEN_W - 16, 28), fitness_muted_text_color(),
             GTextAlignmentCenter);
@@ -2059,8 +2126,8 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
     graphics_draw_line(ctx, GPoint(8, meeting_bar_y), GPoint(192, meeting_bar_y));
   }
 
-  draw_text(ctx, s_event_buf, s_font_event, GRect(8, 203, 184, 25),
-            draw_fg_color(), GTextAlignmentCenter);
+  draw_text(ctx, event_display_text(s_event_buf), s_font_event,
+            GRect(8, 203, 184, 25), draw_fg_color(), GTextAlignmentCenter);
 }
 
 static void update_time_date(struct tm *t) {
@@ -2650,6 +2717,62 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     fitness_settings_changed = true;
   }
 
+  t = dict_find(iter, MESSAGE_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP);
+  if (t) {
+    s_day_event_half_hours_first_bitmap = (int)t->value->int32;
+    persist_write_int(PERSIST_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP,
+                      s_day_event_half_hours_first_bitmap);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP_TOMORROW);
+  if (t) {
+    s_day_event_half_hours_first_bitmap_tomorrow = (int)t->value->int32;
+    persist_write_int(PERSIST_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP_TOMORROW,
+                      s_day_event_half_hours_first_bitmap_tomorrow);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP_YESTERDAY);
+  if (t) {
+    s_day_event_half_hours_first_bitmap_yesterday = (int)t->value->int32;
+    persist_write_int(PERSIST_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP_YESTERDAY,
+                      s_day_event_half_hours_first_bitmap_yesterday);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP);
+  if (t) {
+    s_day_event_half_hours_second_bitmap = (int)t->value->int32;
+    persist_write_int(PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP,
+                      s_day_event_half_hours_second_bitmap);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP_TOMORROW);
+  if (t) {
+    s_day_event_half_hours_second_bitmap_tomorrow = (int)t->value->int32;
+    persist_write_int(PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP_TOMORROW,
+                      s_day_event_half_hours_second_bitmap_tomorrow);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP_YESTERDAY);
+  if (t) {
+    s_day_event_half_hours_second_bitmap_yesterday = (int)t->value->int32;
+    persist_write_int(PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP_YESTERDAY,
+                      s_day_event_half_hours_second_bitmap_yesterday);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_YOUR_DAY_HALF_HOUR_PIPS);
+  if (t) {
+    s_your_day_half_hour_pips_enabled = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_YOUR_DAY_HALF_HOUR_PIPS,
+                       s_your_day_half_hour_pips_enabled);
+    fitness_settings_changed = true;
+  }
+
   t = dict_find(iter, MESSAGE_KEY_DAY_EVENT_COUNT_TODAY);
   if (t) {
     s_day_event_count_today = (int)t->value->int32;
@@ -2693,6 +2816,20 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     store_overlay_string(s_alt_tz_label, sizeof(s_alt_tz_label),
                          PERSIST_KEY_ALT_TZ_LABEL, t->value->cstring);
     fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_EMPTY_EVENT_LABEL);
+  if (t && t->type == TUPLE_CSTRING) {
+    const char *value = t->value->cstring;
+    if (value && value[0]) {
+      store_overlay_string(s_empty_event_label, sizeof(s_empty_event_label),
+                           PERSIST_KEY_EMPTY_EVENT_LABEL, value);
+    } else {
+      strncpy(s_empty_event_label, "[None]", sizeof(s_empty_event_label) - 1);
+      s_empty_event_label[sizeof(s_empty_event_label) - 1] = '\0';
+      persist_write_string(PERSIST_KEY_EMPTY_EVENT_LABEL, s_empty_event_label);
+    }
+    mark_face_dirty();
   }
 
   t = dict_find(iter, MESSAGE_KEY_ALT_TZ_OFFSET_MIN);
@@ -2944,6 +3081,43 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_DAY_EVENT_HOURS_BITMAP_YESTERDAY)) {
     s_day_event_hours_bitmap_yesterday =
         persist_read_int(PERSIST_KEY_DAY_EVENT_HOURS_BITMAP_YESTERDAY);
+  }
+  if (persist_exists(PERSIST_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP)) {
+    s_day_event_half_hours_first_bitmap =
+        persist_read_int(PERSIST_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP);
+  }
+  if (persist_exists(PERSIST_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP_TOMORROW)) {
+    s_day_event_half_hours_first_bitmap_tomorrow =
+        persist_read_int(PERSIST_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP_TOMORROW);
+  }
+  if (persist_exists(PERSIST_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP_YESTERDAY)) {
+    s_day_event_half_hours_first_bitmap_yesterday =
+        persist_read_int(PERSIST_KEY_DAY_EVENT_HALF_HOURS_FIRST_BITMAP_YESTERDAY);
+  }
+  if (persist_exists(PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP)) {
+    s_day_event_half_hours_second_bitmap =
+        persist_read_int(PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP);
+  }
+  if (persist_exists(PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP_TOMORROW)) {
+    s_day_event_half_hours_second_bitmap_tomorrow =
+        persist_read_int(PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP_TOMORROW);
+  }
+  if (persist_exists(PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP_YESTERDAY)) {
+    s_day_event_half_hours_second_bitmap_yesterday =
+        persist_read_int(PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP_YESTERDAY);
+  }
+  if (persist_exists(PERSIST_KEY_YOUR_DAY_HALF_HOUR_PIPS)) {
+    s_your_day_half_hour_pips_enabled =
+        persist_read_bool(PERSIST_KEY_YOUR_DAY_HALF_HOUR_PIPS);
+  }
+  if (persist_exists(PERSIST_KEY_EMPTY_EVENT_LABEL)) {
+    persist_read_string(PERSIST_KEY_EMPTY_EVENT_LABEL, s_empty_event_label,
+                        sizeof(s_empty_event_label));
+    s_empty_event_label[sizeof(s_empty_event_label) - 1] = '\0';
+    if (s_empty_event_label[0] == '\0') {
+      strncpy(s_empty_event_label, "[None]", sizeof(s_empty_event_label) - 1);
+      s_empty_event_label[sizeof(s_empty_event_label) - 1] = '\0';
+    }
   }
   if (persist_exists(PERSIST_KEY_DAY_EVENT_COUNT_TODAY)) {
     s_day_event_count_today = persist_read_int(PERSIST_KEY_DAY_EVENT_COUNT_TODAY);
@@ -3228,7 +3402,7 @@ static void init(void) {
 
   app_message_register_inbox_received(inbox_received_handler);
   app_message_register_inbox_dropped(inbox_dropped_handler);
-  app_message_open(256, 64);
+  app_message_open(512, 64);
 }
 
 static void deinit(void) {

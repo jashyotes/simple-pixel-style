@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "0.66.0",
+  "version": "0.67.0",
   "keywords": [
     "pebble-app"
   ],
@@ -94,7 +94,15 @@
       "COLOR_SECTION_BG_WEATHER",
       "COLOR_SECTION_FG_WEATHER",
       "COLOR_SECTION_BG_MEETING_BAR",
-      "COLOR_SECTION_FG_MEETING_BAR"
+      "COLOR_SECTION_FG_MEETING_BAR",
+      "YOUR_DAY_HALF_HOUR_PIPS",
+      "DAY_EVENT_HALF_HOURS_FIRST_BITMAP",
+      "DAY_EVENT_HALF_HOURS_FIRST_BITMAP_TOMORROW",
+      "DAY_EVENT_HALF_HOURS_FIRST_BITMAP_YESTERDAY",
+      "DAY_EVENT_HALF_HOURS_SECOND_BITMAP",
+      "DAY_EVENT_HALF_HOURS_SECOND_BITMAP_TOMORROW",
+      "DAY_EVENT_HALF_HOURS_SECOND_BITMAP_YESTERDAY",
+      "EMPTY_EVENT_LABEL"
     ],
     "resources": {
       "media": [
