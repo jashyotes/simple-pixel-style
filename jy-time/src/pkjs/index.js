@@ -63,6 +63,12 @@ function customClay() {
     'ALT_TZ_OFFSET_MIN'
   ];
 
+  var SHAKE_TIDE_ITEM_KEYS = [
+    'shake-tide-heading',
+    'TIDE_STATION_ID',
+    'TIDE_UNITS'
+  ];
+
   function getItem(key) {
     return clayCfg.getItemById(key) || clayCfg.getItemByMessageKey(key);
   }
@@ -100,6 +106,7 @@ function customClay() {
       setGroupVisible(SHAKE_CALENDAR_ITEM_KEYS, v === 'calendar_events');
       setGroupVisible(SHAKE_YOURDAY_ITEM_KEYS, v === 'your_day');
       setGroupVisible(SHAKE_ALTTZ_ITEM_KEYS, v === 'alt_timezone');
+      setGroupVisible(SHAKE_TIDE_ITEM_KEYS, v === 'tide_chart');
     }
 
     colorModeItem.on('change', syncColorMode);
@@ -171,7 +178,9 @@ var DEFAULT_SETTINGS = {
   YOUR_DAY_WINDOW_HOURS: '10',
   YOUR_DAY_START_HOUR: '8',
   YOUR_DAY_END_HOUR: '17',
-  YOUR_DAY_HALF_HOUR_PIPS: false
+  YOUR_DAY_HALF_HOUR_PIPS: false,
+  TIDE_STATION_ID: '',
+  TIDE_UNITS: 'feet'
 };
 
 var COMPLICATION_IDS = {
@@ -205,7 +214,9 @@ var SHAKE_BEHAVIOR_IDS = {
   your_day: 3,
   detailed_weather: 4,
   alt_timezone: 5,
-  heart_rate: 6
+  heart_rate: 6,
+  weather_ring: 7,
+  tide_chart: 8
 };
 
 function clamp(value, min, max) {
@@ -358,6 +369,200 @@ function sendShakeSetting(settings) {
   sendToWatch(dict, 'Shake setting');
 }
 
+function tideStationId(settings) {
+  return String(settings.TIDE_STATION_ID || '').trim().slice(0, 15);
+}
+
+function tideUnitsId(settings) {
+  return settings.TIDE_UNITS === 'meters' ? 1 : 0;
+}
+
+function sendTideSetting(settings) {
+  var dict = {};
+  dict[keys.TIDE_STATION_ID] = tideStationId(settings);
+  dict[keys.TIDE_UNITS] = tideUnitsId(settings);
+  sendToWatch(dict, 'Tide setting');
+  refreshTidesForSettings(settings);
+}
+
+function encodeTideLevelFeet(value) {
+  var level = Number(value);
+  if (!isFinite(level)) {
+    return 0xFF;
+  }
+  return clamp(Math.round((level + 10) * 8), 0, 255);
+}
+
+function twoDigit(value) {
+  return value < 10 ? '0' + value : String(value);
+}
+
+function noaaTimeKey(date) {
+  return date.getFullYear() + '-'
+      + twoDigit(date.getMonth() + 1) + '-'
+      + twoDigit(date.getDate()) + ' '
+      + twoDigit(date.getHours()) + ':00';
+}
+
+function parseNoaaTime(value) {
+  if (!value) {
+    return null;
+  }
+  var parsed = new Date(String(value).replace(' ', 'T'));
+  return isFinite(parsed.getTime()) ? parsed : null;
+}
+
+function packTideHourlyLevels(predictions, nowDate) {
+  var byHour = {};
+  (predictions || []).forEach(function(prediction) {
+    if (prediction && prediction.t) {
+      byHour[prediction.t] = prediction.v;
+    }
+  });
+
+  var start = new Date(nowDate.getTime());
+  start.setMinutes(0, 0, 0);
+
+  // PebbleKit JS serializes byte-array tuples from a plain Array of integers
+  // (0..255). Uint8Array fails to round-trip and tanks the whole AppMessage,
+  // which breaks every other key in the same dict.
+  var levels = [];
+  for (var i = 0; i < 24; i++) {
+    var hour = new Date(start.getTime() + i * 60 * 60 * 1000);
+    var value = byHour[noaaTimeKey(hour)];
+    levels.push(typeof value === 'undefined' ? 0xFF : encodeTideLevelFeet(value));
+  }
+  return levels;
+}
+
+function fetchJson(url, label, callback) {
+  var xhr = new XMLHttpRequest();
+  xhr.onload = function() {
+    try {
+      var data = JSON.parse(xhr.responseText);
+      if (data && data.error) {
+        console.log(label + ' error: ' + JSON.stringify(data.error));
+        callback(null);
+        return;
+      }
+      callback(data);
+    } catch (e) {
+      console.log(label + ' parse failed: ' + e);
+      callback(null);
+    }
+  };
+  xhr.onerror = function() {
+    console.log(label + ' request failed');
+    callback(null);
+  };
+  xhr.open('GET', url);
+  xhr.send();
+}
+
+function tidePredictionsUrl(stationId, interval) {
+  return 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter'
+      + '?date=today'
+      + '&range=48'
+      + '&station=' + encodeURIComponent(stationId)
+      + '&product=predictions'
+      + '&datum=MLLW'
+      + '&time_zone=lst_ldt'
+      + '&units=english'
+      + '&interval=' + encodeURIComponent(interval)
+      + '&format=json';
+}
+
+function tideStationNameFromMetadata(data, stationId) {
+  if (!data || !data.stations || !data.stations.length) {
+    return stationId;
+  }
+  var station = data.stations[0] || {};
+  var name = station.name || station.publicname || stationId;
+  return String(name).toUpperCase().slice(0, 23);
+}
+
+function fetchTideStationName(stationId, callback) {
+  var cacheKey = 'tide-station-name-' + stationId;
+  var cached = localStorage.getItem(cacheKey);
+  if (cached) {
+    callback(cached.slice(0, 23));
+    return;
+  }
+
+  var url = 'https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/'
+      + encodeURIComponent(stationId) + '.json';
+  fetchJson(url, 'Tide station metadata', function(data) {
+    var name = tideStationNameFromMetadata(data, stationId);
+    localStorage.setItem(cacheKey, name);
+    callback(name);
+  });
+}
+
+function findNextTideEvent(predictions, type, nowDate) {
+  var nowMs = nowDate.getTime();
+  for (var i = 0; i < (predictions || []).length; i++) {
+    var prediction = predictions[i];
+    if (!prediction || prediction.type !== type) {
+      continue;
+    }
+    var when = parseNoaaTime(prediction.t);
+    if (when && when.getTime() > nowMs) {
+      return {
+        time: Math.floor(when.getTime() / 1000),
+        level: encodeTideLevelFeet(prediction.v)
+      };
+    }
+  }
+  return {
+    time: 0,
+    level: 0xFF
+  };
+}
+
+function sendTideData(settings, hourlyData, hiloData, stationName) {
+  if (!hourlyData || !hourlyData.predictions || !hiloData || !hiloData.predictions) {
+    return;
+  }
+
+  var now = new Date();
+  var high = findNextTideEvent(hiloData.predictions, 'H', now);
+  var low = findNextTideEvent(hiloData.predictions, 'L', now);
+  var dict = {};
+  dict[keys.TIDE_HOURLY_LEVELS] = packTideHourlyLevels(hourlyData.predictions, now);
+  dict[keys.TIDE_NEXT_HIGH_T] = high.time;
+  dict[keys.TIDE_NEXT_HIGH_LEVEL] = high.level;
+  dict[keys.TIDE_NEXT_LOW_T] = low.time;
+  dict[keys.TIDE_NEXT_LOW_LEVEL] = low.level;
+  dict[keys.TIDE_STATION_NAME] = String(stationName || tideStationId(settings)).slice(0, 23);
+  dict[keys.TIDE_UNITS] = tideUnitsId(settings);
+  dict[keys.TIDE_STATION_ID] = tideStationId(settings);
+  sendToWatch(dict, 'Tide data');
+}
+
+function fetchTidesForStation(stationId, settings) {
+  fetchJson(tidePredictionsUrl(stationId, 'h'), 'Tide hourly', function(hourlyData) {
+    if (!hourlyData || !hourlyData.predictions) {
+      return;
+    }
+    fetchJson(tidePredictionsUrl(stationId, 'hilo'), 'Tide hilo', function(hiloData) {
+      if (!hiloData || !hiloData.predictions) {
+        return;
+      }
+      fetchTideStationName(stationId, function(stationName) {
+        sendTideData(settings, hourlyData, hiloData, stationName);
+      });
+    });
+  });
+}
+
+function refreshTidesForSettings(settings) {
+  var stationId = tideStationId(settings);
+  if (!stationId) {
+    return;
+  }
+  fetchTidesForStation(stationId, settings);
+}
+
 function nearestRainChance(hourly) {
   if (!hourly || !hourly.time || !hourly.precipitation_probability) {
     return 0;
@@ -375,6 +580,33 @@ function nearestRainChance(hourly) {
   });
 
   return clamp(Math.round(hourly.precipitation_probability[bestIndex] || 0), 0, 100);
+}
+
+function todayHourlyCodes(weatherJson) {
+  // Plain Array, not Uint8Array — see packTideHourlyLevels for the reason.
+  var out = [];
+  for (var i = 0; i < 24; i++) {
+    out.push(0xFF);
+  }
+
+  var hourly = weatherJson && weatherJson.hourly;
+  if (!hourly || !hourly.time || !hourly.weather_code) {
+    return out;
+  }
+
+  var today = new Date();
+  hourly.time.forEach(function(timeValue, index) {
+    var hourDate = new Date(timeValue);
+    if (!isSameLocalDay(today, hourDate)) {
+      return;
+    }
+
+    var code = Number(hourly.weather_code[index]);
+    if (isFinite(code)) {
+      out[hourDate.getHours()] = clamp(Math.round(code), 0, 255);
+    }
+  });
+  return out;
 }
 
 function nearestHourlyIndex(hourly) {
@@ -540,7 +772,7 @@ function addRounded(dict, key, value, min, max) {
   }
 }
 
-function fetchWeatherForCoordinates(lat, lon, unit) {
+function fetchWeatherForCoordinates(lat, lon, unit, done) {
   var unitParam = unit === 'celsius' ? 'celsius' : 'fahrenheit';
   var url = 'https://api.open-meteo.com/v1/forecast'
       + '?latitude=' + encodeURIComponent(lat)
@@ -558,6 +790,7 @@ function fetchWeatherForCoordinates(lat, lon, unit) {
     try {
       var data = JSON.parse(xhr.responseText);
       if (!data.current) {
+        if (done) done();
         return;
       }
 
@@ -573,21 +806,32 @@ function fetchWeatherForCoordinates(lat, lon, unit) {
       addRounded(dict, keys.SUNSET_T, firstDailyTimestamp(data.daily, 'sunset'), 0, 2147483647);
       dict[keys.RAIN_CHANCE] = nearestRainChance(data.hourly);
       dict[keys.WEATHER_SUMMARY] = verboseWeatherSummary(data.hourly, data.current.weather_code);
+      dict[keys.HOURLY_CODES] = todayHourlyCodes(data);
       sendToWatch(dict, 'Weather');
+      if (done) done();
     } catch (e) {
       console.log('Weather parse failed: ' + e);
+      if (done) done();
     }
   };
   xhr.onerror = function() {
     console.log('Weather request failed');
+    if (done) done();
   };
   xhr.open('GET', url);
   xhr.send();
 }
 
-function refreshWeather() {
+function refreshWeather(skipTide) {
   var settings = readSettings();
+  var refreshTide = function() {
+    if (!skipTide) {
+      refreshTidesForSettings(settings);
+    }
+  };
+
   if (!settings.WEATHER_ENABLED) {
+    refreshTide();
     return;
   }
 
@@ -597,16 +841,19 @@ function refreshWeather() {
   var unit = temperatureUnit(settings);
 
   if (settings.WEATHER_SOURCE === 'manual' && hasManual) {
-    fetchWeatherForCoordinates(manualLat, manualLon, unit);
+    fetchWeatherForCoordinates(manualLat, manualLon, unit, refreshTide);
     return;
   }
 
   navigator.geolocation.getCurrentPosition(function(position) {
-    fetchWeatherForCoordinates(position.coords.latitude, position.coords.longitude, unit);
+    fetchWeatherForCoordinates(position.coords.latitude, position.coords.longitude, unit,
+        refreshTide);
   }, function(error) {
     console.log('Location failed: ' + JSON.stringify(error));
     if (hasManual) {
-      fetchWeatherForCoordinates(manualLat, manualLon, unit);
+      fetchWeatherForCoordinates(manualLat, manualLon, unit, refreshTide);
+    } else {
+      refreshTide();
     }
   }, {
     enableHighAccuracy: false,
@@ -1492,7 +1739,8 @@ Pebble.addEventListener('ready', function() {
   sendLayoutSetting(settings);
   sendColorSetting(settings);
   sendShakeSetting(settings);
-  refreshWeather();
+  sendTideSetting(settings);
+  refreshWeather(true);
   refreshCalendar();
   scheduleRefreshes();
 });
@@ -1511,7 +1759,8 @@ Pebble.addEventListener('webviewclosed', function(event) {
   sendLayoutSetting(settings);
   sendColorSetting(settings);
   sendShakeSetting(settings);
-  refreshWeather();
+  sendTideSetting(settings);
+  refreshWeather(true);
   refreshCalendar();
   scheduleRefreshes();
 });

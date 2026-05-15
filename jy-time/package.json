@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "0.67.0",
+  "version": "0.72.0",
   "keywords": [
     "pebble-app"
   ],
@@ -102,7 +102,16 @@
       "DAY_EVENT_HALF_HOURS_SECOND_BITMAP",
       "DAY_EVENT_HALF_HOURS_SECOND_BITMAP_TOMORROW",
       "DAY_EVENT_HALF_HOURS_SECOND_BITMAP_YESTERDAY",
-      "EMPTY_EVENT_LABEL"
+      "EMPTY_EVENT_LABEL",
+      "HOURLY_CODES[24]",
+      "TIDE_HOURLY_LEVELS[24]",
+      "TIDE_NEXT_HIGH_T",
+      "TIDE_NEXT_HIGH_LEVEL",
+      "TIDE_NEXT_LOW_T",
+      "TIDE_NEXT_LOW_LEVEL",
+      "TIDE_STATION_NAME",
+      "TIDE_UNITS",
+      "TIDE_STATION_ID"
     ],
     "resources": {
       "media": [

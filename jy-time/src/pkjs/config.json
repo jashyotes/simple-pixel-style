@@ -561,6 +561,14 @@
           {
             "label": "Heart rate big",
             "value": "heart_rate"
+          },
+          {
+            "label": "Halcyon Day View",
+            "value": "weather_ring"
+          },
+          {
+            "label": "Tide chart",
+            "value": "tide_chart"
           }
         ],
         "description": "Each overlay's color follows the Light mode toggle in the Theme section above. Fitness rings has its own three ring colors; every other overlay uses Light/Dark only."
@@ -794,6 +802,44 @@
         "label": "Half-hour timeline pips",
         "defaultValue": false,
         "description": "Splits each hour pip into halves. Meetings at :00 to :29 fill the left half, meetings at :30 to :59 fill the right half. Hours with events spanning both halves stay fully filled."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "id": "shake-tide-heading",
+        "defaultValue": "Tide chart settings"
+      },
+      {
+        "type": "input",
+        "messageKey": "TIDE_STATION_ID",
+        "label": "NOAA station ID",
+        "defaultValue": "",
+        "attributes": {
+          "type": "text",
+          "maxLength": 15,
+          "placeholder": "8418150"
+        },
+        "description": "NOAA Tides & Currents station ID. Find yours at tidesandcurrents.noaa.gov. Leave blank to hide the overlay."
+      },
+      {
+        "type": "select",
+        "messageKey": "TIDE_UNITS",
+        "label": "Tide units",
+        "defaultValue": "feet",
+        "options": [
+          {
+            "label": "Feet",
+            "value": "feet"
+          },
+          {
+            "label": "Meters",
+            "value": "meters"
+          }
+        ]
       }
     ]
   },

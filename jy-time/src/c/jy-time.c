@@ -89,6 +89,15 @@
 #define PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP_YESTERDAY 176
 #define PERSIST_KEY_YOUR_DAY_HALF_HOUR_PIPS 177
 #define PERSIST_KEY_EMPTY_EVENT_LABEL 178
+#define PERSIST_KEY_HOURLY_CODES 179
+#define PERSIST_KEY_TIDE_HOURLY_LEVELS 180
+#define PERSIST_KEY_TIDE_NEXT_HIGH_T 181
+#define PERSIST_KEY_TIDE_NEXT_HIGH_LEVEL 182
+#define PERSIST_KEY_TIDE_NEXT_LOW_T 183
+#define PERSIST_KEY_TIDE_NEXT_LOW_LEVEL 184
+#define PERSIST_KEY_TIDE_STATION_NAME 185
+#define PERSIST_KEY_TIDE_UNITS 186
+#define PERSIST_KEY_TIDE_STATION_ID 187
 
 #define SCREEN_W 200
 #define SCREEN_H 228
@@ -145,6 +154,8 @@ typedef enum {
   ShakeBehaviorDetailedWeather = 4,
   ShakeBehaviorAltTimezone = 5,
   ShakeBehaviorHeartRate = 6,
+  ShakeBehaviorWeatherRing = 7,
+  ShakeBehaviorTideChart = 8,
 } ShakeBehavior;
 
 typedef enum {
@@ -292,6 +303,25 @@ static int s_your_day_start_hour = 8;
 static int s_your_day_end_hour = 17;
 static bool s_your_day_half_hour_pips_enabled = false;
 static char s_empty_event_label[32] = "[None]";
+static uint8_t s_hourly_codes[24] = {
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+};
+static uint8_t s_tide_hourly_levels[24] = {
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+};
+static uint32_t s_tide_next_high_t = 0;
+static uint8_t s_tide_next_high_level = 0xFF;
+static uint32_t s_tide_next_low_t = 0;
+static uint8_t s_tide_next_low_level = 0xFF;
+static char s_tide_station_name[24] = "";
+static bool s_tide_units_meters = false;
+static char s_tide_station_id[16] = "";
 static int s_color_section_bg[ColorSectionMeetingBar + 1] = {
   0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000,
 };
@@ -472,7 +502,7 @@ static ComplicationType sanitize_complication(int value, ComplicationType fallba
 }
 
 static ShakeBehavior sanitize_shake_behavior(int value) {
-  return value >= ShakeBehaviorOff && value <= ShakeBehaviorHeartRate
+  return value >= ShakeBehaviorOff && value <= ShakeBehaviorTideChart
       ? (ShakeBehavior)value
       : ShakeBehaviorOff;
 }
@@ -1087,30 +1117,30 @@ static void draw_uv_icon_centered(GContext *ctx, GPoint center) {
             draw_fg_color(), GTextAlignmentCenter);
 }
 
-static WeatherIconBitmap weather_icon_for_code(void) {
-  if (!s_weather_known) {
-    return WeatherIconCloudy;
-  }
-
-  if (s_weather_code == 0) {
+static WeatherIconBitmap weather_icon_for_code_value(uint8_t code) {
+  if (code == 0) {
     return WeatherIconSunny;
-  } else if (s_weather_code == 1 || s_weather_code == 2) {
+  } else if (code == 1 || code == 2) {
     return WeatherIconPartlyCloudy;
-  } else if (s_weather_code == 3) {
+  } else if (code == 3) {
     return WeatherIconCloudy;
-  } else if (s_weather_code == 45 || s_weather_code == 48) {
+  } else if (code == 45 || code == 48) {
     return WeatherIconFog;
-  } else if ((s_weather_code >= 51 && s_weather_code <= 67) ||
-             (s_weather_code >= 80 && s_weather_code <= 82)) {
+  } else if ((code >= 51 && code <= 67) ||
+             (code >= 80 && code <= 82)) {
     return WeatherIconRain;
-  } else if ((s_weather_code >= 71 && s_weather_code <= 77) ||
-             (s_weather_code >= 85 && s_weather_code <= 86)) {
+  } else if ((code >= 71 && code <= 77) ||
+             (code >= 85 && code <= 86)) {
     return WeatherIconSnow;
-  } else if (s_weather_code >= 95 && s_weather_code <= 99) {
+  } else if (code >= 95 && code <= 99) {
     return WeatherIconStorm;
   }
 
   return WeatherIconCloudy;
+}
+
+static WeatherIconBitmap weather_icon_for_code(void) {
+  return s_weather_known ? weather_icon_for_code_value(s_weather_code) : WeatherIconCloudy;
 }
 
 static void draw_weather_icon_centered(GContext *ctx, GPoint center, bool large) {
@@ -1925,6 +1955,289 @@ static void heart_rate_draw_overlay(GContext *ctx) {
             GTextAlignmentCenter);
 }
 
+static int32_t weather_ring_hour_to_angle(int hour, int minute) {
+  int total_minutes = ((hour - 12 + 24) % 24) * 60 + minute;
+  int degrees = (total_minutes * 360) / (24 * 60);
+  return DEG_TO_TRIGANGLE(degrees);
+}
+
+static GPoint weather_ring_point_at_angle(GPoint center, int radius,
+                                          int32_t trig_angle) {
+  int32_t sin_v = sin_lookup(trig_angle);
+  int32_t cos_v = cos_lookup(trig_angle);
+  return GPoint(center.x + (sin_v * radius) / TRIG_MAX_RATIO,
+                center.y - (cos_v * radius) / TRIG_MAX_RATIO);
+}
+
+static void weather_ring_fill_arc(GContext *ctx, GRect frame, int thickness,
+                                  GColor color, int32_t start_angle,
+                                  int32_t end_angle) {
+  graphics_context_set_fill_color(ctx, color);
+  if (end_angle > start_angle) {
+    graphics_fill_radial(ctx, frame, GOvalScaleModeFitCircle, thickness,
+                         start_angle, end_angle);
+  } else if (end_angle < start_angle) {
+    graphics_fill_radial(ctx, frame, GOvalScaleModeFitCircle, thickness,
+                         start_angle, TRIG_MAX_ANGLE);
+    graphics_fill_radial(ctx, frame, GOvalScaleModeFitCircle, thickness,
+                         0, end_angle);
+  }
+}
+
+static void weather_ring_draw_tick(GContext *ctx, GPoint center, int r_inner,
+                                   int r_outer, int32_t trig_angle) {
+  GPoint p0 = weather_ring_point_at_angle(center, r_inner, trig_angle);
+  GPoint p1 = weather_ring_point_at_angle(center, r_outer, trig_angle);
+  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_line(ctx, p0, p1);
+}
+
+static void weather_ring_draw_overlay(GContext *ctx) {
+  const GPoint center = GPoint(100, 92);
+  const int outer_r = 82;
+  const int inner_r = 78;
+  const int icon_r = 60;
+  const int ring_thickness = outer_r - inner_r;
+  const GRect ring_frame = GRect(center.x - outer_r, center.y - outer_r,
+                                 outer_r * 2, outer_r * 2);
+  GColor day_color = s_light_mode_enabled ? GColorBlack : GColorWhite;
+  GColor night_color = s_light_mode_enabled ? GColorLightGray : GColorDarkGray;
+
+  draw_text(ctx, "WEATHER", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(6, 4, 100, 16), fitness_muted_text_color(), GTextAlignmentLeft);
+
+  if (s_sunrise_known && s_sunset_known) {
+    struct tm *sunrise_tm = localtime(&s_sunrise_t);
+    int32_t sunrise_angle = 0;
+    int32_t sunset_angle = 0;
+    bool has_sun_angles = false;
+    if (sunrise_tm) {
+      sunrise_angle = weather_ring_hour_to_angle(sunrise_tm->tm_hour,
+                                                 sunrise_tm->tm_min);
+      struct tm *sunset_tm = localtime(&s_sunset_t);
+      if (sunset_tm) {
+        sunset_angle = weather_ring_hour_to_angle(sunset_tm->tm_hour,
+                                                  sunset_tm->tm_min);
+        has_sun_angles = true;
+      }
+    }
+
+    if (has_sun_angles) {
+      graphics_context_set_fill_color(ctx, night_color);
+      graphics_fill_radial(ctx, ring_frame, GOvalScaleModeFitCircle,
+                           ring_thickness, 0, TRIG_MAX_ANGLE);
+      weather_ring_fill_arc(ctx, ring_frame, ring_thickness, day_color,
+                            sunrise_angle, sunset_angle);
+      weather_ring_draw_tick(ctx, center, outer_r, outer_r + 6, sunrise_angle);
+      weather_ring_draw_tick(ctx, center, outer_r, outer_r + 6, sunset_angle);
+    } else {
+      graphics_context_set_fill_color(ctx, day_color);
+      graphics_fill_radial(ctx, ring_frame, GOvalScaleModeFitCircle,
+                           ring_thickness, 0, TRIG_MAX_ANGLE);
+    }
+  } else {
+    graphics_context_set_fill_color(ctx, day_color);
+    graphics_fill_radial(ctx, ring_frame, GOvalScaleModeFitCircle,
+                         ring_thickness, 0, TRIG_MAX_ANGLE);
+  }
+
+  static const int icon_hours[] = {0, 3, 6, 9, 12, 15, 18, 21};
+  for (unsigned int i = 0; i < sizeof(icon_hours) / sizeof(icon_hours[0]); i++) {
+    int hour = icon_hours[i];
+    uint8_t code = s_hourly_codes[hour];
+    if (code == 0xFF) {
+      continue;
+    }
+
+    GPoint icon_center = weather_ring_point_at_angle(
+        center, icon_r, weather_ring_hour_to_angle(hour, 0));
+    WeatherIconBitmap icon = weather_icon_for_code_value(code);
+    GBitmap *bitmap = s_weather_icon_small_bitmaps[draw_bitmap_theme()][icon];
+    if (!bitmap) {
+      continue;
+    }
+    graphics_context_set_compositing_mode(ctx, GCompOpSet);
+    graphics_draw_bitmap_in_rect(ctx, bitmap,
+                                 GRect(icon_center.x - 9, icon_center.y - 9,
+                                       WEATHER_ICON_SMALL_SIZE,
+                                       WEATHER_ICON_SMALL_SIZE));
+  }
+
+  time_t now_t = time(NULL);
+  struct tm *now_tm = localtime(&now_t);
+  if (now_tm) {
+    int32_t now_angle = weather_ring_hour_to_angle(now_tm->tm_hour, now_tm->tm_min);
+    GPoint now_point = weather_ring_point_at_angle(center, (outer_r + inner_r) / 2,
+                                                   now_angle);
+    graphics_context_set_fill_color(ctx, theme_fg_color());
+    graphics_fill_circle(ctx, now_point, 4);
+  }
+
+  char time_text[8];
+  if (now_tm) {
+    strftime(time_text, sizeof(time_text),
+             s_military_time_enabled ? "%H:%M" : "%I:%M", now_tm);
+    if (!s_military_time_enabled && s_remove_leading_zero && time_text[0] == '0') {
+      memmove(time_text, time_text + 1, strlen(time_text));
+    }
+  } else {
+    snprintf(time_text, sizeof(time_text), "--:--");
+  }
+  draw_text(ctx, time_text, s_font_time, GRect(center.x - 50, center.y - 22, 100, 44),
+            theme_fg_color(), GTextAlignmentCenter);
+
+  char temp_text[10];
+  format_temp_with_degree(temp_text, sizeof(temp_text), s_temperature_known, s_temperature);
+  draw_text(ctx, temp_text, s_font_complication, GRect(8, 180, SCREEN_W - 16, 22),
+            theme_fg_color(), GTextAlignmentCenter);
+  draw_text(ctx, s_weather_summary_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18),
+            GRect(8, 202, SCREEN_W - 16, 22), fitness_muted_text_color(),
+            GTextAlignmentCenter);
+}
+
+static void tide_format_signed_hundredths(int value, const char *unit,
+                                          char *out_buf, size_t out_len) {
+  int abs_value = abs(value);
+  const char *sign = value < 0 ? "-" : "";
+  snprintf(out_buf, out_len, "%s%d.%02d%s", sign, abs_value / 100,
+           abs_value % 100, unit);
+}
+
+static void tide_format_level(uint8_t encoded, char *out_buf, size_t out_len) {
+  if (encoded == 0xFF) {
+    snprintf(out_buf, out_len, "--");
+    return;
+  }
+
+  int feet_eighths = (int)encoded - 80;
+  if (s_tide_units_meters) {
+    tide_format_signed_hundredths((feet_eighths * 381) / 100, "m",
+                                  out_buf, out_len);
+  } else {
+    tide_format_signed_hundredths((feet_eighths * 100) / 8, "ft",
+                                  out_buf, out_len);
+  }
+}
+
+static bool tide_has_hourly_data(void) {
+  for (int i = 0; i < 24; i++) {
+    if (s_tide_hourly_levels[i] != 0xFF) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static void tide_draw_placeholder(GContext *ctx, const char *line1,
+                                  const char *line2) {
+  draw_text(ctx, line1, s_font_complication, GRect(8, 88, SCREEN_W - 16, 28),
+            theme_fg_color(), GTextAlignmentCenter);
+  draw_text(ctx, line2, s_font_complication, GRect(8, 116, SCREEN_W - 16, 28),
+            fitness_muted_text_color(), GTextAlignmentCenter);
+}
+
+static void tide_format_event_line(char *out_buf, size_t out_len,
+                                   const char *label, uint32_t timestamp,
+                                   uint8_t level) {
+  char time_buf[12];
+  char level_buf[12];
+  format_time_short(time_buf, sizeof(time_buf), (time_t)timestamp, timestamp > 0);
+  tide_format_level(level, level_buf, sizeof(level_buf));
+  snprintf(out_buf, out_len, "%s %s  %s", label, time_buf, level_buf);
+}
+
+static void tide_chart_draw_overlay(GContext *ctx) {
+  const int chart_left = 8;
+  const int chart_right = SCREEN_W - 8;
+  const int chart_top = 24;
+  const int chart_bottom = 140;
+  const int chart_h = chart_bottom - chart_top;
+
+  if (s_tide_station_id[0] == '\0') {
+    tide_draw_placeholder(ctx, "Set a tide station ID", "in Pebble app settings");
+    return;
+  }
+
+  const char *station_label =
+      s_tide_station_name[0] ? s_tide_station_name : s_tide_station_id;
+  draw_text(ctx, "TIDE", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(8, 4, 60, 16), fitness_muted_text_color(), GTextAlignmentLeft);
+  draw_text(ctx, station_label, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(60, 4, SCREEN_W - 68, 16), fitness_muted_text_color(),
+            GTextAlignmentRight);
+
+  if (!tide_has_hourly_data()) {
+    tide_draw_placeholder(ctx, "Waiting for tide data...", "");
+    return;
+  }
+
+  int min_e = 255;
+  int max_e = 0;
+  for (int i = 0; i < 24; i++) {
+    if (s_tide_hourly_levels[i] == 0xFF) {
+      continue;
+    }
+    if (s_tide_hourly_levels[i] < min_e) {
+      min_e = s_tide_hourly_levels[i];
+    }
+    if (s_tide_hourly_levels[i] > max_e) {
+      max_e = s_tide_hourly_levels[i];
+    }
+  }
+  if (max_e == min_e) {
+    max_e = min_e + 1;
+  }
+
+  GPoint points[24];
+  for (int i = 0; i < 24; i++) {
+    if (s_tide_hourly_levels[i] == 0xFF) {
+      points[i] = GPoint(-1, -1);
+      continue;
+    }
+    int x = chart_left + (i * (chart_right - chart_left)) / 23;
+    int y = chart_bottom
+        - ((s_tide_hourly_levels[i] - min_e) * chart_h) / (max_e - min_e);
+    points[i] = GPoint(x, y);
+  }
+
+  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  graphics_context_set_stroke_width(ctx, 2);
+  for (int i = 0; i < 23; i++) {
+    if (points[i].x < 0 || points[i + 1].x < 0) {
+      continue;
+    }
+    graphics_draw_line(ctx, points[i], points[i + 1]);
+  }
+
+  if (points[0].x >= 0) {
+    graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
+    graphics_context_set_stroke_width(ctx, 1);
+    for (int y = chart_top; y < chart_bottom; y += 4) {
+      graphics_draw_pixel(ctx, GPoint(points[0].x, y));
+      graphics_draw_pixel(ctx, GPoint(points[0].x, y + 1));
+    }
+  }
+
+  char level_buf[12];
+  char now_line[24];
+  char high_line[32];
+  char low_line[32];
+  tide_format_level(s_tide_hourly_levels[0], level_buf, sizeof(level_buf));
+  snprintf(now_line, sizeof(now_line), "Now: %s", level_buf);
+  tide_format_event_line(high_line, sizeof(high_line), "High",
+                         s_tide_next_high_t, s_tide_next_high_level);
+  tide_format_event_line(low_line, sizeof(low_line), "Low ",
+                         s_tide_next_low_t, s_tide_next_low_level);
+
+  draw_text(ctx, now_line, s_font_complication, GRect(8, 148, SCREEN_W - 16, 20),
+            theme_fg_color(), GTextAlignmentLeft);
+  draw_text(ctx, high_line, s_font_complication, GRect(8, 172, SCREEN_W - 16, 20),
+            theme_fg_color(), GTextAlignmentLeft);
+  draw_text(ctx, low_line, s_font_complication, GRect(8, 196, SCREEN_W - 16, 20),
+            fitness_muted_text_color(), GTextAlignmentLeft);
+}
+
 static void shake_overlay_update_proc(Layer *layer, GContext *ctx) {
   (void)layer;
 
@@ -1954,6 +2267,12 @@ static void shake_overlay_update_proc(Layer *layer, GContext *ctx) {
       break;
     case ShakeBehaviorHeartRate:
       heart_rate_draw_overlay(ctx);
+      break;
+    case ShakeBehaviorWeatherRing:
+      weather_ring_draw_overlay(ctx);
+      break;
+    case ShakeBehaviorTideChart:
+      tide_chart_draw_overlay(ctx);
       break;
     case ShakeBehaviorOff:
     default:
@@ -2573,6 +2892,21 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_string(PERSIST_KEY_WEATHER_SUMMARY, s_weather_summary_buf);
   }
 
+  t = dict_find(iter, MESSAGE_KEY_HOURLY_CODES);
+  if (t && t->type == TUPLE_BYTE_ARRAY) {
+    size_t n = t->length;
+    if (n > sizeof(s_hourly_codes)) {
+      n = sizeof(s_hourly_codes);
+    }
+    memcpy(s_hourly_codes, t->value->data, n);
+    for (size_t i = n; i < sizeof(s_hourly_codes); i++) {
+      s_hourly_codes[i] = 0xFF;
+    }
+    persist_write_data(PERSIST_KEY_HOURLY_CODES, s_hourly_codes,
+                       sizeof(s_hourly_codes));
+    fitness_settings_changed = true;
+  }
+
   t = dict_find(iter, MESSAGE_KEY_COMPLICATION_1);
   if (t) {
     s_complication_slots[0] = sanitize_complication(t->value->int32, ComplicationTemperature);
@@ -2841,6 +3175,70 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       s_alt_tz_offset_min = 840;
     }
     persist_write_int(PERSIST_KEY_ALT_TZ_OFFSET_MIN, s_alt_tz_offset_min);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_TIDE_HOURLY_LEVELS);
+  if (t && t->type == TUPLE_BYTE_ARRAY) {
+    size_t n = t->length;
+    if (n > sizeof(s_tide_hourly_levels)) {
+      n = sizeof(s_tide_hourly_levels);
+    }
+    memcpy(s_tide_hourly_levels, t->value->data, n);
+    for (size_t i = n; i < sizeof(s_tide_hourly_levels); i++) {
+      s_tide_hourly_levels[i] = 0xFF;
+    }
+    persist_write_data(PERSIST_KEY_TIDE_HOURLY_LEVELS, s_tide_hourly_levels,
+                       sizeof(s_tide_hourly_levels));
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_TIDE_NEXT_HIGH_T);
+  if (t) {
+    s_tide_next_high_t = (uint32_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_TIDE_NEXT_HIGH_T, (int)s_tide_next_high_t);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_TIDE_NEXT_HIGH_LEVEL);
+  if (t) {
+    s_tide_next_high_level = (uint8_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_TIDE_NEXT_HIGH_LEVEL, (int)s_tide_next_high_level);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_TIDE_NEXT_LOW_T);
+  if (t) {
+    s_tide_next_low_t = (uint32_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_TIDE_NEXT_LOW_T, (int)s_tide_next_low_t);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_TIDE_NEXT_LOW_LEVEL);
+  if (t) {
+    s_tide_next_low_level = (uint8_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_TIDE_NEXT_LOW_LEVEL, (int)s_tide_next_low_level);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_TIDE_STATION_NAME);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_tide_station_name, sizeof(s_tide_station_name),
+                         PERSIST_KEY_TIDE_STATION_NAME, t->value->cstring);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_TIDE_UNITS);
+  if (t) {
+    s_tide_units_meters = t->value->int32 == 1;
+    persist_write_bool(PERSIST_KEY_TIDE_UNITS, s_tide_units_meters);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_TIDE_STATION_ID);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_tide_station_id, sizeof(s_tide_station_id),
+                         PERSIST_KEY_TIDE_STATION_ID, t->value->cstring);
     fitness_settings_changed = true;
   }
 
@@ -3140,6 +3538,41 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_YOUR_DAY_END_HOUR)) {
     s_your_day_end_hour =
         sanitize_your_day_hour(persist_read_int(PERSIST_KEY_YOUR_DAY_END_HOUR));
+  }
+  if (persist_exists(PERSIST_KEY_HOURLY_CODES)) {
+    persist_read_data(PERSIST_KEY_HOURLY_CODES, s_hourly_codes,
+                      sizeof(s_hourly_codes));
+  }
+  if (persist_exists(PERSIST_KEY_TIDE_HOURLY_LEVELS)) {
+    persist_read_data(PERSIST_KEY_TIDE_HOURLY_LEVELS, s_tide_hourly_levels,
+                      sizeof(s_tide_hourly_levels));
+  }
+  if (persist_exists(PERSIST_KEY_TIDE_NEXT_HIGH_T)) {
+    s_tide_next_high_t = (uint32_t)persist_read_int(PERSIST_KEY_TIDE_NEXT_HIGH_T);
+  }
+  if (persist_exists(PERSIST_KEY_TIDE_NEXT_HIGH_LEVEL)) {
+    s_tide_next_high_level =
+        (uint8_t)persist_read_int(PERSIST_KEY_TIDE_NEXT_HIGH_LEVEL);
+  }
+  if (persist_exists(PERSIST_KEY_TIDE_NEXT_LOW_T)) {
+    s_tide_next_low_t = (uint32_t)persist_read_int(PERSIST_KEY_TIDE_NEXT_LOW_T);
+  }
+  if (persist_exists(PERSIST_KEY_TIDE_NEXT_LOW_LEVEL)) {
+    s_tide_next_low_level =
+        (uint8_t)persist_read_int(PERSIST_KEY_TIDE_NEXT_LOW_LEVEL);
+  }
+  if (persist_exists(PERSIST_KEY_TIDE_STATION_NAME)) {
+    persist_read_string(PERSIST_KEY_TIDE_STATION_NAME, s_tide_station_name,
+                        sizeof(s_tide_station_name));
+    s_tide_station_name[sizeof(s_tide_station_name) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_TIDE_UNITS)) {
+    s_tide_units_meters = persist_read_bool(PERSIST_KEY_TIDE_UNITS);
+  }
+  if (persist_exists(PERSIST_KEY_TIDE_STATION_ID)) {
+    persist_read_string(PERSIST_KEY_TIDE_STATION_ID, s_tide_station_id,
+                        sizeof(s_tide_station_id));
+    s_tide_station_id[sizeof(s_tide_station_id) - 1] = '\0';
   }
   if (persist_exists(PERSIST_KEY_ALT_TZ_LABEL)) {
     persist_read_string(PERSIST_KEY_ALT_TZ_LABEL, s_alt_tz_label, sizeof(s_alt_tz_label));
