@@ -563,10 +563,6 @@
             "value": "heart_rate"
           },
           {
-            "label": "Halcyon Day View",
-            "value": "weather_ring"
-          },
-          {
             "label": "Tide chart",
             "value": "tide_chart"
           }

@@ -89,7 +89,6 @@
 #define PERSIST_KEY_DAY_EVENT_HALF_HOURS_SECOND_BITMAP_YESTERDAY 176
 #define PERSIST_KEY_YOUR_DAY_HALF_HOUR_PIPS 177
 #define PERSIST_KEY_EMPTY_EVENT_LABEL 178
-#define PERSIST_KEY_HOURLY_CODES 179
 #define PERSIST_KEY_TIDE_HOURLY_LEVELS 180
 #define PERSIST_KEY_TIDE_NEXT_HIGH_T 181
 #define PERSIST_KEY_TIDE_NEXT_HIGH_LEVEL 182
@@ -98,6 +97,7 @@
 #define PERSIST_KEY_TIDE_STATION_NAME 185
 #define PERSIST_KEY_TIDE_UNITS 186
 #define PERSIST_KEY_TIDE_STATION_ID 187
+#define PERSIST_KEY_TIDE_DATA_VERSION 192
 
 #define SCREEN_W 200
 #define SCREEN_H 228
@@ -154,7 +154,6 @@ typedef enum {
   ShakeBehaviorDetailedWeather = 4,
   ShakeBehaviorAltTimezone = 5,
   ShakeBehaviorHeartRate = 6,
-  ShakeBehaviorWeatherRing = 7,
   ShakeBehaviorTideChart = 8,
 } ShakeBehavior;
 
@@ -303,13 +302,20 @@ static int s_your_day_start_hour = 8;
 static int s_your_day_end_hour = 17;
 static bool s_your_day_half_hour_pips_enabled = false;
 static char s_empty_event_label[32] = "[None]";
-static uint8_t s_hourly_codes[24] = {
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-};
-static uint8_t s_tide_hourly_levels[24] = {
+// Tide chart sends a 24-byte hourly window centered on "now":
+// indices [0..11] = past 12 hours, [TIDE_NOW_INDEX] = current hour,
+// [13..23] = next 11 hours. JS keeps the same convention.
+#define TIDE_WINDOW_HOURS 24
+#define TIDE_NOW_INDEX 12
+// Bump TIDE_DATA_VERSION whenever the byte-array layout / window-centering
+// changes. On boot, a mismatched persisted version triggers a one-shot wipe
+// of the tide bytes so stale data from an older release can't render as a
+// misleading partial chart while the fresh fetch is still in flight.
+//   1 = 0.72: forward-only 24h window starting at "now"
+//   2 = 0.73: centered window with TIDE_NOW_INDEX=12 (12h past + 12h future)
+#define TIDE_DATA_VERSION 2
+
+static uint8_t s_tide_hourly_levels[TIDE_WINDOW_HOURS] = {
   0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
   0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
   0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -502,9 +508,19 @@ static ComplicationType sanitize_complication(int value, ComplicationType fallba
 }
 
 static ShakeBehavior sanitize_shake_behavior(int value) {
-  return value >= ShakeBehaviorOff && value <= ShakeBehaviorTideChart
-      ? (ShakeBehavior)value
-      : ShakeBehaviorOff;
+  switch (value) {
+    case ShakeBehaviorOff:
+    case ShakeBehaviorFitnessRings:
+    case ShakeBehaviorCalendarEvents:
+    case ShakeBehaviorYourDay:
+    case ShakeBehaviorDetailedWeather:
+    case ShakeBehaviorAltTimezone:
+    case ShakeBehaviorHeartRate:
+    case ShakeBehaviorTideChart:
+      return (ShakeBehavior)value;
+    default:
+      return ShakeBehaviorOff;
+  }
 }
 
 static void format_unknown(char *buf, size_t len) {
@@ -1117,7 +1133,11 @@ static void draw_uv_icon_centered(GContext *ctx, GPoint center) {
             draw_fg_color(), GTextAlignmentCenter);
 }
 
-static WeatherIconBitmap weather_icon_for_code_value(uint8_t code) {
+static WeatherIconBitmap weather_icon_for_code(void) {
+  if (!s_weather_known) {
+    return WeatherIconCloudy;
+  }
+  uint8_t code = s_weather_code;
   if (code == 0) {
     return WeatherIconSunny;
   } else if (code == 1 || code == 2) {
@@ -1137,10 +1157,6 @@ static WeatherIconBitmap weather_icon_for_code_value(uint8_t code) {
   }
 
   return WeatherIconCloudy;
-}
-
-static WeatherIconBitmap weather_icon_for_code(void) {
-  return s_weather_known ? weather_icon_for_code_value(s_weather_code) : WeatherIconCloudy;
 }
 
 static void draw_weather_icon_centered(GContext *ctx, GPoint center, bool large) {
@@ -1955,147 +1971,6 @@ static void heart_rate_draw_overlay(GContext *ctx) {
             GTextAlignmentCenter);
 }
 
-static int32_t weather_ring_hour_to_angle(int hour, int minute) {
-  int total_minutes = ((hour - 12 + 24) % 24) * 60 + minute;
-  int degrees = (total_minutes * 360) / (24 * 60);
-  return DEG_TO_TRIGANGLE(degrees);
-}
-
-static GPoint weather_ring_point_at_angle(GPoint center, int radius,
-                                          int32_t trig_angle) {
-  int32_t sin_v = sin_lookup(trig_angle);
-  int32_t cos_v = cos_lookup(trig_angle);
-  return GPoint(center.x + (sin_v * radius) / TRIG_MAX_RATIO,
-                center.y - (cos_v * radius) / TRIG_MAX_RATIO);
-}
-
-static void weather_ring_fill_arc(GContext *ctx, GRect frame, int thickness,
-                                  GColor color, int32_t start_angle,
-                                  int32_t end_angle) {
-  graphics_context_set_fill_color(ctx, color);
-  if (end_angle > start_angle) {
-    graphics_fill_radial(ctx, frame, GOvalScaleModeFitCircle, thickness,
-                         start_angle, end_angle);
-  } else if (end_angle < start_angle) {
-    graphics_fill_radial(ctx, frame, GOvalScaleModeFitCircle, thickness,
-                         start_angle, TRIG_MAX_ANGLE);
-    graphics_fill_radial(ctx, frame, GOvalScaleModeFitCircle, thickness,
-                         0, end_angle);
-  }
-}
-
-static void weather_ring_draw_tick(GContext *ctx, GPoint center, int r_inner,
-                                   int r_outer, int32_t trig_angle) {
-  GPoint p0 = weather_ring_point_at_angle(center, r_inner, trig_angle);
-  GPoint p1 = weather_ring_point_at_angle(center, r_outer, trig_angle);
-  graphics_context_set_stroke_color(ctx, theme_fg_color());
-  graphics_context_set_stroke_width(ctx, 1);
-  graphics_draw_line(ctx, p0, p1);
-}
-
-static void weather_ring_draw_overlay(GContext *ctx) {
-  const GPoint center = GPoint(100, 92);
-  const int outer_r = 82;
-  const int inner_r = 78;
-  const int icon_r = 60;
-  const int ring_thickness = outer_r - inner_r;
-  const GRect ring_frame = GRect(center.x - outer_r, center.y - outer_r,
-                                 outer_r * 2, outer_r * 2);
-  GColor day_color = s_light_mode_enabled ? GColorBlack : GColorWhite;
-  GColor night_color = s_light_mode_enabled ? GColorLightGray : GColorDarkGray;
-
-  draw_text(ctx, "WEATHER", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(6, 4, 100, 16), fitness_muted_text_color(), GTextAlignmentLeft);
-
-  if (s_sunrise_known && s_sunset_known) {
-    struct tm *sunrise_tm = localtime(&s_sunrise_t);
-    int32_t sunrise_angle = 0;
-    int32_t sunset_angle = 0;
-    bool has_sun_angles = false;
-    if (sunrise_tm) {
-      sunrise_angle = weather_ring_hour_to_angle(sunrise_tm->tm_hour,
-                                                 sunrise_tm->tm_min);
-      struct tm *sunset_tm = localtime(&s_sunset_t);
-      if (sunset_tm) {
-        sunset_angle = weather_ring_hour_to_angle(sunset_tm->tm_hour,
-                                                  sunset_tm->tm_min);
-        has_sun_angles = true;
-      }
-    }
-
-    if (has_sun_angles) {
-      graphics_context_set_fill_color(ctx, night_color);
-      graphics_fill_radial(ctx, ring_frame, GOvalScaleModeFitCircle,
-                           ring_thickness, 0, TRIG_MAX_ANGLE);
-      weather_ring_fill_arc(ctx, ring_frame, ring_thickness, day_color,
-                            sunrise_angle, sunset_angle);
-      weather_ring_draw_tick(ctx, center, outer_r, outer_r + 6, sunrise_angle);
-      weather_ring_draw_tick(ctx, center, outer_r, outer_r + 6, sunset_angle);
-    } else {
-      graphics_context_set_fill_color(ctx, day_color);
-      graphics_fill_radial(ctx, ring_frame, GOvalScaleModeFitCircle,
-                           ring_thickness, 0, TRIG_MAX_ANGLE);
-    }
-  } else {
-    graphics_context_set_fill_color(ctx, day_color);
-    graphics_fill_radial(ctx, ring_frame, GOvalScaleModeFitCircle,
-                         ring_thickness, 0, TRIG_MAX_ANGLE);
-  }
-
-  static const int icon_hours[] = {0, 3, 6, 9, 12, 15, 18, 21};
-  for (unsigned int i = 0; i < sizeof(icon_hours) / sizeof(icon_hours[0]); i++) {
-    int hour = icon_hours[i];
-    uint8_t code = s_hourly_codes[hour];
-    if (code == 0xFF) {
-      continue;
-    }
-
-    GPoint icon_center = weather_ring_point_at_angle(
-        center, icon_r, weather_ring_hour_to_angle(hour, 0));
-    WeatherIconBitmap icon = weather_icon_for_code_value(code);
-    GBitmap *bitmap = s_weather_icon_small_bitmaps[draw_bitmap_theme()][icon];
-    if (!bitmap) {
-      continue;
-    }
-    graphics_context_set_compositing_mode(ctx, GCompOpSet);
-    graphics_draw_bitmap_in_rect(ctx, bitmap,
-                                 GRect(icon_center.x - 9, icon_center.y - 9,
-                                       WEATHER_ICON_SMALL_SIZE,
-                                       WEATHER_ICON_SMALL_SIZE));
-  }
-
-  time_t now_t = time(NULL);
-  struct tm *now_tm = localtime(&now_t);
-  if (now_tm) {
-    int32_t now_angle = weather_ring_hour_to_angle(now_tm->tm_hour, now_tm->tm_min);
-    GPoint now_point = weather_ring_point_at_angle(center, (outer_r + inner_r) / 2,
-                                                   now_angle);
-    graphics_context_set_fill_color(ctx, theme_fg_color());
-    graphics_fill_circle(ctx, now_point, 4);
-  }
-
-  char time_text[8];
-  if (now_tm) {
-    strftime(time_text, sizeof(time_text),
-             s_military_time_enabled ? "%H:%M" : "%I:%M", now_tm);
-    if (!s_military_time_enabled && s_remove_leading_zero && time_text[0] == '0') {
-      memmove(time_text, time_text + 1, strlen(time_text));
-    }
-  } else {
-    snprintf(time_text, sizeof(time_text), "--:--");
-  }
-  draw_text(ctx, time_text, s_font_time, GRect(center.x - 50, center.y - 22, 100, 44),
-            theme_fg_color(), GTextAlignmentCenter);
-
-  char temp_text[10];
-  format_temp_with_degree(temp_text, sizeof(temp_text), s_temperature_known, s_temperature);
-  draw_text(ctx, temp_text, s_font_complication, GRect(8, 180, SCREEN_W - 16, 22),
-            theme_fg_color(), GTextAlignmentCenter);
-  draw_text(ctx, s_weather_summary_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18),
-            GRect(8, 202, SCREEN_W - 16, 22), fitness_muted_text_color(),
-            GTextAlignmentCenter);
-}
-
 static void tide_format_signed_hundredths(int value, const char *unit,
                                           char *out_buf, size_t out_len) {
   int abs_value = abs(value);
@@ -2121,12 +1996,21 @@ static void tide_format_level(uint8_t encoded, char *out_buf, size_t out_len) {
 }
 
 static bool tide_has_hourly_data(void) {
-  for (int i = 0; i < 24; i++) {
+  // Require the current-hour sample plus enough surrounding context before
+  // committing to draw the chart. A partial array (e.g. stale data left over
+  // from an older release that only populated a few hours) renders as a
+  // misleading "single spike" — better to keep the Waiting placeholder until
+  // the next NOAA fetch lands a full window.
+  if (s_tide_hourly_levels[TIDE_NOW_INDEX] == 0xFF) {
+    return false;
+  }
+  int valid = 0;
+  for (int i = 0; i < TIDE_WINDOW_HOURS; i++) {
     if (s_tide_hourly_levels[i] != 0xFF) {
-      return true;
+      valid++;
     }
   }
-  return false;
+  return valid >= 12;
 }
 
 static void tide_draw_placeholder(GContext *ctx, const char *line1,
@@ -2174,7 +2058,7 @@ static void tide_chart_draw_overlay(GContext *ctx) {
 
   int min_e = 255;
   int max_e = 0;
-  for (int i = 0; i < 24; i++) {
+  for (int i = 0; i < TIDE_WINDOW_HOURS; i++) {
     if (s_tide_hourly_levels[i] == 0xFF) {
       continue;
     }
@@ -2189,41 +2073,53 @@ static void tide_chart_draw_overlay(GContext *ctx) {
     max_e = min_e + 1;
   }
 
-  GPoint points[24];
-  for (int i = 0; i < 24; i++) {
+  GPoint points[TIDE_WINDOW_HOURS];
+  for (int i = 0; i < TIDE_WINDOW_HOURS; i++) {
     if (s_tide_hourly_levels[i] == 0xFF) {
       points[i] = GPoint(-1, -1);
       continue;
     }
-    int x = chart_left + (i * (chart_right - chart_left)) / 23;
+    int x = chart_left + (i * (chart_right - chart_left)) / (TIDE_WINDOW_HOURS - 1);
     int y = chart_bottom
         - ((s_tide_hourly_levels[i] - min_e) * chart_h) / (max_e - min_e);
     points[i] = GPoint(x, y);
   }
 
-  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  // Past hours (indices < TIDE_NOW_INDEX) draw in muted color; future hours
+  // draw in the strong theme foreground so "what's coming" reads as primary.
   graphics_context_set_stroke_width(ctx, 2);
-  for (int i = 0; i < 23; i++) {
+  for (int i = 0; i < TIDE_WINDOW_HOURS - 1; i++) {
     if (points[i].x < 0 || points[i + 1].x < 0) {
       continue;
     }
+    GColor stroke = (i < TIDE_NOW_INDEX) ? fitness_muted_text_color() : theme_fg_color();
+    graphics_context_set_stroke_color(ctx, stroke);
     graphics_draw_line(ctx, points[i], points[i + 1]);
   }
 
-  if (points[0].x >= 0) {
-    graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
-    graphics_context_set_stroke_width(ctx, 1);
-    for (int y = chart_top; y < chart_bottom; y += 4) {
-      graphics_draw_pixel(ctx, GPoint(points[0].x, y));
-      graphics_draw_pixel(ctx, GPoint(points[0].x, y + 1));
-    }
+  // Dotted vertical "now" indicator at the TIDE_NOW_INDEX column. Show it
+  // whether or not that exact sample has data — the user still wants to see
+  // where "now" is on the timeline.
+  int now_x;
+  if (points[TIDE_NOW_INDEX].x >= 0) {
+    now_x = points[TIDE_NOW_INDEX].x;
+  } else {
+    now_x = chart_left + (TIDE_NOW_INDEX * (chart_right - chart_left))
+        / (TIDE_WINDOW_HOURS - 1);
+  }
+  graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
+  graphics_context_set_stroke_width(ctx, 1);
+  for (int y = chart_top; y < chart_bottom; y += 4) {
+    graphics_draw_pixel(ctx, GPoint(now_x, y));
+    graphics_draw_pixel(ctx, GPoint(now_x, y + 1));
   }
 
   char level_buf[12];
   char now_line[24];
   char high_line[32];
   char low_line[32];
-  tide_format_level(s_tide_hourly_levels[0], level_buf, sizeof(level_buf));
+  tide_format_level(s_tide_hourly_levels[TIDE_NOW_INDEX], level_buf,
+                    sizeof(level_buf));
   snprintf(now_line, sizeof(now_line), "Now: %s", level_buf);
   tide_format_event_line(high_line, sizeof(high_line), "High",
                          s_tide_next_high_t, s_tide_next_high_level);
@@ -2267,9 +2163,6 @@ static void shake_overlay_update_proc(Layer *layer, GContext *ctx) {
       break;
     case ShakeBehaviorHeartRate:
       heart_rate_draw_overlay(ctx);
-      break;
-    case ShakeBehaviorWeatherRing:
-      weather_ring_draw_overlay(ctx);
       break;
     case ShakeBehaviorTideChart:
       tide_chart_draw_overlay(ctx);
@@ -2890,21 +2783,6 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     strncpy(s_weather_summary_buf, t->value->cstring, sizeof(s_weather_summary_buf) - 1);
     s_weather_summary_buf[sizeof(s_weather_summary_buf) - 1] = '\0';
     persist_write_string(PERSIST_KEY_WEATHER_SUMMARY, s_weather_summary_buf);
-  }
-
-  t = dict_find(iter, MESSAGE_KEY_HOURLY_CODES);
-  if (t && t->type == TUPLE_BYTE_ARRAY) {
-    size_t n = t->length;
-    if (n > sizeof(s_hourly_codes)) {
-      n = sizeof(s_hourly_codes);
-    }
-    memcpy(s_hourly_codes, t->value->data, n);
-    for (size_t i = n; i < sizeof(s_hourly_codes); i++) {
-      s_hourly_codes[i] = 0xFF;
-    }
-    persist_write_data(PERSIST_KEY_HOURLY_CODES, s_hourly_codes,
-                       sizeof(s_hourly_codes));
-    fitness_settings_changed = true;
   }
 
   t = dict_find(iter, MESSAGE_KEY_COMPLICATION_1);
@@ -3539,10 +3417,23 @@ static void load_persisted(void) {
     s_your_day_end_hour =
         sanitize_your_day_hour(persist_read_int(PERSIST_KEY_YOUR_DAY_END_HOUR));
   }
-  if (persist_exists(PERSIST_KEY_HOURLY_CODES)) {
-    persist_read_data(PERSIST_KEY_HOURLY_CODES, s_hourly_codes,
-                      sizeof(s_hourly_codes));
+
+  // One-shot tide-data schema migration: if the persisted version doesn't
+  // match TIDE_DATA_VERSION, wipe the byte array + next-high / next-low so
+  // the chart shows the Waiting placeholder until the new fetch lands. This
+  // is what prevents 0.72-format leftovers from rendering as a misleading
+  // partial chart after upgrading to 0.73.
+  int tide_data_version = persist_exists(PERSIST_KEY_TIDE_DATA_VERSION)
+      ? persist_read_int(PERSIST_KEY_TIDE_DATA_VERSION) : 0;
+  if (tide_data_version != TIDE_DATA_VERSION) {
+    persist_delete(PERSIST_KEY_TIDE_HOURLY_LEVELS);
+    persist_delete(PERSIST_KEY_TIDE_NEXT_HIGH_T);
+    persist_delete(PERSIST_KEY_TIDE_NEXT_HIGH_LEVEL);
+    persist_delete(PERSIST_KEY_TIDE_NEXT_LOW_T);
+    persist_delete(PERSIST_KEY_TIDE_NEXT_LOW_LEVEL);
+    persist_write_int(PERSIST_KEY_TIDE_DATA_VERSION, TIDE_DATA_VERSION);
   }
+
   if (persist_exists(PERSIST_KEY_TIDE_HOURLY_LEVELS)) {
     persist_read_data(PERSIST_KEY_TIDE_HOURLY_LEVELS, s_tide_hourly_levels,
                       sizeof(s_tide_hourly_levels));

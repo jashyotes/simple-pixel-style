@@ -215,7 +215,6 @@ var SHAKE_BEHAVIOR_IDS = {
   detailed_weather: 4,
   alt_timezone: 5,
   heart_rate: 6,
-  weather_ring: 7,
   tide_chart: 8
 };
 
@@ -397,19 +396,44 @@ function twoDigit(value) {
   return value < 10 ? '0' + value : String(value);
 }
 
+// Tide hourly levels are sent as a 24-byte array centered on "now":
+// indices 0..11 are the past 12 hours, index TIDE_NOW_INDEX = 12 is the
+// current hour, indices 13..23 are the next 11 hours. The C side knows
+// where "now" sits by the same TIDE_NOW_INDEX constant.
+var TIDE_HOURS_BEFORE_NOW = 12;
+var TIDE_WINDOW_HOURS = 24;
+
 function noaaTimeKey(date) {
-  return date.getFullYear() + '-'
-      + twoDigit(date.getMonth() + 1) + '-'
-      + twoDigit(date.getDate()) + ' '
-      + twoDigit(date.getHours()) + ':00';
+  // UTC components — keys must be TZ-independent so they line up with NOAA's
+  // gmt-formatted predictions regardless of which TZ the user's phone is in
+  // OR which TZ their chosen station is in.
+  return date.getUTCFullYear() + '-'
+      + twoDigit(date.getUTCMonth() + 1) + '-'
+      + twoDigit(date.getUTCDate()) + ' '
+      + twoDigit(date.getUTCHours()) + ':00';
 }
 
 function parseNoaaTime(value) {
   if (!value) {
     return null;
   }
-  var parsed = new Date(String(value).replace(' ', 'T'));
-  return isFinite(parsed.getTime()) ? parsed : null;
+  // NOAA returns "YYYY-MM-DD HH:MM" in GMT (we requested time_zone=gmt).
+  // PebbleKit JS's ISO string parsing has been historically unreliable, so
+  // construct via Date.UTC with explicit numeric components instead of any
+  // string parsing. Pattern lifted from the working community tide watchface.
+  var match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+  var utcMs = Date.UTC(
+    parseInt(match[1], 10),
+    parseInt(match[2], 10) - 1,
+    parseInt(match[3], 10),
+    parseInt(match[4], 10),
+    parseInt(match[5], 10),
+    0
+  );
+  return isFinite(utcMs) ? new Date(utcMs) : null;
 }
 
 function packTideHourlyLevels(predictions, nowDate) {
@@ -420,53 +444,99 @@ function packTideHourlyLevels(predictions, nowDate) {
     }
   });
 
-  var start = new Date(nowDate.getTime());
-  start.setMinutes(0, 0, 0);
+  // Center the 24-hour window on "now". All math in epoch ms — no mutating
+  // setUTCMinutes calls (some embedded JS engines fail those silently).
+  var HOUR_MS = 60 * 60 * 1000;
+  var nowMs = nowDate.getTime();
+  var nowHourMs = Math.floor(nowMs / HOUR_MS) * HOUR_MS;
+  var startMs = nowHourMs - TIDE_HOURS_BEFORE_NOW * HOUR_MS;
 
   // PebbleKit JS serializes byte-array tuples from a plain Array of integers
   // (0..255). Uint8Array fails to round-trip and tanks the whole AppMessage,
   // which breaks every other key in the same dict.
   var levels = [];
-  for (var i = 0; i < 24; i++) {
-    var hour = new Date(start.getTime() + i * 60 * 60 * 1000);
-    var value = byHour[noaaTimeKey(hour)];
-    levels.push(typeof value === 'undefined' ? 0xFF : encodeTideLevelFeet(value));
+  var matched = 0;
+  for (var i = 0; i < TIDE_WINDOW_HOURS; i++) {
+    var hour = new Date(startMs + i * HOUR_MS);
+    var key = noaaTimeKey(hour);
+    var value = byHour[key];
+    if (typeof value === 'undefined') {
+      levels.push(0xFF);
+    } else {
+      levels.push(encodeTideLevelFeet(value));
+      matched++;
+    }
   }
+  console.log('Tide: packed ' + matched + '/' + TIDE_WINDOW_HOURS + ' hourly levels');
   return levels;
 }
 
 function fetchJson(url, label, callback) {
+  console.log(label + ' GET ' + url.slice(0, 100));
   var xhr = new XMLHttpRequest();
+  var finished = false;
+  function finishOnce(result) {
+    if (finished) return;
+    finished = true;
+    callback(result);
+  }
+  xhr.timeout = 15000;
   xhr.onload = function() {
+    if (xhr.status && xhr.status !== 200) {
+      console.log(label + ' HTTP ' + xhr.status);
+      finishOnce(null);
+      return;
+    }
     try {
       var data = JSON.parse(xhr.responseText);
       if (data && data.error) {
         console.log(label + ' error: ' + JSON.stringify(data.error));
-        callback(null);
+        finishOnce(null);
         return;
       }
-      callback(data);
+      console.log(label + ' ok (' + (xhr.responseText ? xhr.responseText.length : 0) + ' bytes)');
+      finishOnce(data);
     } catch (e) {
       console.log(label + ' parse failed: ' + e);
-      callback(null);
+      finishOnce(null);
     }
   };
   xhr.onerror = function() {
     console.log(label + ' request failed');
-    callback(null);
+    finishOnce(null);
   };
-  xhr.open('GET', url);
-  xhr.send();
+  xhr.ontimeout = function() {
+    console.log(label + ' timeout after 15s');
+    finishOnce(null);
+  };
+  try {
+    xhr.open('GET', url);
+    xhr.send();
+  } catch (e) {
+    console.log(label + ' send threw: ' + e);
+    finishOnce(null);
+  }
+}
+
+function noaaDateParam(date) {
+  return date.getUTCFullYear() + twoDigit(date.getUTCMonth() + 1) + twoDigit(date.getUTCDate());
 }
 
 function tidePredictionsUrl(stationId, interval) {
+  // begin_date / end_date span a 3-day window in UTC: yesterday, today, tomorrow.
+  // NOAA ignores &range when paired with &date=today (only returns 24 entries),
+  // but respects it with begin_date. Using explicit begin/end is the most
+  // predictable. UTC throughout so the keys line up with our UTC matching.
+  var now = new Date();
+  var begin = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  var end   = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   return 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter'
-      + '?date=today'
-      + '&range=48'
+      + '?begin_date=' + noaaDateParam(begin)
+      + '&end_date=' + noaaDateParam(end)
       + '&station=' + encodeURIComponent(stationId)
       + '&product=predictions'
       + '&datum=MLLW'
-      + '&time_zone=lst_ldt'
+      + '&time_zone=gmt'
       + '&units=english'
       + '&interval=' + encodeURIComponent(interval)
       + '&format=json';
@@ -539,15 +609,29 @@ function sendTideData(settings, hourlyData, hiloData, stationName) {
   sendToWatch(dict, 'Tide data');
 }
 
-function fetchTidesForStation(stationId, settings) {
+function fetchTidesForStation(stationId, settings, attempt) {
+  attempt = attempt || 1;
+  console.log('Tide: fetch attempt ' + attempt + ' for station ' + stationId);
   fetchJson(tidePredictionsUrl(stationId, 'h'), 'Tide hourly', function(hourlyData) {
-    if (!hourlyData || !hourlyData.predictions) {
+    if (!hourlyData || !hourlyData.predictions || !hourlyData.predictions.length) {
+      console.log('Tide: hourly empty (attempt ' + attempt + ')');
+      if (attempt < 3) {
+        setTimeout(function() { fetchTidesForStation(stationId, settings, attempt + 1); }, 8000);
+      } else {
+        console.log('Tide: gave up after 3 hourly attempts');
+      }
       return;
     }
+    console.log('Tide: hourly got ' + hourlyData.predictions.length + ' predictions');
     fetchJson(tidePredictionsUrl(stationId, 'hilo'), 'Tide hilo', function(hiloData) {
-      if (!hiloData || !hiloData.predictions) {
+      if (!hiloData || !hiloData.predictions || !hiloData.predictions.length) {
+        console.log('Tide: hilo empty — sending hourly-only data');
+        fetchTideStationName(stationId, function(stationName) {
+          sendTideData(settings, hourlyData, { predictions: [] }, stationName);
+        });
         return;
       }
+      console.log('Tide: hilo got ' + hiloData.predictions.length + ' events');
       fetchTideStationName(stationId, function(stationName) {
         sendTideData(settings, hourlyData, hiloData, stationName);
       });
@@ -558,6 +642,7 @@ function fetchTidesForStation(stationId, settings) {
 function refreshTidesForSettings(settings) {
   var stationId = tideStationId(settings);
   if (!stationId) {
+    console.log('Tide: no station configured, skipping fetch');
     return;
   }
   fetchTidesForStation(stationId, settings);
@@ -580,33 +665,6 @@ function nearestRainChance(hourly) {
   });
 
   return clamp(Math.round(hourly.precipitation_probability[bestIndex] || 0), 0, 100);
-}
-
-function todayHourlyCodes(weatherJson) {
-  // Plain Array, not Uint8Array — see packTideHourlyLevels for the reason.
-  var out = [];
-  for (var i = 0; i < 24; i++) {
-    out.push(0xFF);
-  }
-
-  var hourly = weatherJson && weatherJson.hourly;
-  if (!hourly || !hourly.time || !hourly.weather_code) {
-    return out;
-  }
-
-  var today = new Date();
-  hourly.time.forEach(function(timeValue, index) {
-    var hourDate = new Date(timeValue);
-    if (!isSameLocalDay(today, hourDate)) {
-      return;
-    }
-
-    var code = Number(hourly.weather_code[index]);
-    if (isFinite(code)) {
-      out[hourDate.getHours()] = clamp(Math.round(code), 0, 255);
-    }
-  });
-  return out;
 }
 
 function nearestHourlyIndex(hourly) {
@@ -806,7 +864,6 @@ function fetchWeatherForCoordinates(lat, lon, unit, done) {
       addRounded(dict, keys.SUNSET_T, firstDailyTimestamp(data.daily, 'sunset'), 0, 2147483647);
       dict[keys.RAIN_CHANCE] = nearestRainChance(data.hourly);
       dict[keys.WEATHER_SUMMARY] = verboseWeatherSummary(data.hourly, data.current.weather_code);
-      dict[keys.HOURLY_CODES] = todayHourlyCodes(data);
       sendToWatch(dict, 'Weather');
       if (done) done();
     } catch (e) {
