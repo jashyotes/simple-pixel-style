@@ -334,3 +334,47 @@ Sources:
 - **PebbleKit Android 2 is work-in-progress** (v1.1.0). API may break. Mitigation: pinned to 1.1.0 via libs.versions.toml.
 - BPM widget shows "BPM 0" on emulator (no health data). Real device needs HRM enabled.
 - Companion uses 60s foreground service polling — battery hit is small but real. CalendarContract change observers (more efficient) deferred to v2.
+
+## 0.81 CASIO fix pass — planned 2026-05-17
+
+Plan: `Plan To Implement - 0.81 CASIO Fix Pass.md` (full audit, line-numbered fix surgery, verification checklist).
+
+0.80 audit findings:
+- Quiet-time mouse icon moved to top-left in CASIO mode. Reverting to bottom-right (matches non-CASIO behavior).
+- AM/PM bitmap path uses non-standard compositing modes that render invisibly. Swapping to the proven pixel-art `draw_ampm_label` helper.
+- Drop shadow code present but defaults OFF and the gray-on-gray color is nearly invisible. Defaulting ON, stronger contrast color, 2 px offset.
+- Digits bottom-anchored instead of vertically centered. Fixing.
+- Three digit sizes declared but Medium and Large clip in compact mode. Hiding from Clay dropdown for 0.81; C-side handles stay loaded so they can return when fit envelope is reworked.
+
+0.81 adds:
+- Optional `CASIO_SECONDS` toggle (default OFF) with explicit battery-drain warning. Subscribes to SECOND_UNIT only when CASIO mode AND seconds toggle are both on; otherwise stays on MINUTE_UNIT.
+- New `FONT_WV58A_DIGITS_25` font resource backed by the already-vendored `DIGITAL_BOLD.TTF` (pattern lifted from Casio WV-58DE by Firefox42). Seconds render in this CASIO LCD font at point 25 immediately left of the mouse-icon column for visual coherence with the main time digits.
+
+0.79 features that must remain intact in 0.81: forecast graph, sun icon swap, all complications, bubbles, weather, meeting bar.
+
+Sun and moon position indicator bar (chat brainstorm, not in 0.81): saved to `FUTURE_FEATURES.md` as a candidate meeting-bar replacement mode. 24-dot bar, sun by day and moon by night with proper phase glyph, vendored from pebble-mss `moon_phases.ttf`. Lift 200 to 300 lines plus one vendored font; moderate.
+
+## 0.82 CASIO cleanup — planned 2026-05-17
+
+Plan: `Plan To Implement - 0.82 CASIO Cleanup (Phantom Segments + Anchor Fixes).md`
+
+0.81 audit findings:
+- "Drop shadow" Codex shipped is NOT what the user asked for. Real Casio look is **LCD phantom segments**: render "88:88" in muted color first, real time on top in foreground. Inactive segments stay visible as a faded backdrop. Sometimes called "ghost digits" or "8:88 backdrop."
+- Mouse icon in CASIO mode anchored to `slot_bottom - 18` (Y = 120 in compact mode, 144 in verbose-one-line). Non-CASIO baseline is Y = 93 (TIME_VISUAL_BOTTOM - QUIET_TIME_ICON_SIZE). 27 to 51 px off.
+- AM/PM bottom anchored to `slot_bottom - CASIO_GAP`, not to the digit bottom. Bottom pixels don't line up.
+- Vertical centering formula is line-box centered, which looks bottom-heavy because DIGITAL_BOLD's font leading mostly lives above the visible ink.
+- Seconds toggle renders invisibly below the time. Pulling entirely; revive in a future release after main render is solid.
+- Drop shadow and digit-size selectors are now Clay clutter.
+
+0.82 scope:
+- Replace `LARGE_CASIO_TIME` toggle + `CASIO_DIGIT_SIZE` select with a single `TIME_FONT` select at the TOP of the Layout section. Options: Roboto (default, FONT_KEY_ROBOTO_BOLD_SUBSET_49) or CASIO style. Designed to grow (ForecasWatch 2, others).
+- Install proper LCD phantom segments in CASIO mode.
+- Hard-code mouse icon Y to TIME_VISUAL_BOTTOM - QUIET_TIME_ICON_SIZE in both render paths. Always 93.
+- Anchor AM/PM bottom to digit bottom. Same pixel line.
+- Vertically center digits with empirical leading correction (Codex tunes in emulator).
+- Delete drop shadow code + Clay option.
+- Delete seconds code + Clay option (back to MINUTE_UNIT unconditionally).
+- Delete digit size Clay option (Size 70 and 90 font handles stay loaded for future).
+- 0.79 features intact: forecast graph, sun icon, all complications, weather, meeting bar.
+
+Future feature notes appended to `FUTURE_FEATURES.md`: additional time fonts (ForecasWatch 2 et al.), bring-back conditions for seconds, bring-back conditions for medium/large digit sizes.

@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "0.76.0",
+  "version": "0.87.0",
   "keywords": [
     "pebble-app"
   ],
@@ -110,7 +110,32 @@
       "TIDE_NEXT_LOW_LEVEL",
       "TIDE_STATION_NAME",
       "TIDE_UNITS",
-      "TIDE_STATION_ID"
+      "TIDE_STATION_ID",
+      "PRICES_STOCK_1_SYMBOL",
+      "PRICES_STOCK_2_SYMBOL",
+      "PRICES_CRYPTO_SYMBOL",
+      "PRICES_CADENCE_MIN",
+      "PRICES_POSITIVE_COLOR_LIGHT",
+      "PRICES_POSITIVE_COLOR_DARK",
+      "PRICES_NEGATIVE_COLOR_LIGHT",
+      "PRICES_NEGATIVE_COLOR_DARK",
+      "PRICES_STOCK_1_PRICE",
+      "PRICES_STOCK_2_PRICE",
+      "PRICES_CRYPTO_PRICE",
+      "PRICES_STOCK_1_DELTA_X100",
+      "PRICES_STOCK_2_DELTA_X100",
+      "PRICES_CRYPTO_DELTA_X100",
+      "PRICES_LAST_UPDATE_T",
+      "PRICES_SHOW_STOCK_1",
+      "PRICES_SHOW_STOCK_2",
+      "PRICES_SHOW_CRYPTO",
+      "VIBRATE_ON_DISCONNECT",
+      "TIME_FONT",
+      "CASIO_PHANTOM",
+      "FORECAST_TEMP_F[24]",
+      "FORECAST_PRECIP_PCT[24]",
+      "FORECAST_START_T",
+      "FORECAST_LAST_UPDATE_T"
     ],
     "resources": {
       "media": [
@@ -388,6 +413,50 @@
         {
           "file": "images/light/weather/weather-icons/large/WEATHER_STORM.PNG",
           "name": "WEATHER_STORM_LARGE_LIGHT",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/icon-bitcoin-bubble.png",
+          "name": "ICON_BITCOIN_BUBBLE",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/icon-stocks-bubble.png",
+          "name": "ICON_STOCKS_BUBBLE",
+          "type": "bitmap"
+        },
+        {
+          "characterRegex": "[0-9:]",
+          "compatibility": "2.7",
+          "file": "fonts/DIGITAL_BOLD.TTF",
+          "name": "FONT_WV58A_DIGITS_55",
+          "trackingAdjust": 0,
+          "type": "font"
+        },
+        {
+          "characterRegex": "[0-9:]",
+          "compatibility": "2.7",
+          "file": "fonts/DIGITAL_BOLD.TTF",
+          "name": "FONT_WV58A_DIGITS_70",
+          "trackingAdjust": 0,
+          "type": "font"
+        },
+        {
+          "characterRegex": "[0-9:]",
+          "compatibility": "2.7",
+          "file": "fonts/DIGITAL_BOLD.TTF",
+          "name": "FONT_WV58A_DIGITS_90",
+          "trackingAdjust": 0,
+          "type": "font"
+        },
+        {
+          "file": "images/wv58a-am.png",
+          "name": "WV58A_AM",
+          "type": "bitmap"
+        },
+        {
+          "file": "images/wv58a-pm.png",
+          "name": "WV58A_PM",
           "type": "bitmap"
         }
       ]

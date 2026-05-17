@@ -69,6 +69,21 @@ function customClay() {
     'TIDE_UNITS'
   ];
 
+  var SHAKE_PRICES_ITEM_KEYS = [
+    'shake-prices-heading',
+    'PRICES_STOCK_1_SYMBOL',
+    'PRICES_STOCK_2_SYMBOL',
+    'PRICES_CRYPTO_SYMBOL',
+    'PRICES_SHOW_STOCK_1',
+    'PRICES_SHOW_STOCK_2',
+    'PRICES_SHOW_CRYPTO',
+    'PRICES_CADENCE_MIN',
+    'PRICES_POSITIVE_COLOR_LIGHT',
+    'PRICES_POSITIVE_COLOR_DARK',
+    'PRICES_NEGATIVE_COLOR_LIGHT',
+    'PRICES_NEGATIVE_COLOR_DARK'
+  ];
+
   function getItem(key) {
     return clayCfg.getItemById(key) || clayCfg.getItemByMessageKey(key);
   }
@@ -107,6 +122,7 @@ function customClay() {
       setGroupVisible(SHAKE_YOURDAY_ITEM_KEYS, v === 'your_day');
       setGroupVisible(SHAKE_ALTTZ_ITEM_KEYS, v === 'alt_timezone');
       setGroupVisible(SHAKE_TIDE_ITEM_KEYS, v === 'tide_chart');
+      setGroupVisible(SHAKE_PRICES_ITEM_KEYS, v === 'prices');
     }
 
     colorModeItem.on('change', syncColorMode);
@@ -119,6 +135,7 @@ function customClay() {
 var clay = new Clay(clayConfig, customClay, { autoHandleEvents: false });
 var weatherTimer = null;
 var calendarTimer = null;
+var pricesTimer = null;
 var CURRENT_EVENT_DISPLAY_MINUTES = 15;
 var messageQueue = [];
 var messageInFlight = false;
@@ -141,9 +158,12 @@ var DEFAULT_SETTINGS = {
   INVERT_TIME: false,
   MILITARY_TIME: false,
   REMOVE_LEADING_ZERO: false,
+  TIME_FONT: '0',
+  CASIO_PHANTOM: true,
   INVERT_WEATHER: false,
   INVERT_MEETING_BAR: false,
   TOP_STEPS: true,
+  VIBRATE_ON_DISCONNECT: false,
   VERBOSE_WEATHER: false,
   VERBOSE_WEATHER_STYLE: 'one_line',
   COMPLICATION_1: 'weather',
@@ -180,7 +200,18 @@ var DEFAULT_SETTINGS = {
   YOUR_DAY_END_HOUR: '17',
   YOUR_DAY_HALF_HOUR_PIPS: false,
   TIDE_STATION_ID: '',
-  TIDE_UNITS: 'feet'
+  TIDE_UNITS: 'feet',
+  PRICES_STOCK_1_SYMBOL: 'SPY',
+  PRICES_STOCK_2_SYMBOL: 'QQQ',
+  PRICES_CRYPTO_SYMBOL: 'bitcoin',
+  PRICES_CADENCE_MIN: '30',
+  PRICES_POSITIVE_COLOR_LIGHT: 0x000000,
+  PRICES_POSITIVE_COLOR_DARK: 0xFFFFFF,
+  PRICES_NEGATIVE_COLOR_LIGHT: 0x000000,
+  PRICES_NEGATIVE_COLOR_DARK: 0xFFFFFF,
+  PRICES_SHOW_STOCK_1: true,
+  PRICES_SHOW_STOCK_2: true,
+  PRICES_SHOW_CRYPTO: true
 };
 
 var COMPLICATION_IDS = {
@@ -204,7 +235,10 @@ var COMPLICATION_IDS = {
   active_minutes: 17,
   active_calories: 18,
   sleep_last_night: 19,
-  distance_today: 20
+  distance_today: 20,
+  stock_1: 21,
+  stock_2: 22,
+  bitcoin: 23
 };
 
 var SHAKE_BEHAVIOR_IDS = {
@@ -215,6 +249,7 @@ var SHAKE_BEHAVIOR_IDS = {
   detailed_weather: 4,
   alt_timezone: 5,
   heart_rate: 6,
+  prices: 7,
   tide_chart: 8
 };
 
@@ -311,9 +346,12 @@ function sendLayoutSetting(settings) {
   dict[keys.INVERT_TIME] = settings.INVERT_TIME ? 1 : 0;
   dict[keys.MILITARY_TIME] = settings.MILITARY_TIME ? 1 : 0;
   dict[keys.REMOVE_LEADING_ZERO] = settings.REMOVE_LEADING_ZERO ? 1 : 0;
+  dict[keys.TIME_FONT] = numberSetting(settings.TIME_FONT, 0, 0, 3);
+  dict[keys.CASIO_PHANTOM] = settings.CASIO_PHANTOM ? 1 : 0;
   dict[keys.INVERT_WEATHER] = settings.INVERT_WEATHER ? 1 : 0;
   dict[keys.INVERT_MEETING_BAR] = settings.INVERT_MEETING_BAR ? 1 : 0;
   dict[keys.TOP_STEPS] = settings.TOP_STEPS ? 1 : 0;
+  dict[keys.VIBRATE_ON_DISCONNECT] = settings.VIBRATE_ON_DISCONNECT ? 1 : 0;
   dict[keys.VERBOSE_WEATHER] = settings.VERBOSE_WEATHER ? 1 : 0;
   dict[keys.VERBOSE_WEATHER_STYLE] = settings.VERBOSE_WEATHER_STYLE === 'large' ? 1 : 0;
   dict[keys.COMPLICATION_1] = complicationId(settings.COMPLICATION_1, COMPLICATION_IDS.weather);
@@ -384,6 +422,144 @@ function sendTideSetting(settings) {
   refreshTidesForSettings(settings);
 }
 
+function normalizeStockSymbol(value, fallback) {
+  var symbol = String(value || '').trim().toUpperCase();
+  return (symbol || fallback).slice(0, 11);
+}
+
+function normalizeCryptoSymbol(value) {
+  var symbol = String(value || '').trim().toLowerCase();
+  return (symbol || 'bitcoin').slice(0, 15);
+}
+
+function pricesCadenceMinutes(value) {
+  var minutes = Number(value) || 30;
+  var allowed = [1, 5, 10, 30, 60, 1440];
+  return allowed.indexOf(minutes) === -1 ? 30 : minutes;
+}
+
+function sendPricesSetting(settings) {
+  var dict = {};
+  dict[keys.PRICES_STOCK_1_SYMBOL] = normalizeStockSymbol(
+      settings.PRICES_STOCK_1_SYMBOL, 'SPY');
+  dict[keys.PRICES_STOCK_2_SYMBOL] = normalizeStockSymbol(
+      settings.PRICES_STOCK_2_SYMBOL, 'QQQ');
+  dict[keys.PRICES_CRYPTO_SYMBOL] = normalizeCryptoSymbol(settings.PRICES_CRYPTO_SYMBOL);
+  dict[keys.PRICES_SHOW_STOCK_1] = settings.PRICES_SHOW_STOCK_1 ? 1 : 0;
+  dict[keys.PRICES_SHOW_STOCK_2] = settings.PRICES_SHOW_STOCK_2 ? 1 : 0;
+  dict[keys.PRICES_SHOW_CRYPTO] = settings.PRICES_SHOW_CRYPTO ? 1 : 0;
+  dict[keys.PRICES_CADENCE_MIN] = pricesCadenceMinutes(settings.PRICES_CADENCE_MIN);
+  dict[keys.PRICES_POSITIVE_COLOR_LIGHT] =
+      colorSetting(settings.PRICES_POSITIVE_COLOR_LIGHT, 0x000000);
+  dict[keys.PRICES_POSITIVE_COLOR_DARK] =
+      colorSetting(settings.PRICES_POSITIVE_COLOR_DARK, 0xFFFFFF);
+  dict[keys.PRICES_NEGATIVE_COLOR_LIGHT] =
+      colorSetting(settings.PRICES_NEGATIVE_COLOR_LIGHT, 0x000000);
+  dict[keys.PRICES_NEGATIVE_COLOR_DARK] =
+      colorSetting(settings.PRICES_NEGATIVE_COLOR_DARK, 0xFFFFFF);
+  sendToWatch(dict, 'Prices setting');
+  schedulePricesRefresh();
+  refreshPricesOnce();
+}
+
+function yahooPriceUrl(symbol) {
+  return 'https://query1.finance.yahoo.com/v8/finance/chart/'
+      + encodeURIComponent(symbol) + '?interval=1d&range=2d';
+}
+
+function parseYahooChart(data) {
+  try {
+    var meta = data.chart.result[0].meta;
+    var current = Number(meta.regularMarketPrice);
+    var previous = Number(meta.chartPreviousClose);
+    if (!isFinite(current) || !isFinite(previous) || previous === 0) {
+      return null;
+    }
+    return {
+      priceStr: current.toFixed(2),
+      deltaX100: Math.round(((current - previous) / previous) * 10000)
+    };
+  } catch (e) {
+    console.log('Prices Yahoo parse failed: ' + e);
+    return null;
+  }
+}
+
+function formatCryptoPrice(usd) {
+  var price = Number(usd);
+  if (!isFinite(price)) {
+    return null;
+  }
+  if (price >= 1000) {
+    return Math.round(price).toString();
+  }
+  return price.toFixed(2);
+}
+
+function fetchPrices(settings) {
+  var stock1 = normalizeStockSymbol(settings.PRICES_STOCK_1_SYMBOL, 'SPY');
+  var stock2 = normalizeStockSymbol(settings.PRICES_STOCK_2_SYMBOL, 'QQQ');
+  var crypto = normalizeCryptoSymbol(settings.PRICES_CRYPTO_SYMBOL);
+  var dict = {};
+  var pending = 3;
+
+  function done() {
+    pending--;
+    if (pending !== 0) {
+      return;
+    }
+    dict[keys.PRICES_LAST_UPDATE_T] = Math.floor(Date.now() / 1000);
+    sendToWatch(dict, 'Prices fetch');
+  }
+
+  fetchJson(yahooPriceUrl(stock1), 'Prices stock ' + stock1, function(data) {
+    var result = data ? parseYahooChart(data) : null;
+    if (result) {
+      dict[keys.PRICES_STOCK_1_PRICE] = result.priceStr;
+      dict[keys.PRICES_STOCK_1_DELTA_X100] = result.deltaX100;
+    }
+    done();
+  });
+
+  fetchJson(yahooPriceUrl(stock2), 'Prices stock ' + stock2, function(data) {
+    var result = data ? parseYahooChart(data) : null;
+    if (result) {
+      dict[keys.PRICES_STOCK_2_PRICE] = result.priceStr;
+      dict[keys.PRICES_STOCK_2_DELTA_X100] = result.deltaX100;
+    }
+    done();
+  });
+
+  var cryptoUrl = 'https://api.coingecko.com/api/v3/simple/price?ids='
+      + encodeURIComponent(crypto)
+      + '&vs_currencies=usd&include_24hr_change=true';
+  fetchJson(cryptoUrl, 'Prices crypto ' + crypto, function(data) {
+    if (data && data[crypto]) {
+      var priceStr = formatCryptoPrice(data[crypto].usd);
+      var change = Number(data[crypto].usd_24h_change);
+      if (priceStr && isFinite(change)) {
+        dict[keys.PRICES_CRYPTO_PRICE] = priceStr;
+        dict[keys.PRICES_CRYPTO_DELTA_X100] = Math.round(change * 100);
+      }
+    }
+    done();
+  });
+}
+
+function schedulePricesRefresh() {
+  var minutes = pricesCadenceMinutes(readSettings().PRICES_CADENCE_MIN);
+  if (pricesTimer) {
+    clearInterval(pricesTimer);
+  }
+  pricesTimer = setInterval(function() {
+    fetchPrices(readSettings());
+  }, minutes * 60 * 1000);
+}
+
+function refreshPricesOnce() {
+  fetchPrices(readSettings());
+}
+
 function encodeTideLevelFeet(value) {
   var level = Number(value);
   if (!isFinite(level)) {
@@ -404,7 +580,7 @@ var TIDE_HOURS_BEFORE_NOW = 12;
 var TIDE_WINDOW_HOURS = 24;
 
 function noaaTimeKey(date) {
-  // UTC components — keys must be TZ-independent so they line up with NOAA's
+  // UTC components. Keys must be TZ-independent so they line up with NOAA's
   // gmt-formatted predictions regardless of which TZ the user's phone is in
   // OR which TZ their chosen station is in.
   return date.getUTCFullYear() + '-'
@@ -444,7 +620,7 @@ function packTideHourlyLevels(predictions, nowDate) {
     }
   });
 
-  // Center the 24-hour window on "now". All math in epoch ms — no mutating
+  // Center the 24-hour window on "now". All math in epoch ms, no mutating
   // setUTCMinutes calls (some embedded JS engines fail those silently).
   var HOUR_MS = 60 * 60 * 1000;
   var nowMs = nowDate.getTime();
@@ -452,7 +628,7 @@ function packTideHourlyLevels(predictions, nowDate) {
   var startMs = nowHourMs - TIDE_HOURS_BEFORE_NOW * HOUR_MS;
 
   // PebbleKit JS serializes byte-array tuples from a plain Array of integers
-  // (0..255). Uint8Array fails to round-trip and tanks the whole AppMessage,
+  // (0..255). Typed arrays fail to round-trip and tank the whole AppMessage,
   // which breaks every other key in the same dict.
   var levels = [];
   var matched = 0;
@@ -625,7 +801,7 @@ function fetchTidesForStation(stationId, settings, attempt) {
     console.log('Tide: hourly got ' + hourlyData.predictions.length + ' predictions');
     fetchJson(tidePredictionsUrl(stationId, 'hilo'), 'Tide hilo', function(hiloData) {
       if (!hiloData || !hiloData.predictions || !hiloData.predictions.length) {
-        console.log('Tide: hilo empty — sending hourly-only data');
+        console.log('Tide: hilo empty, sending hourly-only data');
         fetchTideStationName(stationId, function(stationName) {
           sendTideData(settings, hourlyData, { predictions: [] }, stationName);
         });
@@ -648,16 +824,20 @@ function refreshTidesForSettings(settings) {
   fetchTidesForStation(stationId, settings);
 }
 
-function nearestRainChance(hourly) {
+function nearestRainChance(hourly, utcOffsetSeconds) {
   if (!hourly || !hourly.time || !hourly.precipitation_probability) {
     return 0;
   }
 
-  var now = Date.now();
+  var now = Math.floor(Date.now() / 1000);
   var bestIndex = 0;
   var bestDistance = Infinity;
   hourly.time.forEach(function(timeValue, index) {
-    var distance = Math.abs(new Date(timeValue).getTime() - now);
+    var epochSeconds = openMeteoEpochSeconds(timeValue, utcOffsetSeconds);
+    if (epochSeconds === null) {
+      return;
+    }
+    var distance = Math.abs(epochSeconds - now);
     if (distance < bestDistance) {
       bestDistance = distance;
       bestIndex = index;
@@ -667,22 +847,69 @@ function nearestRainChance(hourly) {
   return clamp(Math.round(hourly.precipitation_probability[bestIndex] || 0), 0, 100);
 }
 
-function nearestHourlyIndex(hourly) {
+function openMeteoEpochSeconds(value, utcOffsetSeconds) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  var match = value.match(
+      /^(\d{4})-(\d{2})-(\d{2})T(\d{2})(?::(\d{2}))?(?::(\d{2}))?$/);
+  if (!match) {
+    return null;
+  }
+  var offset = Number(utcOffsetSeconds) || 0;
+  var epochMs = Date.UTC(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+      Number(match[4]),
+      Number(match[5] || 0),
+      Number(match[6] || 0));
+  if (!isFinite(epochMs)) {
+    return null;
+  }
+  return Math.floor(epochMs / 1000) - offset;
+}
+
+function hourlyEpochSeconds(hourly, index, utcOffsetSeconds) {
+  if (!hourly || !hourly.time || index < 0 || index >= hourly.time.length) {
+    return null;
+  }
+  return openMeteoEpochSeconds(hourly.time[index], utcOffsetSeconds);
+}
+
+function nearestHourlyIndex(hourly, utcOffsetSeconds) {
   if (!hourly || !hourly.time || !hourly.time.length) {
     return -1;
   }
 
-  var now = Date.now();
+  var now = Math.floor(Date.now() / 1000);
   var bestIndex = 0;
   var bestDistance = Infinity;
   hourly.time.forEach(function(timeValue, index) {
-    var distance = Math.abs(new Date(timeValue).getTime() - now);
+    var epochSeconds = openMeteoEpochSeconds(timeValue, utcOffsetSeconds);
+    if (epochSeconds === null) {
+      return;
+    }
+    var distance = Math.abs(epochSeconds - now);
     if (distance < bestDistance) {
       bestDistance = distance;
       bestIndex = index;
     }
   });
   return bestIndex;
+}
+
+function localDayNumber(epochSeconds, utcOffsetSeconds) {
+  return Math.floor((epochSeconds + (Number(utcOffsetSeconds) || 0)) / 86400);
+}
+
+function formatWeatherHourFromEpoch(epochSeconds, utcOffsetSeconds) {
+  var offset = Number(utcOffsetSeconds) || 0;
+  var date = new Date((epochSeconds + offset) * 1000);
+  var hours = date.getUTCHours();
+  var suffix = hours >= 12 ? 'P' : 'A';
+  var hour = hours % 12 || 12;
+  return hour + suffix;
 }
 
 function weatherBaseLabel(code) {
@@ -710,13 +937,6 @@ function weatherEventLabel(code) {
   if (code === 56 || code === 57) return 'FRZ DRZL';
   if (code >= 51 && code <= 55) return 'DRIZZLE';
   return null;
-}
-
-function formatWeatherHour(date) {
-  var hours = date.getHours();
-  var suffix = hours >= 12 ? 'P' : 'A';
-  var hour = hours % 12 || 12;
-  return hour + suffix;
 }
 
 function isSameLocalDay(a, b) {
@@ -757,15 +977,16 @@ function significantWeatherEvent(hourly, index) {
   return rainChance >= 30 || code >= 71 ? label : null;
 }
 
-function verboseWeatherSummary(hourly, currentCode) {
+function verboseWeatherSummary(hourly, currentCode, utcOffsetSeconds) {
   var dryHoursRequired = 3;
   var fallback = weatherBaseLabel(Number(currentCode));
-  var startIndex = nearestHourlyIndex(hourly);
+  var startIndex = nearestHourlyIndex(hourly, utcOffsetSeconds);
   if (startIndex < 0 || !hourly.time) {
     return fallback;
   }
 
-  var now = new Date();
+  var now = Math.floor(Date.now() / 1000);
+  var today = localDayNumber(now, utcOffsetSeconds);
   var currentEvent = weatherEventLabel(Number(currentCode)) ||
       significantWeatherEvent(hourly, startIndex);
 
@@ -773,8 +994,8 @@ function verboseWeatherSummary(hourly, currentCode) {
     var dryRun = 0;
     var firstDryIndex = -1;
     for (var i = startIndex + 1; i < hourly.time.length; i++) {
-      var stopDate = new Date(hourly.time[i]);
-      if (!isSameLocalDay(now, stopDate)) {
+      var stopEpoch = hourlyEpochSeconds(hourly, i, utcOffsetSeconds);
+      if (stopEpoch === null || localDayNumber(stopEpoch, utcOffsetSeconds) !== today) {
         return currentEvent + ' ALL DAY';
       }
       if (!significantWeatherEvent(hourly, i)) {
@@ -783,7 +1004,12 @@ function verboseWeatherSummary(hourly, currentCode) {
         }
         dryRun++;
         if (dryRun >= dryHoursRequired) {
-          return currentEvent + ' TIL ' + formatWeatherHour(new Date(hourly.time[firstDryIndex]));
+          var dryEpoch = hourlyEpochSeconds(hourly, firstDryIndex, utcOffsetSeconds);
+          if (dryEpoch !== null) {
+            return currentEvent + ' TIL ' +
+                formatWeatherHourFromEpoch(dryEpoch, utcOffsetSeconds);
+          }
+          return currentEvent + ' ALL DAY';
         }
       } else {
         dryRun = 0;
@@ -793,15 +1019,15 @@ function verboseWeatherSummary(hourly, currentCode) {
     return currentEvent + ' ALL DAY';
   }
 
-  var latest = now.getTime() + (18 * 60 * 60 * 1000);
+  var latest = now + (18 * 60 * 60);
   for (var j = startIndex + 1; j < hourly.time.length; j++) {
-    var eventDate = new Date(hourly.time[j]);
-    if (eventDate.getTime() > latest) {
+    var eventEpoch = hourlyEpochSeconds(hourly, j, utcOffsetSeconds);
+    if (eventEpoch === null || eventEpoch > latest) {
       break;
     }
     var nextEvent = significantWeatherEvent(hourly, j);
     if (nextEvent) {
-      return nextEvent + ' AT ' + formatWeatherHour(eventDate);
+      return nextEvent + ' AT ' + formatWeatherHourFromEpoch(eventEpoch, utcOffsetSeconds);
     }
   }
 
@@ -816,12 +1042,55 @@ function firstDailyValue(daily, field) {
   return isFinite(value) ? value : null;
 }
 
-function firstDailyTimestamp(daily, field) {
+function firstDailyTimestamp(daily, field, utcOffsetSeconds) {
   if (!daily || !daily[field] || !daily[field].length) {
     return null;
   }
-  var timestamp = Math.floor(new Date(daily[field][0]).getTime() / 1000);
+  var timestamp = openMeteoEpochSeconds(daily[field][0], utcOffsetSeconds);
   return isFinite(timestamp) ? timestamp : null;
+}
+
+function buildForecastPayload(hourly, utcOffsetSeconds) {
+  if (!hourly || !hourly.temperature_2m || !hourly.precipitation_probability ||
+      !hourly.time) {
+    return null;
+  }
+
+  var startIndex = nearestHourlyIndex(hourly, utcOffsetSeconds);
+  var startEpoch = hourlyEpochSeconds(hourly, startIndex, utcOffsetSeconds);
+  if (startIndex < 0 || startEpoch === null) {
+    return null;
+  }
+
+  var tempBytes = [];
+  var precipBytes = [];
+  for (var i = 0; i < 24; i++) {
+    var sourceIndex = startIndex + i;
+    if (sourceIndex >= hourly.time.length ||
+        sourceIndex >= hourly.temperature_2m.length ||
+        sourceIndex >= hourly.precipitation_probability.length) {
+      return null;
+    }
+
+    var temp = Number(hourly.temperature_2m[sourceIndex]);
+    if (!isFinite(temp)) {
+      temp = 0;
+    }
+    temp = clamp(Math.round(temp), -128, 127);
+    tempBytes.push(temp < 0 ? temp + 256 : temp);
+
+    var precip = Number(hourly.precipitation_probability[sourceIndex]);
+    if (!isFinite(precip)) {
+      precip = 0;
+    }
+    precipBytes.push(clamp(Math.round(precip), 0, 100));
+  }
+
+  return {
+    tempBytes: tempBytes,
+    precipBytes: precipBytes,
+    startEpoch: startEpoch
+  };
 }
 
 function addRounded(dict, key, value, min, max) {
@@ -836,11 +1105,11 @@ function fetchWeatherForCoordinates(lat, lon, unit, done) {
       + '?latitude=' + encodeURIComponent(lat)
       + '&longitude=' + encodeURIComponent(lon)
       + '&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m'
-      + '&hourly=precipitation_probability,weather_code'
+      + '&hourly=temperature_2m,precipitation_probability,weather_code'
       + '&daily=temperature_2m_max,temperature_2m_min,uv_index_max,sunrise,sunset'
       + '&temperature_unit=' + encodeURIComponent(unitParam)
       + '&wind_speed_unit=mph'
-      + '&forecast_days=1'
+      + '&forecast_days=2'
       + '&timezone=auto';
 
   var xhr = new XMLHttpRequest();
@@ -860,10 +1129,22 @@ function fetchWeatherForCoordinates(lat, lon, unit, done) {
       addRounded(dict, keys.HIGH_TEMP, firstDailyValue(data.daily, 'temperature_2m_max'), -99, 127);
       addRounded(dict, keys.LOW_TEMP, firstDailyValue(data.daily, 'temperature_2m_min'), -99, 127);
       addRounded(dict, keys.UV_INDEX, firstDailyValue(data.daily, 'uv_index_max'), 0, 255);
-      addRounded(dict, keys.SUNRISE_T, firstDailyTimestamp(data.daily, 'sunrise'), 0, 2147483647);
-      addRounded(dict, keys.SUNSET_T, firstDailyTimestamp(data.daily, 'sunset'), 0, 2147483647);
-      dict[keys.RAIN_CHANCE] = nearestRainChance(data.hourly);
-      dict[keys.WEATHER_SUMMARY] = verboseWeatherSummary(data.hourly, data.current.weather_code);
+      addRounded(dict, keys.SUNRISE_T,
+                 firstDailyTimestamp(data.daily, 'sunrise', data.utc_offset_seconds),
+                 0, 2147483647);
+      addRounded(dict, keys.SUNSET_T,
+                 firstDailyTimestamp(data.daily, 'sunset', data.utc_offset_seconds),
+                 0, 2147483647);
+      dict[keys.RAIN_CHANCE] = nearestRainChance(data.hourly, data.utc_offset_seconds);
+      dict[keys.WEATHER_SUMMARY] =
+          verboseWeatherSummary(data.hourly, data.current.weather_code, data.utc_offset_seconds);
+      var forecast = buildForecastPayload(data.hourly, data.utc_offset_seconds);
+      if (forecast) {
+        dict[keys.FORECAST_TEMP_F] = forecast.tempBytes;
+        dict[keys.FORECAST_PRECIP_PCT] = forecast.precipBytes;
+        dict[keys.FORECAST_START_T] = forecast.startEpoch;
+        dict[keys.FORECAST_LAST_UPDATE_T] = Math.floor(Date.now() / 1000);
+      }
       sendToWatch(dict, 'Weather');
       if (done) done();
     } catch (e) {
@@ -1797,6 +2078,7 @@ Pebble.addEventListener('ready', function() {
   sendColorSetting(settings);
   sendShakeSetting(settings);
   sendTideSetting(settings);
+  sendPricesSetting(settings);
   refreshWeather(true);
   refreshCalendar();
   scheduleRefreshes();
@@ -1817,6 +2099,7 @@ Pebble.addEventListener('webviewclosed', function(event) {
   sendColorSetting(settings);
   sendShakeSetting(settings);
   sendTideSetting(settings);
+  sendPricesSetting(settings);
   refreshWeather(true);
   refreshCalendar();
   scheduleRefreshes();

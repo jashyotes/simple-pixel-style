@@ -25,7 +25,7 @@
         "defaultValue": "bw",
         "options": [
           {
-            "label": "Black & White - Tuxedo",
+            "label": "B&W - Tuxdeo",
             "value": "bw"
           },
           {
@@ -160,11 +160,50 @@
         "defaultValue": "Layout"
       },
       {
+        "type": "select",
+        "messageKey": "TIME_FONT",
+        "label": "Time font",
+        "defaultValue": "0",
+        "options": [
+          {
+            "label": "Default",
+            "value": "0"
+          },
+          {
+            "label": "CASIO style",
+            "value": "1"
+          },
+          {
+            "label": "Roboto",
+            "value": "2"
+          },
+          {
+            "label": "LECO",
+            "value": "3"
+          }
+        ],
+        "description": "Default is the original Bitham bold serif. CASIO style renders the time as WV-58A LCD digits with a phantom 88:88 backdrop. Roboto is Pebble's built-in Roboto bold subset. LECO is Pebble's built-in LECO 32 bold numbers. Roboto and LECO anchor AM/PM bottom to the digit bottom."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "CASIO_PHANTOM",
+        "label": "CASIO phantom 88:88 backdrop",
+        "defaultValue": true,
+        "description": "Draws the faded 88:88 all-segments-lit backdrop behind the CASIO digits. Turn off for a clean foreground-only look. Only applies when Time font is CASIO style."
+      },
+      {
         "type": "toggle",
         "messageKey": "TOP_STEPS",
         "label": "Top W800 step counter",
         "defaultValue": true,
         "description": "Shows the walking-man step counter above the date."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "VIBRATE_ON_DISCONNECT",
+        "label": "Vibrate on disconnect",
+        "defaultValue": false,
+        "description": "Buzzes the watch when the phone app connection drops."
       },
       {
         "type": "toggle",
@@ -253,6 +292,14 @@
             "value": [
               { "label": "Next event", "value": "next_event" }
             ]
+          },
+          {
+            "label": "Markets",
+            "value": [
+              { "label": "Stock 1 Delta", "value": "stock_1" },
+              { "label": "Stock 2 Delta", "value": "stock_2" },
+              { "label": "Bitcoin Delta", "value": "bitcoin" }
+            ]
           }
         ]
       },
@@ -306,6 +353,14 @@
             "value": [
               { "label": "Next event", "value": "next_event" }
             ]
+          },
+          {
+            "label": "Markets",
+            "value": [
+              { "label": "Stock 1 Delta", "value": "stock_1" },
+              { "label": "Stock 2 Delta", "value": "stock_2" },
+              { "label": "Bitcoin Delta", "value": "bitcoin" }
+            ]
           }
         ]
       },
@@ -358,6 +413,14 @@
             "label": "Calendar",
             "value": [
               { "label": "Next event", "value": "next_event" }
+            ]
+          },
+          {
+            "label": "Markets",
+            "value": [
+              { "label": "Stock 1 Delta", "value": "stock_1" },
+              { "label": "Stock 2 Delta", "value": "stock_2" },
+              { "label": "Bitcoin Delta", "value": "bitcoin" }
             ]
           }
         ]
@@ -561,6 +624,10 @@
           {
             "label": "Heart rate big",
             "value": "heart_rate"
+          },
+          {
+            "label": "Stocks & Crypto Prices",
+            "value": "prices"
           },
           {
             "label": "Tide chart",
@@ -836,6 +903,130 @@
             "value": "meters"
           }
         ]
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "id": "shake-prices-heading",
+        "defaultValue": "Stocks & Crypto Prices settings"
+      },
+      {
+        "type": "input",
+        "messageKey": "PRICES_STOCK_1_SYMBOL",
+        "label": "Stock 1 symbol",
+        "defaultValue": "SPY",
+        "attributes": {
+          "type": "text",
+          "maxLength": 11,
+          "placeholder": "SPY"
+        },
+        "description": "Yahoo Finance ticker, e.g. SPY, QQQ, AAPL."
+      },
+      {
+        "type": "input",
+        "messageKey": "PRICES_STOCK_2_SYMBOL",
+        "label": "Stock 2 symbol",
+        "defaultValue": "QQQ",
+        "attributes": {
+          "type": "text",
+          "maxLength": 11,
+          "placeholder": "QQQ"
+        }
+      },
+      {
+        "type": "input",
+        "messageKey": "PRICES_CRYPTO_SYMBOL",
+        "label": "Crypto symbol",
+        "defaultValue": "bitcoin",
+        "attributes": {
+          "type": "text",
+          "maxLength": 15,
+          "placeholder": "bitcoin"
+        },
+        "description": "CoinGecko id, lowercase (e.g. bitcoin, ethereum, solana)."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "PRICES_SHOW_STOCK_1",
+        "label": "Show Stock 1 in overlay",
+        "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "messageKey": "PRICES_SHOW_STOCK_2",
+        "label": "Show Stock 2 in overlay",
+        "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "messageKey": "PRICES_SHOW_CRYPTO",
+        "label": "Show Crypto in overlay",
+        "defaultValue": true,
+        "description": "Layout adapts based on how many tickers are enabled: 1 = large hero, 2 = stacked medium rows, 3 = compact list."
+      },
+      {
+        "type": "select",
+        "messageKey": "PRICES_CADENCE_MIN",
+        "label": "Refresh cadence",
+        "defaultValue": "30",
+        "options": [
+          {
+            "label": "Every 1 minute",
+            "value": "1"
+          },
+          {
+            "label": "Every 5 minutes",
+            "value": "5"
+          },
+          {
+            "label": "Every 10 minutes",
+            "value": "10"
+          },
+          {
+            "label": "Every 30 minutes",
+            "value": "30"
+          },
+          {
+            "label": "Every hour",
+            "value": "60"
+          },
+          {
+            "label": "Daily",
+            "value": "1440"
+          }
+        ]
+      },
+      {
+        "type": "color",
+        "messageKey": "PRICES_POSITIVE_COLOR_LIGHT",
+        "label": "Positive delta color (Light mode)",
+        "defaultValue": 0,
+        "sunlight": false
+      },
+      {
+        "type": "color",
+        "messageKey": "PRICES_POSITIVE_COLOR_DARK",
+        "label": "Positive delta color (Dark mode)",
+        "defaultValue": 16777215,
+        "sunlight": false
+      },
+      {
+        "type": "color",
+        "messageKey": "PRICES_NEGATIVE_COLOR_LIGHT",
+        "label": "Negative delta color (Light mode)",
+        "defaultValue": 0,
+        "sunlight": false
+      },
+      {
+        "type": "color",
+        "messageKey": "PRICES_NEGATIVE_COLOR_DARK",
+        "label": "Negative delta color (Dark mode)",
+        "defaultValue": 16777215,
+        "sunlight": false
       }
     ]
   },

@@ -1,0 +1,10 @@
+This watchface vendors assets from the Casio WV-58A with AM/PM Pebble watchface
+by Aardvark (Whobeu), source: https://github.com/Whobeu/WV-58A
+
+Vendored files:
+  resources/fonts/DIGITAL_BOLD.TTF      (was resources/fonts/DIGITAL_BOLD.TTF)
+  resources/images/wv58a-am.png         (was resources/images/A.png)
+  resources/images/wv58a-pm.png         (was resources/images/P.png)
+
+The upstream repository does not include a LICENSE file. Attribution is provided
+here and in release-assets/RELEASE_NOTES_0.80.md.

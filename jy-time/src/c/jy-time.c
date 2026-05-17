@@ -98,6 +98,31 @@
 #define PERSIST_KEY_TIDE_UNITS 186
 #define PERSIST_KEY_TIDE_STATION_ID 187
 #define PERSIST_KEY_TIDE_DATA_VERSION 192
+#define PERSIST_KEY_PRICES_STOCK_1_SYMBOL 193
+#define PERSIST_KEY_PRICES_STOCK_2_SYMBOL 194
+#define PERSIST_KEY_PRICES_CRYPTO_SYMBOL 195
+#define PERSIST_KEY_PRICES_CADENCE_MIN 196
+#define PERSIST_KEY_PRICES_POSITIVE_COLOR_LIGHT 197
+#define PERSIST_KEY_PRICES_POSITIVE_COLOR_DARK 198
+#define PERSIST_KEY_PRICES_NEGATIVE_COLOR_LIGHT 199
+#define PERSIST_KEY_PRICES_NEGATIVE_COLOR_DARK 200
+#define PERSIST_KEY_PRICES_STOCK_1_PRICE 201
+#define PERSIST_KEY_PRICES_STOCK_2_PRICE 202
+#define PERSIST_KEY_PRICES_CRYPTO_PRICE 203
+#define PERSIST_KEY_PRICES_STOCK_1_DELTA_X100 204
+#define PERSIST_KEY_PRICES_STOCK_2_DELTA_X100 205
+#define PERSIST_KEY_PRICES_CRYPTO_DELTA_X100 206
+#define PERSIST_KEY_PRICES_LAST_UPDATE_T 207
+#define PERSIST_KEY_PRICES_SHOW_STOCK_1 208
+#define PERSIST_KEY_PRICES_SHOW_STOCK_2 209
+#define PERSIST_KEY_PRICES_SHOW_CRYPTO 210
+#define PERSIST_KEY_VIBRATE_ON_DISCONNECT 211
+#define PERSIST_KEY_TIME_FONT 212
+#define PERSIST_KEY_FORECAST_TEMP_F 213
+#define PERSIST_KEY_FORECAST_PRECIP_PCT 214
+#define PERSIST_KEY_FORECAST_START_T 215
+#define PERSIST_KEY_FORECAST_LAST_UPDATE_T 216
+#define PERSIST_KEY_CASIO_PHANTOM 217
 
 #define SCREEN_W 200
 #define SCREEN_H 228
@@ -121,6 +146,11 @@
 #define WEATHER_ICON_LARGE_SIZE 32
 #define QUIET_TIME_ICON_SIZE 18
 #define QUIET_TIME_ICON_X 177
+#define FORECAST_HOURS 24
+#define CASIO_GAP 3
+#define CASIO_AMPM_LABEL_W 20
+#define WV58A_AMPM_W 12
+#define WV58A_AMPM_H 14
 
 typedef enum {
   ComplicationTemperature = 0,
@@ -144,6 +174,9 @@ typedef enum {
   ComplicationActiveCalories = 18,
   ComplicationSleepLastNight = 19,
   ComplicationDistanceToday = 20,
+  ComplicationStock1 = 21,
+  ComplicationStock2 = 22,
+  ComplicationBitcoin = 23,
 } ComplicationType;
 
 typedef enum {
@@ -154,6 +187,7 @@ typedef enum {
   ShakeBehaviorDetailedWeather = 4,
   ShakeBehaviorAltTimezone = 5,
   ShakeBehaviorHeartRate = 6,
+  ShakeBehaviorPrices = 7,
   ShakeBehaviorTideChart = 8,
 } ShakeBehavior;
 
@@ -198,15 +232,23 @@ static GFont s_font_date;
 static GFont s_font_time;
 static GFont s_font_complication;
 static GFont s_font_event;
+static GFont s_font_casio_55;
+static GFont s_font_casio_70;
+static GFont s_font_casio_90;
 static GBitmap *s_step_boot_bitmaps[BitmapThemeCount];
 static GBitmap *s_w800_walking_bitmaps[BitmapThemeCount];
 static GBitmap *s_quiet_time_mouse_bitmaps[BitmapThemeCount];
 static GBitmap *s_w800_digit_bitmaps[BitmapThemeCount][10];
 static GBitmap *s_weather_icon_small_bitmaps[BitmapThemeCount][WeatherIconCount];
 static GBitmap *s_weather_icon_large_bitmaps[BitmapThemeCount][WeatherIconCount];
+static GBitmap *s_icon_bitcoin_bubble;
+static GBitmap *s_icon_stocks_bubble;
+static GBitmap *s_wv58a_am_bitmap;
+static GBitmap *s_wv58a_pm_bitmap;
 
 static char s_date_buf[32];
 static char s_time_buf[8];
+static char s_time_buf_casio[8];
 static char s_ampm_buf[3];
 static char s_event_buf[80];
 static char s_watch_buf[8];
@@ -248,6 +290,11 @@ static uint8_t s_weather_code = 0;
 static bool s_weather_known = false;
 static uint8_t s_rain_chance = 0;
 static bool s_rain_known = false;
+static int8_t s_forecast_temp[FORECAST_HOURS] = {0};
+static uint8_t s_forecast_precip[FORECAST_HOURS] = {0};
+static time_t s_forecast_start_t = 0;
+static time_t s_forecast_last_update_t = 0;
+static bool s_forecast_data_loaded = false;
 static uint8_t s_wind_speed = 0;
 static bool s_wind_known = false;
 static uint8_t s_uv_index = 0;
@@ -262,8 +309,21 @@ static bool s_invert_date_bar = false;
 static bool s_invert_time = false;
 static bool s_military_time_enabled = false;
 static bool s_remove_leading_zero = false;
+
+typedef enum {
+  TIME_FONT_DEFAULT = 0,
+  TIME_FONT_CASIO = 1,
+  TIME_FONT_ROBOTO = 2,
+  TIME_FONT_LECO = 3,
+} TimeFont;
+
+static TimeFont s_time_font = TIME_FONT_DEFAULT;
+static bool s_casio_phantom = true;
+static GFont s_font_roboto;
+static GFont s_font_leco;
 static bool s_invert_weather = false;
 static bool s_invert_meeting_bar = false;
+static bool s_vibrate_on_disconnect = false;
 static ColorMode s_color_mode = ColorModeBW;
 static ShakeBehavior s_shake_behavior = ShakeBehaviorOff;
 static bool s_shake_tap_subscribed = false;
@@ -328,6 +388,24 @@ static uint8_t s_tide_next_low_level = 0xFF;
 static char s_tide_station_name[24] = "";
 static bool s_tide_units_meters = false;
 static char s_tide_station_id[16] = "";
+static char s_prices_stock_1_symbol[12] = "SPY";
+static char s_prices_stock_2_symbol[12] = "QQQ";
+static char s_prices_crypto_symbol[16] = "bitcoin";
+static char s_prices_stock_1_price[12] = "--";
+static char s_prices_stock_2_price[12] = "--";
+static char s_prices_crypto_price[12] = "--";
+static int s_prices_stock_1_delta_x100 = 0;
+static int s_prices_stock_2_delta_x100 = 0;
+static int s_prices_crypto_delta_x100 = 0;
+static int s_prices_cadence_min = 30;
+static bool s_prices_show_stock_1 = true;
+static bool s_prices_show_stock_2 = true;
+static bool s_prices_show_crypto = true;
+static int s_prices_positive_color_light_hex = 0x000000;
+static int s_prices_positive_color_dark_hex = 0xFFFFFF;
+static int s_prices_negative_color_light_hex = 0x000000;
+static int s_prices_negative_color_dark_hex = 0xFFFFFF;
+static time_t s_prices_last_update_t = 0;
 static int s_color_section_bg[ColorSectionMeetingBar + 1] = {
   0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000,
 };
@@ -502,7 +580,7 @@ static void draw_text(GContext *ctx, const char *text, GFont font, GRect frame,
 }
 
 static ComplicationType sanitize_complication(int value, ComplicationType fallback) {
-  return value >= ComplicationTemperature && value <= ComplicationDistanceToday
+  return value >= ComplicationTemperature && value <= ComplicationBitcoin
       ? (ComplicationType)value
       : fallback;
 }
@@ -516,6 +594,7 @@ static ShakeBehavior sanitize_shake_behavior(int value) {
     case ShakeBehaviorDetailedWeather:
     case ShakeBehaviorAltTimezone:
     case ShakeBehaviorHeartRate:
+    case ShakeBehaviorPrices:
     case ShakeBehaviorTideChart:
       return (ShakeBehavior)value;
     default:
@@ -602,6 +681,20 @@ static int fitness_sanitize_color(int value, int fallback) {
     return fallback;
   }
   return value;
+}
+
+static int prices_sanitize_cadence_min(int value) {
+  switch (value) {
+    case 1:
+    case 5:
+    case 10:
+    case 30:
+    case 60:
+    case 1440:
+      return value;
+    default:
+      return 30;
+  }
 }
 
 static GColor fitness_color_from_hex(int value, int fallback) {
@@ -976,14 +1069,73 @@ static void draw_quiet_time_icon(GContext *ctx, GPoint origin) {
                                      QUIET_TIME_ICON_SIZE, QUIET_TIME_ICON_SIZE));
 }
 
+static GColor casio_phantom_color(void) {
+  return section_uses_light_palette(s_draw_section) ? GColorLightGray : GColorDarkGray;
+}
+
+static bool casio_ampm_visible(void) {
+  return s_ampm_buf[0] != '\0' && !s_military_time_enabled;
+}
+
+/*
+ * CASIO render uses the SAME GRect layout as the Default and Roboto paths.
+ * Pebble's text engine handles horizontal centering; vertical placement is
+ * top-of-frame just like the non-CASIO branch. AM/PM anchored to digit bottom.
+ * Mouse icon at the standard non-CASIO Y.
+ */
+static void draw_casio_time_row_at(GContext *ctx, int frame_y, int slot_bottom) {
+  (void)slot_bottom;
+  GFont font = s_font_casio_55 ? s_font_casio_55 : s_font_time;
+  const GRect time_frame = GRect(0, frame_y, SCREEN_W, TIME_FRAME_H);
+  const bool show_ampm = casio_ampm_visible();
+
+  // Phantom segments: render all-segments-lit "88:88" backdrop first.
+  if (s_casio_phantom) {
+    graphics_context_set_text_color(ctx, casio_phantom_color());
+    graphics_draw_text(ctx, "88:88", font, time_frame,
+                       GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+  }
+
+  // Real time on top.
+  graphics_context_set_text_color(ctx, draw_fg_color());
+  graphics_draw_text(ctx, s_time_buf_casio, font, time_frame,
+                     GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+
+  if (show_ampm) {
+    GSize text_size = graphics_text_layout_get_content_size(
+        s_time_buf_casio, font, time_frame,
+        GTextOverflowModeWordWrap, GTextAlignmentCenter);
+    const int ampm_height = 10;
+    const int digit_bottom_y = frame_y + text_size.h;
+    draw_ampm_label(ctx, s_ampm_buf,
+                    GPoint(CASIO_GAP, digit_bottom_y - ampm_height));
+  }
+
+  draw_quiet_time_icon(ctx,
+                       GPoint(QUIET_TIME_ICON_X,
+                              TIME_VISUAL_BOTTOM - QUIET_TIME_ICON_SIZE));
+}
+
 static void draw_time_row_at(GContext *ctx, int frame_y, int visual_bottom) {
+  if (s_time_font == TIME_FONT_CASIO) {
+    draw_casio_time_row_at(ctx, frame_y, visual_bottom);
+    return;
+  }
+
+  GFont font = s_font_time;
+  if (s_time_font == TIME_FONT_ROBOTO && s_font_roboto) {
+    font = s_font_roboto;
+  } else if (s_time_font == TIME_FONT_LECO && s_font_leco) {
+    font = s_font_leco;
+  }
+
   const GRect time_frame = GRect(0, frame_y, SCREEN_W, TIME_FRAME_H);
   const int ampm_width = 20;
   const int ampm_height = 10;
   const int ampm_gap = 5;
 
   GSize time_size = graphics_text_layout_get_content_size(
-      s_time_buf, s_font_time, time_frame,
+      s_time_buf, font, time_frame,
       GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter);
   int time_left = (SCREEN_W - time_size.w) / 2;
   int ampm_x = time_left - ampm_gap - ampm_width;
@@ -991,10 +1143,15 @@ static void draw_time_row_at(GContext *ctx, int frame_y, int visual_bottom) {
     ampm_x = 0;
   }
 
-  draw_text(ctx, s_time_buf, s_font_time, time_frame,
+  draw_text(ctx, s_time_buf, font, time_frame,
             draw_fg_color(), GTextAlignmentCenter);
   if (s_ampm_buf[0] != '\0') {
-    draw_ampm_label(ctx, s_ampm_buf, GPoint(ampm_x, visual_bottom - ampm_height));
+    int ampm_anchor_bottom = visual_bottom;
+    if (s_time_font == TIME_FONT_ROBOTO || s_time_font == TIME_FONT_LECO) {
+      // Anchor AM/PM bottom to the digit bottom pixel for Roboto and ForecasWatch.
+      ampm_anchor_bottom = frame_y + time_size.h;
+    }
+    draw_ampm_label(ctx, s_ampm_buf, GPoint(ampm_x, ampm_anchor_bottom - ampm_height));
   }
 
   draw_quiet_time_icon(ctx,
@@ -1002,6 +1159,10 @@ static void draw_time_row_at(GContext *ctx, int frame_y, int visual_bottom) {
 }
 
 static void draw_time_row(GContext *ctx) {
+  if (s_time_font == TIME_FONT_CASIO) {
+    draw_time_row_at(ctx, TIME_FRAME_Y, weather_band_y());
+    return;
+  }
   draw_time_row_at(ctx, TIME_FRAME_Y, TIME_VISUAL_BOTTOM);
 }
 
@@ -1370,6 +1531,48 @@ static void draw_complication_distance_today(GContext *ctx, GPoint center) {
             draw_fg_color(), GTextAlignmentCenter);
 }
 
+static void format_ticker_delta(char *buf, size_t buf_len, int delta_x100) {
+  int abs_delta = delta_x100 < 0 ? -delta_x100 : delta_x100;
+  if (abs_delta > 99999) {
+    abs_delta = 99999;
+  }
+  snprintf(buf, buf_len, "%c%d.%02d%%",
+           delta_x100 < 0 ? '-' : '+',
+           abs_delta / 100,
+           abs_delta % 100);
+}
+
+static GColor prices_delta_color(int delta_x100) {
+  if (s_color_mode != ColorModeColor) {
+    return draw_fg_color();
+  }
+
+  bool positive = delta_x100 >= 0;
+  int color = positive
+      ? (s_light_mode_enabled ? s_prices_positive_color_light_hex
+                              : s_prices_positive_color_dark_hex)
+      : (s_light_mode_enabled ? s_prices_negative_color_light_hex
+                              : s_prices_negative_color_dark_hex);
+  return gcolor_from_packed_int(color);
+}
+
+static void draw_ticker_bubble(GContext *ctx, GPoint center, GBitmap *icon,
+                               int delta_x100) {
+  if (icon) {
+    GSize sz = gbitmap_get_bounds(icon).size;
+    graphics_context_set_compositing_mode(ctx, GCompOpSet);
+    graphics_draw_bitmap_in_rect(ctx, icon,
+                                 GRect(center.x - (sz.w / 2), center.y - 17,
+                                       sz.w, sz.h));
+  }
+
+  char delta_buf[10];
+  format_ticker_delta(delta_buf, sizeof(delta_buf), delta_x100);
+  draw_text(ctx, delta_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(center.x - 23, center.y + 3, 46, 16),
+            prices_delta_color(delta_x100), GTextAlignmentCenter);
+}
+
 static void draw_complication_icon(GContext *ctx, ComplicationType type, GPoint center) {
   if (type == ComplicationSteps) {
     draw_step_icon_centered(ctx, center);
@@ -1432,7 +1635,10 @@ static const char *value_for_complication(ComplicationType type) {
              type == ComplicationActiveMinutes ||
              type == ComplicationActiveCalories ||
              type == ComplicationSleepLastNight ||
-             type == ComplicationDistanceToday) {
+             type == ComplicationDistanceToday ||
+             type == ComplicationStock1 ||
+             type == ComplicationStock2 ||
+             type == ComplicationBitcoin) {
     return "";
   }
   return "--";
@@ -1471,6 +1677,16 @@ static void draw_complication(GContext *ctx, GPoint center, ComplicationType typ
     return;
   } else if (type == ComplicationDistanceToday) {
     draw_complication_distance_today(ctx, center);
+    return;
+  } else if (type == ComplicationStock1 || type == ComplicationStock2) {
+    draw_ticker_bubble(ctx, center, s_icon_stocks_bubble,
+                       type == ComplicationStock1
+                           ? s_prices_stock_1_delta_x100
+                           : s_prices_stock_2_delta_x100);
+    return;
+  } else if (type == ComplicationBitcoin) {
+    draw_ticker_bubble(ctx, center, s_icon_bitcoin_bubble,
+                       s_prices_crypto_delta_x100);
     return;
   }
 
@@ -1518,6 +1734,122 @@ static void format_time_short(char *buf, size_t len, time_t timestamp, bool know
 
 static void draw_overlay_title(GContext *ctx, const char *title) {
   draw_text(ctx, title, s_font_top, GRect(8, 2, SCREEN_W - 16, 24),
+            fitness_muted_text_color(), GTextAlignmentCenter);
+}
+
+typedef struct {
+  const char *symbol;
+  int delta_x100;
+} PricesTickerRow;
+
+static void prices_crypto_label(char *buf, size_t len) {
+  if (strcmp(s_prices_crypto_symbol, "bitcoin") == 0) {
+    snprintf(buf, len, "BTC");
+    return;
+  }
+
+  size_t i = 0;
+  for (; i < len - 1 && s_prices_crypto_symbol[i] != '\0'; i++) {
+    char c = s_prices_crypto_symbol[i];
+    buf[i] = c >= 'a' && c <= 'z' ? (char)(c - 32) : c;
+  }
+  buf[i] = '\0';
+}
+
+static void prices_draw_hero(GContext *ctx, int y, int h,
+                             const PricesTickerRow *row) {
+  (void)h;
+  char symbol_buf[16];
+  snprintf(symbol_buf, sizeof(symbol_buf), "%s:", row->symbol);
+  draw_text(ctx, symbol_buf, s_font_top, GRect(8, y + 48, SCREEN_W - 16, 24),
+            theme_fg_color(), GTextAlignmentCenter);
+
+  char delta_buf[12];
+  format_ticker_delta(delta_buf, sizeof(delta_buf), row->delta_x100);
+  draw_text(ctx, delta_buf, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD),
+            GRect(8, y + 78, SCREEN_W - 16, 38),
+            prices_delta_color(row->delta_x100), GTextAlignmentCenter);
+}
+
+static void prices_draw_medium_row(GContext *ctx, int y, int h,
+                                   const PricesTickerRow *row) {
+  char delta_buf[12];
+  format_ticker_delta(delta_buf, sizeof(delta_buf), row->delta_x100);
+  char line_buf[28];
+  snprintf(line_buf, sizeof(line_buf), "%s: %s", row->symbol, delta_buf);
+  draw_text(ctx, line_buf, s_font_top,
+            GRect(8, y + ((h - 24) / 2), SCREEN_W - 16, 24),
+            prices_delta_color(row->delta_x100), GTextAlignmentCenter);
+}
+
+static void prices_draw_compact_row(GContext *ctx, int y, int h,
+                                    const PricesTickerRow *row) {
+  char delta_buf[12];
+  format_ticker_delta(delta_buf, sizeof(delta_buf), row->delta_x100);
+  char line_buf[28];
+  snprintf(line_buf, sizeof(line_buf), "%s: %s", row->symbol, delta_buf);
+  draw_text(ctx, line_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+            GRect(8, y + ((h - 22) / 2), SCREEN_W - 16, 22),
+            prices_delta_color(row->delta_x100), GTextAlignmentCenter);
+}
+
+static void prices_draw_overlay(GContext *ctx) {
+  draw_overlay_title(ctx, "PRICES");
+
+  char crypto_label[12];
+  prices_crypto_label(crypto_label, sizeof(crypto_label));
+
+  PricesTickerRow rows[3];
+  int count = 0;
+  if (s_prices_show_stock_1) {
+    rows[count++] = (PricesTickerRow) {
+      s_prices_stock_1_symbol, s_prices_stock_1_delta_x100
+    };
+  }
+  if (s_prices_show_stock_2) {
+    rows[count++] = (PricesTickerRow) {
+      s_prices_stock_2_symbol, s_prices_stock_2_delta_x100
+    };
+  }
+  if (s_prices_show_crypto) {
+    rows[count++] = (PricesTickerRow) {
+      crypto_label, s_prices_crypto_delta_x100
+    };
+  }
+
+  const int content_top = 28;
+  const int content_bottom = SCREEN_H - 24;
+  const int content_h = content_bottom - content_top;
+  if (count == 0) {
+    draw_text(ctx, "No tickers enabled", fonts_get_system_font(FONT_KEY_GOTHIC_18),
+              GRect(8, 101, SCREEN_W - 16, 24),
+              fitness_muted_text_color(), GTextAlignmentCenter);
+  } else if (count == 1) {
+    prices_draw_hero(ctx, content_top, content_h, &rows[0]);
+  } else if (count == 2) {
+    int row_h = content_h / 2;
+    prices_draw_medium_row(ctx, content_top, row_h, &rows[0]);
+    prices_draw_medium_row(ctx, content_top + row_h, row_h, &rows[1]);
+  } else {
+    int row_h = content_h / 3;
+    prices_draw_compact_row(ctx, content_top, row_h, &rows[0]);
+    prices_draw_compact_row(ctx, content_top + row_h, row_h, &rows[1]);
+    prices_draw_compact_row(ctx, content_top + (row_h * 2), row_h, &rows[2]);
+  }
+
+  char footer[28];
+  if (s_prices_last_update_t > 0) {
+    struct tm *t = localtime(&s_prices_last_update_t);
+    if (t) {
+      snprintf(footer, sizeof(footer), "Updated %02d:%02d", t->tm_hour, t->tm_min);
+    } else {
+      snprintf(footer, sizeof(footer), "Waiting for data...");
+    }
+  } else {
+    snprintf(footer, sizeof(footer), "Waiting for data...");
+  }
+  draw_text(ctx, footer, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+            GRect(8, SCREEN_H - 21, SCREEN_W - 16, 18),
             fitness_muted_text_color(), GTextAlignmentCenter);
 }
 
@@ -1815,15 +2147,251 @@ static void your_day_draw_overlay(GContext *ctx) {
             GTextAlignmentCenter);
 }
 
+static bool forecast_has_data(void) {
+  return s_forecast_data_loaded && s_forecast_start_t > 0 &&
+      s_forecast_last_update_t > 0;
+}
+
+static int forecast_x_for_index(GRect plot, int index) {
+  if (index < 0) {
+    index = 0;
+  } else if (index >= FORECAST_HOURS) {
+    index = FORECAST_HOURS - 1;
+  }
+  return plot.origin.x + (index * (plot.size.w - 1)) / (FORECAST_HOURS - 1);
+}
+
+static int forecast_x_for_time(GRect plot, time_t t) {
+  if (s_forecast_start_t <= 0 || t <= 0) {
+    return -1;
+  }
+
+  int span_s = (FORECAST_HOURS - 1) * 60 * 60;
+  int delta_s = (int)(t - s_forecast_start_t);
+  if (delta_s < 0 || delta_s > span_s) {
+    return -1;
+  }
+  return plot.origin.x + (delta_s * (plot.size.w - 1)) / span_s;
+}
+
+static int forecast_temp_y(int temp, int min_temp, int max_temp, GRect plot) {
+  int range = max_temp - min_temp;
+  if (range < 1) {
+    range = 1;
+  }
+  int usable_h = plot.size.h - 8;
+  int rel = ((temp - min_temp) * usable_h) / range;
+  return plot.origin.y + plot.size.h - 4 - rel;
+}
+
+// Faithful port of forecaswatch2's night-hatch pattern (see
+// forecast_layer.c::draw_night_hatch_rect): one pixel every NIGHT_HATCH_SPACING
+// in both axes, aligned via (x + y_start) % spacing so the diagonals stay
+// continuous across adjacent night segments.
+#define FCW_NIGHT_HATCH_SPACING 6
+
+static int fcw_aligned_hatch_start_y(int x, int y_start, int spacing) {
+  int modulo = ((x + y_start) % spacing + spacing) % spacing;
+  if (modulo == 0) {
+    return y_start;
+  }
+  return y_start + (spacing - modulo);
+}
+
+static void fcw_hatch_rect(GContext *ctx, GRect rect, int spacing) {
+  if (spacing <= 0 || rect.size.w <= 0 || rect.size.h <= 0) {
+    return;
+  }
+  int x_end = rect.origin.x + rect.size.w;
+  int y_end = rect.origin.y + rect.size.h;
+  for (int x = rect.origin.x; x < x_end; x++) {
+    int hatch_y = fcw_aligned_hatch_start_y(x, rect.origin.y, spacing);
+    for (int y = hatch_y; y < y_end; y += spacing) {
+      graphics_draw_pixel(ctx, GPoint(x, y));
+    }
+  }
+}
+
+// Returns up to 2 night segments inside the 24-hour forecast window using the
+// stored sunrise_t / sunset_t. Forecaswatch2 supports 3 day-offsets; we have
+// one sunrise/sunset pair, so the segments are: pre-sunrise night and
+// post-sunset night within the window.
+typedef struct {
+  time_t start;
+  time_t end;
+} FcwNightSegment;
+
+static int fcw_compute_night_segments(time_t graph_start, time_t graph_end,
+                                       FcwNightSegment *out) {
+  int count = 0;
+  if (!s_sunrise_known || !s_sunset_known ||
+      s_sunrise_t <= 0 || s_sunset_t <= 0 ||
+      s_sunset_t <= s_sunrise_t) {
+    return 0;
+  }
+
+  // Pre-sunrise night
+  if (graph_start < s_sunrise_t) {
+    out[count].start = graph_start;
+    out[count].end = (s_sunrise_t < graph_end) ? s_sunrise_t : graph_end;
+    count++;
+  }
+  // Post-sunset night
+  if (s_sunset_t < graph_end && count < 2) {
+    out[count].start = (s_sunset_t > graph_start) ? s_sunset_t : graph_start;
+    out[count].end = graph_end;
+    count++;
+  }
+  return count;
+}
+
+static int fcw_x_for_time(time_t t, time_t graph_start, time_t graph_end, GRect plot) {
+  if (t <= graph_start) {
+    return plot.origin.x;
+  }
+  if (t >= graph_end) {
+    return plot.origin.x + plot.size.w;
+  }
+  int64_t elapsed = (int64_t)t - graph_start;
+  int64_t total = (int64_t)graph_end - graph_start;
+  return plot.origin.x + (int)((elapsed * plot.size.w) / total);
+}
+
+static void draw_forecast_graph(GContext *ctx, GRect bounds) {
+  if (!forecast_has_data()) {
+    draw_text(ctx, "Waiting for forecast...",
+              fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+              bounds, fitness_muted_text_color(), GTextAlignmentCenter);
+    return;
+  }
+
+  // Layout: leave 12 px on bottom for hour labels, no border drawn.
+  const int bottom_axis_h = 12;
+  GRect plot = GRect(bounds.origin.x, bounds.origin.y,
+                    bounds.size.w, bounds.size.h - bottom_axis_h);
+
+  // Min/max temp with a minimum range of 10.
+  int min_temp = s_forecast_temp[0];
+  int max_temp = s_forecast_temp[0];
+  for (int i = 1; i < FORECAST_HOURS; i++) {
+    if (s_forecast_temp[i] < min_temp) min_temp = s_forecast_temp[i];
+    if (s_forecast_temp[i] > max_temp) max_temp = s_forecast_temp[i];
+  }
+  if (max_temp - min_temp < 10) {
+    int missing = 10 - (max_temp - min_temp);
+    min_temp -= missing / 2;
+    max_temp += missing - (missing / 2);
+  }
+
+  const time_t graph_start = s_forecast_start_t;
+  const time_t graph_end = graph_start + (FORECAST_HOURS - 1) * 60 * 60;
+  const int plot_bottom = plot.origin.y + plot.size.h - 1;
+
+  // 1. Night regions (hatched background) first, behind everything.
+  FcwNightSegment night[2];
+  int night_count = fcw_compute_night_segments(graph_start, graph_end, night);
+  if (night_count > 0) {
+    graphics_context_set_stroke_color(ctx, GColorLightGray);
+    for (int i = 0; i < night_count; i++) {
+      int x0 = fcw_x_for_time(night[i].start, graph_start, graph_end, plot);
+      int x1 = fcw_x_for_time(night[i].end, graph_start, graph_end, plot);
+      if (x1 <= x0) continue;
+      GRect night_rect = GRect(x0, plot.origin.y, x1 - x0, plot.size.h);
+      fcw_hatch_rect(ctx, night_rect, FCW_NIGHT_HATCH_SPACING);
+    }
+  }
+
+  // 2. Precipitation filled area under the curve.
+  GPoint precip_points[FORECAST_HOURS + 2];
+  precip_points[0] = GPoint(plot.origin.x, plot_bottom);
+  for (int i = 0; i < FORECAST_HOURS; i++) {
+    int x = forecast_x_for_index(plot, i);
+    int precip_h = (s_forecast_precip[i] * (plot.size.h - 3)) / 100;
+    precip_points[i + 1] = GPoint(x, plot_bottom - precip_h);
+  }
+  precip_points[FORECAST_HOURS + 1] =
+      GPoint(plot.origin.x + plot.size.w - 1, plot_bottom);
+  GPathInfo precip_info = {
+    .num_points = FORECAST_HOURS + 2,
+    .points = precip_points
+  };
+  GPath *precip_path = gpath_create(&precip_info);
+  if (precip_path) {
+    graphics_context_set_fill_color(ctx, GColorPictonBlue);
+    gpath_draw_filled(ctx, precip_path);
+    gpath_destroy(precip_path);
+  }
+
+  // 3. Sunrise / sunset boundary lines (thin vertical, full plot height).
+  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_stroke_width(ctx, 1);
+  if (s_sunrise_known && s_sunrise_t > graph_start && s_sunrise_t < graph_end) {
+    int sx = fcw_x_for_time(s_sunrise_t, graph_start, graph_end, plot);
+    graphics_draw_line(ctx, GPoint(sx, plot.origin.y), GPoint(sx, plot_bottom));
+  }
+  if (s_sunset_known && s_sunset_t > graph_start && s_sunset_t < graph_end) {
+    int sx = fcw_x_for_time(s_sunset_t, graph_start, graph_end, plot);
+    graphics_draw_line(ctx, GPoint(sx, plot.origin.y), GPoint(sx, plot_bottom));
+  }
+
+  // 4. Temperature line on top, stroke 3 like forecaswatch2.
+  GPoint temp_points[FORECAST_HOURS];
+  for (int i = 0; i < FORECAST_HOURS; i++) {
+    temp_points[i] = GPoint(forecast_x_for_index(plot, i),
+                            forecast_temp_y(s_forecast_temp[i], min_temp, max_temp, plot));
+  }
+  GPathInfo temp_info = {
+    .num_points = FORECAST_HOURS,
+    .points = temp_points
+  };
+  GPath *temp_path = gpath_create(&temp_info);
+  if (temp_path) {
+    graphics_context_set_stroke_color(ctx, GColorRed);
+    graphics_context_set_stroke_width(ctx, 3);
+    gpath_draw_outline_open(ctx, temp_path);
+    gpath_destroy(temp_path);
+  }
+  graphics_context_set_stroke_width(ctx, 1);
+
+  // 5. Hour labels along bottom (0, 3, 6, ... 21) using the forecast's local
+  // start hour, not 0. Tick mark per hour, label every 3rd.
+  GFont label_font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+  struct tm *start_tm = localtime(&graph_start);
+  int start_hour = start_tm ? start_tm->tm_hour : 0;
+  graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
+  for (int i = 0; i < FORECAST_HOURS; i++) {
+    int x = forecast_x_for_index(plot, i);
+    int is_label = (i % 3) == 0;
+    int tick_h = is_label ? 4 : 2;
+    graphics_draw_line(ctx, GPoint(x, plot_bottom + 1),
+                       GPoint(x, plot_bottom + 1 + tick_h));
+    if (is_label) {
+      char label[4];
+      snprintf(label, sizeof(label), "%d", (start_hour + i) % 24);
+      draw_text(ctx, label, label_font, GRect(x - 12, plot_bottom + 4, 24, 14),
+                fitness_muted_text_color(), GTextAlignmentCenter);
+    }
+  }
+}
+
 static void draw_small_sun(GContext *ctx, GPoint center, GColor color) {
   graphics_context_set_stroke_color(ctx, color);
   graphics_context_set_fill_color(ctx, color);
   graphics_context_set_stroke_width(ctx, 1);
-  graphics_fill_circle(ctx, center, 3);
-  graphics_draw_line(ctx, GPoint(center.x - 6, center.y), GPoint(center.x - 4, center.y));
-  graphics_draw_line(ctx, GPoint(center.x + 4, center.y), GPoint(center.x + 6, center.y));
-  graphics_draw_line(ctx, GPoint(center.x, center.y - 6), GPoint(center.x, center.y - 4));
-  graphics_draw_line(ctx, GPoint(center.x, center.y + 4), GPoint(center.x, center.y + 6));
+  graphics_draw_circle(ctx, center, 4);
+  graphics_fill_circle(ctx, center, 2);
+  graphics_draw_line(ctx, GPoint(center.x - 8, center.y), GPoint(center.x - 6, center.y));
+  graphics_draw_line(ctx, GPoint(center.x + 6, center.y), GPoint(center.x + 8, center.y));
+  graphics_draw_line(ctx, GPoint(center.x, center.y - 8), GPoint(center.x, center.y - 6));
+  graphics_draw_line(ctx, GPoint(center.x, center.y + 6), GPoint(center.x, center.y + 8));
+  graphics_draw_line(ctx, GPoint(center.x - 6, center.y - 6),
+                     GPoint(center.x - 4, center.y - 4));
+  graphics_draw_line(ctx, GPoint(center.x + 4, center.y + 4),
+                     GPoint(center.x + 6, center.y + 6));
+  graphics_draw_line(ctx, GPoint(center.x + 6, center.y - 6),
+                     GPoint(center.x + 4, center.y - 4));
+  graphics_draw_line(ctx, GPoint(center.x - 4, center.y + 4),
+                     GPoint(center.x - 6, center.y + 6));
 }
 
 static void draw_small_moon(GContext *ctx, GPoint center, GColor color) {
@@ -1839,7 +2407,6 @@ static void detailed_weather_draw_overlay(GContext *ctx) {
   char hi_buf[8];
   char lo_buf[8];
   char forecast_buf[48];
-  char wind_uv_buf[40];
   char sunrise_buf[12];
   char sunset_buf[12];
 
@@ -1853,26 +2420,25 @@ static void detailed_weather_draw_overlay(GContext *ctx) {
   }
   snprintf(forecast_buf, sizeof(forecast_buf), "Hi %s   Lo %s   Rain %s",
            hi_buf, lo_buf, s_rain_buf);
-  snprintf(wind_uv_buf, sizeof(wind_uv_buf), "Wind %s mph    UV %s", s_wind_buf, s_uv_buf);
   format_time_short(sunrise_buf, sizeof(sunrise_buf), s_sunrise_t, s_sunrise_known);
   format_time_short(sunset_buf, sizeof(sunset_buf), s_sunset_t, s_sunset_known);
 
-  draw_weather_icon_centered(ctx, GPoint(100, 28), true);
-  draw_text(ctx, temp_buf, s_font_time, GRect(0, 54, SCREEN_W, 52),
+  draw_weather_icon_centered(ctx, GPoint(100, 24), true);
+  draw_text(ctx, temp_buf, s_font_time, GRect(0, 48, SCREEN_W, 48),
             theme_fg_color(), GTextAlignmentCenter);
-  draw_text(ctx, feels_buf, s_font_complication, GRect(8, 98, SCREEN_W - 16, 24),
+  draw_text(ctx, feels_buf, s_font_complication, GRect(8, 91, SCREEN_W - 16, 22),
             fitness_muted_text_color(), GTextAlignmentCenter);
   draw_text(ctx, forecast_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-            GRect(6, 128, SCREEN_W - 12, 22), theme_fg_color(), GTextAlignmentCenter);
-  draw_text(ctx, wind_uv_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-            GRect(6, 154, SCREEN_W - 12, 22), theme_fg_color(), GTextAlignmentCenter);
+            GRect(6, 112, SCREEN_W - 12, 20), theme_fg_color(), GTextAlignmentCenter);
 
-  draw_small_sun(ctx, GPoint(43, 194), theme_fg_color());
+  draw_forecast_graph(ctx, GRect(4, 132, 192, 62));
+
+  draw_small_sun(ctx, GPoint(13, 209), theme_fg_color());
   draw_text(ctx, sunrise_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-            GRect(54, 184, 48, 24), theme_fg_color(), GTextAlignmentLeft);
-  draw_small_moon(ctx, GPoint(122, 194), theme_fg_color());
+            GRect(24, 199, 72, 24), theme_fg_color(), GTextAlignmentLeft);
+  draw_small_moon(ctx, GPoint(110, 209), theme_fg_color());
   draw_text(ctx, sunset_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-            GRect(133, 184, 58, 24), theme_fg_color(), GTextAlignmentLeft);
+            GRect(121, 199, 76, 24), theme_fg_color(), GTextAlignmentLeft);
 }
 
 static void alt_timezone_draw_overlay(GContext *ctx) {
@@ -1999,7 +2565,7 @@ static bool tide_has_hourly_data(void) {
   // Require the current-hour sample plus enough surrounding context before
   // committing to draw the chart. A partial array (e.g. stale data left over
   // from an older release that only populated a few hours) renders as a
-  // misleading "single spike" — better to keep the Waiting placeholder until
+  // misleading "single spike". Better to keep the Waiting placeholder until
   // the next NOAA fetch lands a full window.
   if (s_tide_hourly_levels[TIDE_NOW_INDEX] == 0xFF) {
     return false;
@@ -2098,7 +2664,7 @@ static void tide_chart_draw_overlay(GContext *ctx) {
   }
 
   // Dotted vertical "now" indicator at the TIDE_NOW_INDEX column. Show it
-  // whether or not that exact sample has data — the user still wants to see
+  // whether or not that exact sample has data. The user still wants to see
   // where "now" is on the timeline.
   int now_x;
   if (points[TIDE_NOW_INDEX].x >= 0) {
@@ -2163,6 +2729,9 @@ static void shake_overlay_update_proc(Layer *layer, GContext *ctx) {
       break;
     case ShakeBehaviorHeartRate:
       heart_rate_draw_overlay(ctx);
+      break;
+    case ShakeBehaviorPrices:
+      prices_draw_overlay(ctx);
       break;
     case ShakeBehaviorTideChart:
       tide_chart_draw_overlay(ctx);
@@ -2268,7 +2837,8 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   }
   draw_bt_icon(ctx, GPoint(181, 7));
 
-  const int content_offset_y = s_verbose_weather_enabled ? VERBOSE_WEATHER_OFFSET_Y : 0;
+  const int content_offset_y =
+      (s_verbose_weather_enabled && s_time_font != TIME_FONT_CASIO) ? VERBOSE_WEATHER_OFFSET_Y : 0;
   const int time_frame_y = TIME_FRAME_Y + content_offset_y;
   const int weather_y = weather_band_y();
   const GRect date_frame = GRect(0, DATE_FRAME_Y + content_offset_y, SCREEN_W, 29);
@@ -2302,8 +2872,10 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
       GRect(0, time_frame_y, SCREEN_W, weather_y - time_frame_y));
 
   if (s_verbose_weather_enabled) {
-    draw_time_row_at(ctx, TIME_FRAME_Y + VERBOSE_WEATHER_OFFSET_Y,
-                     TIME_VISUAL_BOTTOM + VERBOSE_WEATHER_OFFSET_Y);
+    draw_time_row_at(ctx, time_frame_y,
+                     s_time_font == TIME_FONT_CASIO
+                         ? weather_y
+                         : TIME_VISUAL_BOTTOM + VERBOSE_WEATHER_OFFSET_Y);
     set_draw_section(ColorSectionWeather);
     fill_inverted_section_background(
         ctx, ColorSectionWeather,
@@ -2345,11 +2917,15 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
 static void update_time_date(struct tm *t) {
   if (s_military_time_enabled) {
     strftime(s_time_buf, sizeof(s_time_buf), "%H:%M", t);
+    strftime(s_time_buf_casio, sizeof(s_time_buf_casio), "%H:%M", t);
     s_ampm_buf[0] = '\0';
   } else {
     strftime(s_time_buf, sizeof(s_time_buf), "%I:%M", t);
+    strftime(s_time_buf_casio, sizeof(s_time_buf_casio), "%I:%M", t);
     strftime(s_ampm_buf, sizeof(s_ampm_buf), "%p", t);
   }
+  // s_time_buf honors REMOVE_LEADING_ZERO; s_time_buf_casio always keeps
+  // the leading zero so phantom segments align with "88:88" width.
   if (s_remove_leading_zero && s_time_buf[0] == '0') {
     memmove(s_time_buf, s_time_buf + 1, strlen(s_time_buf));
   }
@@ -2465,8 +3041,12 @@ static void battery_handler(BatteryChargeState charge) {
 }
 
 static void connection_handler(bool connected) {
+  bool was_connected = s_phone_connected;
   s_phone_connected = connected;
   if (!connected) {
+    if (was_connected && s_vibrate_on_disconnect) {
+      vibes_double_pulse();
+    }
     s_phone_battery_known = false;
     update_phone_battery_widget();
   }
@@ -2483,6 +3063,8 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   (void)context;
   Tuple *t;
   bool fitness_settings_changed = false;
+  bool prices_changed = false;
+  bool forecast_changed = false;
 
   t = dict_find(iter, MESSAGE_KEY_NEXT_EVENT);
   if (t && t->type == TUPLE_CSTRING) {
@@ -2566,6 +3148,42 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     s_sunset_t = (time_t)t->value->int32;
     s_sunset_known = s_sunset_t > 0;
     persist_write_int(PERSIST_KEY_SUNSET_T, (int)s_sunset_t);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FORECAST_TEMP_F);
+  if (t && t->length >= FORECAST_HOURS) {
+    memcpy(s_forecast_temp, t->value->data, sizeof(s_forecast_temp));
+    persist_write_data(PERSIST_KEY_FORECAST_TEMP_F,
+                       s_forecast_temp, sizeof(s_forecast_temp));
+    forecast_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FORECAST_PRECIP_PCT);
+  if (t && t->length >= FORECAST_HOURS) {
+    memcpy(s_forecast_precip, t->value->data, sizeof(s_forecast_precip));
+    for (int i = 0; i < FORECAST_HOURS; i++) {
+      if (s_forecast_precip[i] > 100) {
+        s_forecast_precip[i] = 100;
+      }
+    }
+    persist_write_data(PERSIST_KEY_FORECAST_PRECIP_PCT,
+                       s_forecast_precip, sizeof(s_forecast_precip));
+    forecast_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FORECAST_START_T);
+  if (t) {
+    s_forecast_start_t = (time_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_FORECAST_START_T, (int)s_forecast_start_t);
+    forecast_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FORECAST_LAST_UPDATE_T);
+  if (t) {
+    s_forecast_last_update_t = (time_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_FORECAST_LAST_UPDATE_T,
+                      (int)s_forecast_last_update_t);
+    forecast_changed = true;
   }
 
   t = dict_find(iter, MESSAGE_KEY_NEXT_EVENT_DELTA);
@@ -2665,6 +3283,29 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     update_time_date(current_time);
   }
 
+  t = dict_find(iter, MESSAGE_KEY_TIME_FONT);
+  if (t) {
+    int v = (int)t->value->int32;
+    if (v == TIME_FONT_CASIO) {
+      s_time_font = TIME_FONT_CASIO;
+    } else if (v == TIME_FONT_ROBOTO) {
+      s_time_font = TIME_FONT_ROBOTO;
+    } else if (v == TIME_FONT_LECO) {
+      s_time_font = TIME_FONT_LECO;
+    } else {
+      s_time_font = TIME_FONT_DEFAULT;
+    }
+    persist_write_int(PERSIST_KEY_TIME_FONT, (int)s_time_font);
+    mark_face_dirty();
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_CASIO_PHANTOM);
+  if (t) {
+    s_casio_phantom = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_CASIO_PHANTOM, s_casio_phantom);
+    mark_face_dirty();
+  }
+
   t = dict_find(iter, MESSAGE_KEY_INVERT_WEATHER);
   if (t) {
     s_invert_weather = t->value->int32 != 0;
@@ -2758,6 +3399,12 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   if (t) {
     s_w800_steps_top_enabled = t->value->int32 != 0;
     persist_write_bool(PERSIST_KEY_TOP_STEPS, s_w800_steps_top_enabled);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_VIBRATE_ON_DISCONNECT);
+  if (t) {
+    s_vibrate_on_disconnect = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_VIBRATE_ON_DISCONNECT, s_vibrate_on_disconnect);
   }
 
   t = dict_find(iter, MESSAGE_KEY_TEMPERATURE_UNIT);
@@ -3120,7 +3767,159 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     fitness_settings_changed = true;
   }
 
-  if (fitness_settings_changed && s_shake_overlay_visible && s_shake_overlay_layer) {
+  t = dict_find(iter, MESSAGE_KEY_PRICES_STOCK_1_SYMBOL);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_prices_stock_1_symbol, sizeof(s_prices_stock_1_symbol),
+                         PERSIST_KEY_PRICES_STOCK_1_SYMBOL, t->value->cstring);
+    fitness_settings_changed = true;
+    prices_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_STOCK_2_SYMBOL);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_prices_stock_2_symbol, sizeof(s_prices_stock_2_symbol),
+                         PERSIST_KEY_PRICES_STOCK_2_SYMBOL, t->value->cstring);
+    fitness_settings_changed = true;
+    prices_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_CRYPTO_SYMBOL);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_prices_crypto_symbol, sizeof(s_prices_crypto_symbol),
+                         PERSIST_KEY_PRICES_CRYPTO_SYMBOL, t->value->cstring);
+    fitness_settings_changed = true;
+    prices_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_SHOW_STOCK_1);
+  if (t) {
+    s_prices_show_stock_1 = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_PRICES_SHOW_STOCK_1, s_prices_show_stock_1);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_SHOW_STOCK_2);
+  if (t) {
+    s_prices_show_stock_2 = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_PRICES_SHOW_STOCK_2, s_prices_show_stock_2);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_SHOW_CRYPTO);
+  if (t) {
+    s_prices_show_crypto = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_PRICES_SHOW_CRYPTO, s_prices_show_crypto);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_CADENCE_MIN);
+  if (t) {
+    s_prices_cadence_min = prices_sanitize_cadence_min((int)t->value->int32);
+    persist_write_int(PERSIST_KEY_PRICES_CADENCE_MIN, s_prices_cadence_min);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_POSITIVE_COLOR_LIGHT);
+  if (t) {
+    s_prices_positive_color_light_hex = sanitize_packed_color((int)t->value->int32);
+    persist_write_int(PERSIST_KEY_PRICES_POSITIVE_COLOR_LIGHT,
+                      s_prices_positive_color_light_hex);
+    prices_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_POSITIVE_COLOR_DARK);
+  if (t) {
+    s_prices_positive_color_dark_hex = sanitize_packed_color((int)t->value->int32);
+    persist_write_int(PERSIST_KEY_PRICES_POSITIVE_COLOR_DARK,
+                      s_prices_positive_color_dark_hex);
+    prices_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_NEGATIVE_COLOR_LIGHT);
+  if (t) {
+    s_prices_negative_color_light_hex = sanitize_packed_color((int)t->value->int32);
+    persist_write_int(PERSIST_KEY_PRICES_NEGATIVE_COLOR_LIGHT,
+                      s_prices_negative_color_light_hex);
+    prices_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_NEGATIVE_COLOR_DARK);
+  if (t) {
+    s_prices_negative_color_dark_hex = sanitize_packed_color((int)t->value->int32);
+    persist_write_int(PERSIST_KEY_PRICES_NEGATIVE_COLOR_DARK,
+                      s_prices_negative_color_dark_hex);
+    prices_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_STOCK_1_PRICE);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_prices_stock_1_price, sizeof(s_prices_stock_1_price),
+                         PERSIST_KEY_PRICES_STOCK_1_PRICE, t->value->cstring);
+    prices_changed = true;
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_STOCK_2_PRICE);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_prices_stock_2_price, sizeof(s_prices_stock_2_price),
+                         PERSIST_KEY_PRICES_STOCK_2_PRICE, t->value->cstring);
+    prices_changed = true;
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_CRYPTO_PRICE);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_prices_crypto_price, sizeof(s_prices_crypto_price),
+                         PERSIST_KEY_PRICES_CRYPTO_PRICE, t->value->cstring);
+    prices_changed = true;
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_STOCK_1_DELTA_X100);
+  if (t) {
+    s_prices_stock_1_delta_x100 = (int)t->value->int32;
+    persist_write_int(PERSIST_KEY_PRICES_STOCK_1_DELTA_X100,
+                      s_prices_stock_1_delta_x100);
+    prices_changed = true;
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_STOCK_2_DELTA_X100);
+  if (t) {
+    s_prices_stock_2_delta_x100 = (int)t->value->int32;
+    persist_write_int(PERSIST_KEY_PRICES_STOCK_2_DELTA_X100,
+                      s_prices_stock_2_delta_x100);
+    prices_changed = true;
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_CRYPTO_DELTA_X100);
+  if (t) {
+    s_prices_crypto_delta_x100 = (int)t->value->int32;
+    persist_write_int(PERSIST_KEY_PRICES_CRYPTO_DELTA_X100,
+                      s_prices_crypto_delta_x100);
+    prices_changed = true;
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_PRICES_LAST_UPDATE_T);
+  if (t) {
+    s_prices_last_update_t = (time_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_PRICES_LAST_UPDATE_T, (int)s_prices_last_update_t);
+    prices_changed = true;
+    fitness_settings_changed = true;
+  }
+
+  if (prices_changed) {
+    mark_face_dirty();
+  }
+
+  if (forecast_changed) {
+    s_forecast_data_loaded = s_forecast_start_t > 0 && s_forecast_last_update_t > 0;
+    mark_face_dirty();
+  }
+
+  if ((fitness_settings_changed || prices_changed || forecast_changed) &&
+      s_shake_overlay_visible && s_shake_overlay_layer) {
     layer_mark_dirty(s_shake_overlay_layer);
   }
 
@@ -3177,8 +3976,33 @@ static void load_persisted(void) {
     s_sunset_t = (time_t)persist_read_int(PERSIST_KEY_SUNSET_T);
     s_sunset_known = s_sunset_t > 0;
   }
+  bool forecast_temp_loaded = false;
+  bool forecast_precip_loaded = false;
+  if (persist_exists(PERSIST_KEY_FORECAST_TEMP_F)) {
+    int bytes = persist_read_data(PERSIST_KEY_FORECAST_TEMP_F,
+                                  s_forecast_temp, sizeof(s_forecast_temp));
+    forecast_temp_loaded = bytes == (int)sizeof(s_forecast_temp);
+  }
+  if (persist_exists(PERSIST_KEY_FORECAST_PRECIP_PCT)) {
+    int bytes = persist_read_data(PERSIST_KEY_FORECAST_PRECIP_PCT,
+                                  s_forecast_precip, sizeof(s_forecast_precip));
+    forecast_precip_loaded = bytes == (int)sizeof(s_forecast_precip);
+  }
+  if (persist_exists(PERSIST_KEY_FORECAST_START_T)) {
+    s_forecast_start_t = (time_t)persist_read_int(PERSIST_KEY_FORECAST_START_T);
+  }
+  if (persist_exists(PERSIST_KEY_FORECAST_LAST_UPDATE_T)) {
+    s_forecast_last_update_t =
+        (time_t)persist_read_int(PERSIST_KEY_FORECAST_LAST_UPDATE_T);
+  }
+  s_forecast_data_loaded =
+      forecast_temp_loaded && forecast_precip_loaded &&
+      s_forecast_start_t > 0 && s_forecast_last_update_t > 0;
   if (persist_exists(PERSIST_KEY_TOP_STEPS)) {
     s_w800_steps_top_enabled = persist_read_bool(PERSIST_KEY_TOP_STEPS);
+  }
+  if (persist_exists(PERSIST_KEY_VIBRATE_ON_DISCONNECT)) {
+    s_vibrate_on_disconnect = persist_read_bool(PERSIST_KEY_VIBRATE_ON_DISCONNECT);
   }
   if (persist_exists(PERSIST_KEY_TEMP_UNIT)) {
     s_temperature_unit_celsius = persist_read_bool(PERSIST_KEY_TEMP_UNIT);
@@ -3206,6 +4030,21 @@ static void load_persisted(void) {
   }
   if (persist_exists(PERSIST_KEY_REMOVE_LEADING_ZERO)) {
     s_remove_leading_zero = persist_read_bool(PERSIST_KEY_REMOVE_LEADING_ZERO);
+  }
+  if (persist_exists(PERSIST_KEY_TIME_FONT)) {
+    int v = persist_read_int(PERSIST_KEY_TIME_FONT);
+    if (v == TIME_FONT_CASIO) {
+      s_time_font = TIME_FONT_CASIO;
+    } else if (v == TIME_FONT_ROBOTO) {
+      s_time_font = TIME_FONT_ROBOTO;
+    } else if (v == TIME_FONT_LECO) {
+      s_time_font = TIME_FONT_LECO;
+    } else {
+      s_time_font = TIME_FONT_DEFAULT;
+    }
+  }
+  if (persist_exists(PERSIST_KEY_CASIO_PHANTOM)) {
+    s_casio_phantom = persist_read_bool(PERSIST_KEY_CASIO_PHANTOM);
   }
   if (persist_exists(PERSIST_KEY_INVERT_WEATHER)) {
     s_invert_weather = persist_read_bool(PERSIST_KEY_INVERT_WEATHER);
@@ -3477,6 +4316,81 @@ static void load_persisted(void) {
       s_alt_tz_offset_min = 840;
     }
   }
+  if (persist_exists(PERSIST_KEY_PRICES_STOCK_1_SYMBOL)) {
+    persist_read_string(PERSIST_KEY_PRICES_STOCK_1_SYMBOL, s_prices_stock_1_symbol,
+                        sizeof(s_prices_stock_1_symbol));
+    s_prices_stock_1_symbol[sizeof(s_prices_stock_1_symbol) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_STOCK_2_SYMBOL)) {
+    persist_read_string(PERSIST_KEY_PRICES_STOCK_2_SYMBOL, s_prices_stock_2_symbol,
+                        sizeof(s_prices_stock_2_symbol));
+    s_prices_stock_2_symbol[sizeof(s_prices_stock_2_symbol) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_CRYPTO_SYMBOL)) {
+    persist_read_string(PERSIST_KEY_PRICES_CRYPTO_SYMBOL, s_prices_crypto_symbol,
+                        sizeof(s_prices_crypto_symbol));
+    s_prices_crypto_symbol[sizeof(s_prices_crypto_symbol) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_CADENCE_MIN)) {
+    s_prices_cadence_min =
+        prices_sanitize_cadence_min(persist_read_int(PERSIST_KEY_PRICES_CADENCE_MIN));
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_POSITIVE_COLOR_LIGHT)) {
+    s_prices_positive_color_light_hex =
+        sanitize_packed_color(persist_read_int(PERSIST_KEY_PRICES_POSITIVE_COLOR_LIGHT));
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_POSITIVE_COLOR_DARK)) {
+    s_prices_positive_color_dark_hex =
+        sanitize_packed_color(persist_read_int(PERSIST_KEY_PRICES_POSITIVE_COLOR_DARK));
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_NEGATIVE_COLOR_LIGHT)) {
+    s_prices_negative_color_light_hex =
+        sanitize_packed_color(persist_read_int(PERSIST_KEY_PRICES_NEGATIVE_COLOR_LIGHT));
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_NEGATIVE_COLOR_DARK)) {
+    s_prices_negative_color_dark_hex =
+        sanitize_packed_color(persist_read_int(PERSIST_KEY_PRICES_NEGATIVE_COLOR_DARK));
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_STOCK_1_PRICE)) {
+    persist_read_string(PERSIST_KEY_PRICES_STOCK_1_PRICE, s_prices_stock_1_price,
+                        sizeof(s_prices_stock_1_price));
+    s_prices_stock_1_price[sizeof(s_prices_stock_1_price) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_STOCK_2_PRICE)) {
+    persist_read_string(PERSIST_KEY_PRICES_STOCK_2_PRICE, s_prices_stock_2_price,
+                        sizeof(s_prices_stock_2_price));
+    s_prices_stock_2_price[sizeof(s_prices_stock_2_price) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_CRYPTO_PRICE)) {
+    persist_read_string(PERSIST_KEY_PRICES_CRYPTO_PRICE, s_prices_crypto_price,
+                        sizeof(s_prices_crypto_price));
+    s_prices_crypto_price[sizeof(s_prices_crypto_price) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_STOCK_1_DELTA_X100)) {
+    s_prices_stock_1_delta_x100 =
+        persist_read_int(PERSIST_KEY_PRICES_STOCK_1_DELTA_X100);
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_STOCK_2_DELTA_X100)) {
+    s_prices_stock_2_delta_x100 =
+        persist_read_int(PERSIST_KEY_PRICES_STOCK_2_DELTA_X100);
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_CRYPTO_DELTA_X100)) {
+    s_prices_crypto_delta_x100 =
+        persist_read_int(PERSIST_KEY_PRICES_CRYPTO_DELTA_X100);
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_LAST_UPDATE_T)) {
+    s_prices_last_update_t =
+        (time_t)persist_read_int(PERSIST_KEY_PRICES_LAST_UPDATE_T);
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_SHOW_STOCK_1)) {
+    s_prices_show_stock_1 = persist_read_bool(PERSIST_KEY_PRICES_SHOW_STOCK_1);
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_SHOW_STOCK_2)) {
+    s_prices_show_stock_2 = persist_read_bool(PERSIST_KEY_PRICES_SHOW_STOCK_2);
+  }
+  if (persist_exists(PERSIST_KEY_PRICES_SHOW_CRYPTO)) {
+    s_prices_show_crypto = persist_read_bool(PERSIST_KEY_PRICES_SHOW_CRYPTO);
+  }
 }
 
 static uint32_t resource_id_for_bitmap_theme(BitmapTheme theme,
@@ -3608,10 +4522,16 @@ static void load_theme_bitmaps(void) {
   s_w800_digit_bitmaps[BitmapThemeLight][9] =
       gbitmap_create_with_resource(RESOURCE_ID_W800_STEP_DIGIT_9_LIGHT);
   load_weather_icon_bitmaps();
+  s_icon_bitcoin_bubble =
+      gbitmap_create_with_resource(RESOURCE_ID_ICON_BITCOIN_BUBBLE);
+  s_icon_stocks_bubble =
+      gbitmap_create_with_resource(RESOURCE_ID_ICON_STOCKS_BUBBLE);
 }
 
 static void destroy_theme_bitmaps(void) {
   destroy_weather_icon_bitmaps();
+  destroy_bitmap(&s_icon_bitcoin_bubble);
+  destroy_bitmap(&s_icon_stocks_bubble);
   for (int theme = 0; theme < BitmapThemeCount; theme++) {
     for (int i = 0; i < 10; i++) {
       destroy_bitmap(&s_w800_digit_bitmaps[theme][i]);
@@ -3664,8 +4584,22 @@ static void window_load(Window *window) {
   s_font_top = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   s_font_date = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   s_font_time = fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
+  s_font_roboto = fonts_get_system_font(FONT_KEY_ROBOTO_BOLD_SUBSET_49);
+  // Pebble ships LECO at fixed point sizes: 20, 26 (with AM/PM), 28 light,
+  // 32 (this), 36, 42 (digits only), 60 (with AM/PM). 32 is the largest
+  // bold-numbers variant that still includes the colon glyph; 60 is huge
+  // and would not fit the time slot.
+  s_font_leco = fonts_get_system_font(FONT_KEY_LECO_32_BOLD_NUMBERS);
   s_font_complication = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   s_font_event = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  s_font_casio_55 =
+      fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_WV58A_DIGITS_55));
+  s_font_casio_70 =
+      fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_WV58A_DIGITS_70));
+  s_font_casio_90 =
+      fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_WV58A_DIGITS_90));
+  s_wv58a_am_bitmap = gbitmap_create_with_resource(RESOURCE_ID_WV58A_AM);
+  s_wv58a_pm_bitmap = gbitmap_create_with_resource(RESOURCE_ID_WV58A_PM);
   load_theme_bitmaps();
 
   s_face_layer = layer_create(bounds);
@@ -3695,6 +4629,20 @@ static void window_load(Window *window) {
 static void window_unload(Window *window) {
   (void)window;
   destroy_theme_bitmaps();
+  destroy_bitmap(&s_wv58a_am_bitmap);
+  destroy_bitmap(&s_wv58a_pm_bitmap);
+  if (s_font_casio_55) {
+    fonts_unload_custom_font(s_font_casio_55);
+    s_font_casio_55 = NULL;
+  }
+  if (s_font_casio_70) {
+    fonts_unload_custom_font(s_font_casio_70);
+    s_font_casio_70 = NULL;
+  }
+  if (s_font_casio_90) {
+    fonts_unload_custom_font(s_font_casio_90);
+    s_font_casio_90 = NULL;
+  }
   layer_destroy(s_shake_overlay_layer);
   s_shake_overlay_layer = NULL;
   layer_destroy(s_face_layer);
