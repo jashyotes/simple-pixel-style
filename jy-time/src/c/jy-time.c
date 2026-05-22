@@ -2831,11 +2831,9 @@ static void nws_draw_dual_chart(GContext *ctx, GRect frame) {
     }
   }
 
-  // Precip line — blue, dashed. Drawn first so temp overlays it. Picton
-  // blue reads clearly on both light and dark overlay backgrounds; the
-  // dashing stays so the chart is still legible if the blue washes out
-  // under direct sun.
+  // Precip line — blue, solid. Drawn first so temp overlays it.
   graphics_context_set_stroke_color(ctx, GColorPictonBlue);
+  graphics_context_set_stroke_width(ctx, 2);
   for (int i = 0; i < n - 1; i++) {
     int x1 = frame.origin.x + (i * (frame.size.w - 1)) / (n - 1);
     int x2 = frame.origin.x + ((i + 1) * (frame.size.w - 1)) / (n - 1);
@@ -2847,16 +2845,9 @@ static void nws_draw_dual_chart(GContext *ctx, GRect frame) {
         - (p1 * frame.size.h) / 100;
     int y2 = frame.origin.y + frame.size.h
         - (p2 * frame.size.h) / 100;
-    // Stipple: every other pixel along the line for a dashed feel.
-    int dx = x2 - x1;
-    int dy = y2 - y1;
-    int steps = dx > 0 ? dx : 1;
-    for (int s = 0; s <= steps; s += 2) {
-      int px = x1 + s;
-      int py = y1 + (dy * s) / steps;
-      graphics_draw_pixel(ctx, GPoint(px, py));
-    }
+    graphics_draw_line(ctx, GPoint(x1, y1), GPoint(x2, y2));
   }
+  graphics_context_set_stroke_width(ctx, 1);
 
   // Temp line (solid)
   graphics_context_set_stroke_color(ctx, theme_fg_color());
@@ -2927,21 +2918,24 @@ static void nws_forecast_chart_heavy_draw(GContext *ctx) {
   // being separated from the chart by the narrative block.
   if (s_nws_hourly_start_t > 0) {
     time_t base = (time_t)s_nws_hourly_start_t;
-    char legend[28] = "";
     const int idxs[6] = {0, 4, 8, 12, 16, 20};
+    const int chart_left = 28;
+    const int chart_w = SCREEN_W - 56;
     for (int i = 0; i < 6; i++) {
-      time_t t = base + idxs[i] * 3600;
+      int idx = idxs[i];
+      time_t t = base + idx * 3600;
       struct tm *tm_t = localtime(&t);
       int hh = tm_t ? tm_t->tm_hour : 0;
       int disp = hh % 12; if (disp == 0) disp = 12;
       const char *ampm = (hh < 12) ? "A" : "P";
-      char piece[6];
-      snprintf(piece, sizeof(piece), "%d%s ", disp, ampm);
-      strncat(legend, piece, sizeof(legend) - strlen(legend) - 1);
+      char label[6];
+      snprintf(label, sizeof(label), "%d%s", disp, ampm);
+      int label_x = chart_left
+          + (idx * (chart_w - 1)) / (NWS_HOURLY_HOURS - 1);
+      draw_text(ctx, label, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+                GRect(label_x - 14, 134, 28, 18),
+                fitness_muted_text_color(), GTextAlignmentCenter);
     }
-    draw_text(ctx, legend, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-              GRect(8, 134, SCREEN_W - 16, 18),
-              fitness_muted_text_color(), GTextAlignmentCenter);
   }
 
   // Narrative block (short forecast + detailed prose) gets the bottom
