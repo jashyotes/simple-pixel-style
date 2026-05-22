@@ -1325,40 +1325,71 @@ function nwsStorePoints(lat, lon, data) {
   } catch (e) { /* ignore quota */ }
 }
 
+function nwsExtractPrimaryNoun(raw) {
+  // Pull the first weather-phenomenon noun out of an NWS shortForecast so
+  // a one-line layout has a single-word fallback that fits at 24-bold.
+  // Order independent — uses raw text order so the most-imminent phenomenon
+  // (the one NWS leads with) wins.
+  if (!raw) return '';
+  var match = raw.match(/(thunderstorms?|showers?|drizzle|sleet|hail|snow|rain|tornado|haze|smoke|wind|fog|mist|cloudy|sunny|clear)/i);
+  if (!match) return '';
+  var noun = match[0];
+  // Title-case the result.
+  noun = noun.charAt(0).toUpperCase() + noun.slice(1).toLowerCase();
+  if (/^thunderstorms?$/i.test(noun)) noun = 'T-storms';
+  return noun;
+}
+
 function nwsNextHourSummary(hourly) {
-  // The forced-large NWS verbose layout gives the summary its own row at
-  // GOTHIC_18_BOLD across ~184px of width — roughly 24 characters at the
-  // font's average bold glyph width. Stay <= 24 chars. When abbreviation
-  // is needed, preserve readable words; never strip vowels from multiple
-  // words. Single allowed exception: "Chance" -> "Chnce" as a last resort.
+  // Two different layout targets depending on the user's VERBOSE_WEATHER_STYLE:
+  //   "large" / default: summary gets its own GOTHIC_18_BOLD row across
+  //   ~184px — roughly 24 chars of bold text.
+  //   "one_line": summary shares a single GOTHIC_24_BOLD row with the temp
+  //   ("82°F ") + a small 18px icon. The watch only has ~170px for text
+  //   total — roughly 14 chars of bold text minus "82°F " (5 chars) leaves
+  //   ~9-11 chars for the summary. Aggressive abbreviation needed; fall
+  //   back to the primary phenomenon noun if all else fails.
   if (!hourly || !hourly.properties || !hourly.properties.periods
       || !hourly.properties.periods.length) {
     return '';
   }
   var raw = String(hourly.properties.periods[0].shortForecast || '');
 
+  var settings = readSettings();
+  var oneLineMode = settings.VERBOSE_WEATHER_STYLE !== 'large';
+  var targetLen = oneLineMode ? 14 : 24;
+
   // Stage 1: cosmetic — "and" -> "/". Always applied; pure punctuation swap.
   var s = raw.replace(/\s+and\s+/gi, ' / ');
-  if (s.length <= 24) return s;
+  if (s.length <= targetLen) return s;
 
-  // Stage 2: idiomatic phrase-level replacement. "Thunderstorms" -> the
-  // NWS-canonical short form "T-storms".
+  // Stage 2: idiomatic phrase-level replacement. "Thunderstorms" -> "T-storms".
   s = s.replace(/thunderstorms?/gi, 'T-storms');
-  if (s.length <= 24) return s;
+  if (s.length <= targetLen) return s;
 
   // Stage 3: drop the "Slight " probability qualifier. The weather phenomenon
-  // ("Chance Showers") stays intact; the lower-probability nuance is the
-  // sacrifice.
+  // stays intact; lower-probability nuance is the sacrifice.
   s = s.replace(/^slight\s+/i, '');
-  if (s.length <= 24) return s;
+  if (s.length <= targetLen) return s;
 
   // Stage 4: single-vowel drop on "Chance" -> "Chnce". The only word allowed
-  // to lose a letter — keeps word shape recognizable.
+  // to lose a letter; preserves word shape.
   s = s.replace(/chance/gi, 'Chnce');
-  if (s.length <= 24) return s;
+  if (s.length <= targetLen) return s;
 
-  // Stage 5: hard cap — nothing left to abbreviate sensibly.
-  return s.slice(0, 24);
+  // Stage 5: drop the "Chnce " / "Chance " probability qualifier altogether.
+  // Result is the phenomenon-only string ("Showers / T-storms").
+  s = s.replace(/^chn?ce\s+/i, '');
+  if (s.length <= targetLen) return s;
+
+  // Stage 6: collapse to the primary phenomenon noun. Always readable; the
+  // multi-phenomenon nuance (showers AND t-storms) collapses to whichever
+  // NWS named first in the original phrase.
+  var primary = nwsExtractPrimaryNoun(raw);
+  if (primary && primary.length <= targetLen) return primary;
+
+  // Stage 7: hard cap.
+  return (primary || s).slice(0, targetLen);
 }
 
 function nwsSendData(lat, lon, points, forecast, hourly, alerts) {

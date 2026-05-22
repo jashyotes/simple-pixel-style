@@ -617,13 +617,11 @@ static void fill_inverted_section_background(GContext *ctx, ColorSection section
 }
 
 // True when the verbose-weather row should render in two-row "large" mode.
-// Honors the user's explicit VERBOSE_WEATHER_STYLE = large pick, AND
-// forces it on when the active provider is NWS so the longer NWS
-// shortForecast strings don't trigger the one-line layout's auto-shrink
-// (icon and temp must stay big under NWS).
+// Honors the user's VERBOSE_WEATHER_STYLE pick literally — one_line stays
+// one-line for both providers, large stays large for both providers. PKJS
+// adapts the NWS summary string to the chosen layout's character budget.
 static bool verbose_weather_layout_is_large(void) {
-  return s_verbose_weather_large
-      || s_weather_provider == WeatherProviderNws;
+  return s_verbose_weather_large;
 }
 
 static int weather_band_y(void) {
