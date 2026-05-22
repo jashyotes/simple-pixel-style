@@ -250,7 +250,9 @@ var SHAKE_BEHAVIOR_IDS = {
   alt_timezone: 5,
   heart_rate: 6,
   prices: 7,
-  tide_chart: 8
+  tide_chart: 8,
+  battery_history: 9,
+  step_history: 10
 };
 
 function clamp(value, min, max) {
