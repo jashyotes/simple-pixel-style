@@ -1111,6 +1111,18 @@
             "value": "narrative"
           }
         ]
+      },
+      {
+        "type": "input",
+        "messageKey": "NWS_ZIP",
+        "label": "NWS location ZIP",
+        "defaultValue": "",
+        "attributes": {
+          "type": "text",
+          "maxLength": 5,
+          "placeholder": "36542"
+        },
+        "description": "Optional. US ZIP code for the NWS gridpoint lookup (e.g. 36542 = Gulf Shores, AL). Leave blank to use phone GPS or the global Weather lat/lon. Phone GPS often lands one NWS grid square off; entering a ZIP locks the forecast to that area."
       }
     ]
   },

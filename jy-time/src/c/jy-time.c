@@ -2831,7 +2831,11 @@ static void nws_draw_dual_chart(GContext *ctx, GRect frame) {
     }
   }
 
-  // Precip line (dashed, drawn first so temp overlays it)
+  // Precip line — blue, dashed. Drawn first so temp overlays it. Picton
+  // blue reads clearly on both light and dark overlay backgrounds; the
+  // dashing stays so the chart is still legible if the blue washes out
+  // under direct sun.
+  graphics_context_set_stroke_color(ctx, GColorPictonBlue);
   for (int i = 0; i < n - 1; i++) {
     int x1 = frame.origin.x + (i * (frame.size.w - 1)) / (n - 1);
     int x2 = frame.origin.x + ((i + 1) * (frame.size.w - 1)) / (n - 1);
@@ -2871,8 +2875,8 @@ static void nws_draw_dual_chart(GContext *ctx, GRect frame) {
   graphics_context_set_stroke_width(ctx, 1);
 }
 
-// Layout A — Chart Heavy. Header + sub-header + dual-line chart + narrative +
-// hour legend at bottom.
+// Layout A — Chart Heavy. Header + sub-header + dual-line chart + hour
+// legend (right below chart) + narrative block at the bottom.
 static void nws_forecast_chart_heavy_draw(GContext *ctx) {
   nws_draw_header(ctx);
 
@@ -2884,9 +2888,9 @@ static void nws_forecast_chart_heavy_draw(GContext *ctx) {
             GRect(8, 22, SCREEN_W - 16, 18),
             theme_fg_color(), GTextAlignmentLeft);
 
-  const GRect chart = GRect(28, 42, SCREEN_W - 56, 100);
+  const GRect chart = GRect(28, 42, SCREEN_W - 56, 90);
 
-  // Y-axis temp labels (left)
+  // Y-axis temp labels (left), aligned to chart's new top / mid / bottom.
   int t_min = 127, t_max = -127;
   for (int i = 0; i < NWS_HOURLY_HOURS; i++) {
     int v = (int)s_nws_hourly_temps_f[i];
@@ -2900,35 +2904,27 @@ static void nws_forecast_chart_heavy_draw(GContext *ctx) {
             GRect(2, 38, 24, 16), theme_fg_color(), GTextAlignmentRight);
   snprintf(y_lbl, sizeof(y_lbl), "%d", (t_max + t_min) / 2);
   draw_text(ctx, y_lbl, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(2, 84, 24, 16), theme_fg_color(), GTextAlignmentRight);
+            GRect(2, 79, 24, 16), theme_fg_color(), GTextAlignmentRight);
   snprintf(y_lbl, sizeof(y_lbl), "%d", t_min);
   draw_text(ctx, y_lbl, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(2, 128, 24, 16), theme_fg_color(), GTextAlignmentRight);
+            GRect(2, 118, 24, 16), theme_fg_color(), GTextAlignmentRight);
 
-  // Y-axis precip labels (right)
+  // Y-axis precip labels (right), aligned to chart's new top / mid / bottom.
+  // Use Picton blue so the legend matches the new precip line color.
   draw_text(ctx, "100%", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
             GRect(SCREEN_W - 28, 38, 26, 16),
-            fitness_muted_text_color(), GTextAlignmentLeft);
+            GColorPictonBlue, GTextAlignmentLeft);
   draw_text(ctx, "50%", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(SCREEN_W - 28, 84, 26, 16),
-            fitness_muted_text_color(), GTextAlignmentLeft);
+            GRect(SCREEN_W - 28, 79, 26, 16),
+            GColorPictonBlue, GTextAlignmentLeft);
   draw_text(ctx, "0%", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(SCREEN_W - 28, 128, 26, 16),
-            fitness_muted_text_color(), GTextAlignmentLeft);
+            GRect(SCREEN_W - 28, 118, 26, 16),
+            GColorPictonBlue, GTextAlignmentLeft);
 
   nws_draw_dual_chart(ctx, chart);
 
-  // Narrative block
-  draw_text(ctx, s_nws_p1_short, s_font_complication,
-            GRect(8, 146, SCREEN_W - 16, 20),
-            theme_fg_color(), GTextAlignmentLeft);
-  draw_text(ctx, s_nws_p1_detailed,
-            fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(8, 166, SCREEN_W - 16, 40),
-            fitness_muted_text_color(), GTextAlignmentLeft);
-
-  // Hour legend: relative to s_nws_hourly_start_t. Compute the local hour
-  // at indices 0, 4, 8, 12, 16, 20 and render their wallclock labels.
+  // Hour legend immediately below the chart — anchors the X axis instead of
+  // being separated from the chart by the narrative block.
   if (s_nws_hourly_start_t > 0) {
     time_t base = (time_t)s_nws_hourly_start_t;
     char legend[28] = "";
@@ -2944,9 +2940,19 @@ static void nws_forecast_chart_heavy_draw(GContext *ctx) {
       strncat(legend, piece, sizeof(legend) - strlen(legend) - 1);
     }
     draw_text(ctx, legend, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-              GRect(8, 208, SCREEN_W - 16, 18),
+              GRect(8, 134, SCREEN_W - 16, 18),
               fitness_muted_text_color(), GTextAlignmentCenter);
   }
+
+  // Narrative block (short forecast + detailed prose) gets the bottom
+  // half of the screen now that the hour legend moved up.
+  draw_text(ctx, s_nws_p1_short, s_font_complication,
+            GRect(8, 156, SCREEN_W - 16, 22),
+            theme_fg_color(), GTextAlignmentLeft);
+  draw_text(ctx, s_nws_p1_detailed,
+            fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(8, 178, SCREEN_W - 16, 50),
+            fitness_muted_text_color(), GTextAlignmentLeft);
 }
 
 // Render a single period block for the Narrative layout. Returns the y

@@ -71,7 +71,8 @@ function customClay() {
 
   var SHAKE_NWS_ITEM_KEYS = [
     'shake-nws-heading',
-    'NWS_FORECAST_STYLE'
+    'NWS_FORECAST_STYLE',
+    'NWS_ZIP'
   ];
 
   var SHAKE_PRICES_ITEM_KEYS = [
@@ -183,6 +184,7 @@ var DEFAULT_SETTINGS = {
   WEATHER_REFRESH_MIN: '30',
   WEATHER_PROVIDER: 'open_meteo',
   NWS_FORECAST_STYLE: 'chart_heavy',
+  NWS_ZIP: '',
   CALENDAR_ENABLED: false,
   CALENDAR_ICS_URL: '',
   CALENDAR_ICS_URL_2: '',
@@ -1323,6 +1325,26 @@ function nwsStorePoints(lat, lon, data) {
   } catch (e) { /* ignore quota */ }
 }
 
+function nwsNextHourSummary(hourly) {
+  // The verbose-weather complication buffer is 32 chars on the watch.
+  // NWS shortForecast strings are often longer ("Slight Chance Showers
+  // And Thunderstorms" = 38). Apply simple abbreviations to preserve as
+  // much information as possible, then truncate.
+  if (!hourly || !hourly.properties || !hourly.properties.periods
+      || !hourly.properties.periods.length) {
+    return '';
+  }
+  var raw = hourly.properties.periods[0].shortForecast || '';
+  var s = String(raw).replace(/\s+and\s+/gi, ' / ');
+  if (s.length > 31) {
+    s = s.replace(/thunderstorms/gi, 'T-storms');
+  }
+  if (s.length > 31) {
+    s = s.slice(0, 31);
+  }
+  return s;
+}
+
 function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
   // The full NWS payload runs ~1200 bytes when serialized as one AppMessage
   // dict (three ~192-char detailed narratives plus hourly arrays). Pebble's
@@ -1339,7 +1361,10 @@ function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
     }
   }
 
-  // Frame A — header / hourly / alert. ~210 bytes.
+  // Frame A — header / hourly / alert / verbose-weather override. ~240 bytes.
+  // WEATHER_SUMMARY here overrides whatever Open-Meteo's
+  // verboseWeatherSummary() previously wrote, because NWS runs after the
+  // Open-Meteo fetch in refreshWeather's chain.
   var dictA = {};
   dictA[keys.NWS_LOCATION_LABEL] =
       nwsToShortString(nwsLocationFromPoints(points, lat, lon), NWS_LOCATION_LEN);
@@ -1347,6 +1372,10 @@ function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
     dictA[keys.NWS_HOURLY_TEMPS_F] = nwsHourlyPackTemps(hourly);
     dictA[keys.NWS_HOURLY_PRECIP_PCT] = nwsHourlyPackPrecip(hourly);
     dictA[keys.NWS_HOURLY_START_T] = nwsHourlyStartEpoch(hourly);
+    var summary = nwsNextHourSummary(hourly);
+    if (summary) {
+      dictA[keys.WEATHER_SUMMARY] = summary;
+    }
   }
   dictA[keys.NWS_ALERT_TITLE] = nwsToShortString(alertTitle, NWS_ALERT_LEN);
   dictA[keys.NWS_LAST_UPDATE_T] = Math.floor(Date.now() / 1000);
@@ -1367,6 +1396,102 @@ function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
     dictP[slots[i].det] = nwsToShortString(p.detailedForecast || '', NWS_DETAILED_LEN);
     dictP[slots[i].tmp] = nwsClampInt8(p.temperature || 0);
     sendToWatch(dictP, slots[i].label);
+  }
+}
+
+function nwsCachedZipCoords(zip) {
+  try {
+    var raw = localStorage.getItem('nws-zip-' + zip);
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    if (parsed && isFinite(parsed.lat) && isFinite(parsed.lon)) {
+      return parsed;
+    }
+  } catch (e) { /* fall through */ }
+  return null;
+}
+
+function resolveZipToLatLon(zip, cb) {
+  var clean = String(zip || '').trim();
+  if (!/^\d{5}$/.test(clean)) {
+    cb(null);
+    return;
+  }
+  var cached = nwsCachedZipCoords(clean);
+  if (cached) {
+    cb(cached);
+    return;
+  }
+  var url = 'https://api.zippopotam.us/us/' + clean;
+  var xhr = new XMLHttpRequest();
+  var finished = false;
+  function finishOnce(result) {
+    if (finished) return;
+    finished = true;
+    cb(result);
+  }
+  xhr.timeout = 12000;
+  xhr.onload = function() {
+    if (xhr.status && xhr.status !== 200) {
+      console.log('ZIP lookup HTTP ' + xhr.status + ' for ' + clean);
+      finishOnce(null);
+      return;
+    }
+    try {
+      var data = JSON.parse(xhr.responseText);
+      if (!data || !data.places || !data.places.length) {
+        finishOnce(null);
+        return;
+      }
+      var place = data.places[0];
+      var lat = Number(place.latitude);
+      var lon = Number(place.longitude);
+      if (!isFinite(lat) || !isFinite(lon)) {
+        finishOnce(null);
+        return;
+      }
+      var resolved = { lat: lat, lon: lon };
+      try {
+        localStorage.setItem('nws-zip-' + clean, JSON.stringify(resolved));
+      } catch (e) { /* quota — ignore */ }
+      finishOnce(resolved);
+    } catch (e) {
+      console.log('ZIP parse failed: ' + e);
+      finishOnce(null);
+    }
+  };
+  xhr.onerror = function() { console.log('ZIP request failed for ' + clean); finishOnce(null); };
+  xhr.ontimeout = function() { console.log('ZIP timeout for ' + clean); finishOnce(null); };
+  try {
+    xhr.open('GET', url);
+    xhr.send();
+  } catch (e) {
+    console.log('ZIP send threw: ' + e);
+    finishOnce(null);
+  }
+}
+
+function nwsLocateAndFetch(settings, fallbackLat, fallbackLon, done) {
+  var zip = String(settings.NWS_ZIP || '').trim();
+  if (zip) {
+    resolveZipToLatLon(zip, function(coords) {
+      if (coords) {
+        nwsFetchForCoordinates(coords.lat, coords.lon, done);
+      } else {
+        console.log('ZIP ' + zip + ' could not resolve, falling back to GPS/manual lat-lon');
+        if (isFinite(fallbackLat) && isFinite(fallbackLon)) {
+          nwsFetchForCoordinates(fallbackLat, fallbackLon, done);
+        } else if (done) {
+          done();
+        }
+      }
+    });
+    return;
+  }
+  if (isFinite(fallbackLat) && isFinite(fallbackLon)) {
+    nwsFetchForCoordinates(fallbackLat, fallbackLon, done);
+  } else if (done) {
+    done();
   }
 }
 
@@ -1411,7 +1536,7 @@ function refreshWeather(skipTide) {
   };
   var refreshNws = function(lat, lon, andThen) {
     if (settings.WEATHER_PROVIDER === 'nws') {
-      nwsFetchForCoordinates(lat, lon, andThen);
+      nwsLocateAndFetch(settings, lat, lon, andThen);
     } else if (andThen) {
       andThen();
     }
