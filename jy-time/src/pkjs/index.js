@@ -1325,71 +1325,150 @@ function nwsStorePoints(lat, lon, data) {
   } catch (e) { /* ignore quota */ }
 }
 
-function nwsExtractPrimaryNoun(raw) {
-  // Pull the first weather-phenomenon noun out of an NWS shortForecast so
-  // a one-line layout has a single-word fallback that fits at 24-bold.
-  // Order independent — uses raw text order so the most-imminent phenomenon
-  // (the one NWS leads with) wins.
-  if (!raw) return '';
-  var match = raw.match(/(thunderstorms?|showers?|drizzle|sleet|hail|snow|rain|tornado|haze|smoke|wind|fog|mist|cloudy|sunny|clear)/i);
-  if (!match) return '';
-  var noun = match[0];
-  // Title-case the result.
-  noun = noun.charAt(0).toUpperCase() + noun.slice(1).toLowerCase();
-  if (/^thunderstorms?$/i.test(noun)) noun = 'T-storms';
-  return noun;
+// Map NWS shortForecast text to the same base-label vocabulary Open-Meteo's
+// weatherBaseLabel produces from WMO codes. Returns one of: CLEAR,
+// MOSTLY CLR, PARTLY CLDY, CLOUDY, FOG, DRIZZLE, FRZ DRZL, RAIN, FRZ RAIN,
+// SNOW, SHWRS, STORMS. Order of checks is precip-first so a phrase like
+// "Mostly Sunny with Thunderstorms" resolves to STORMS.
+function nwsBaseLabelFromShortForecast(text) {
+  var s = String(text || '').toLowerCase();
+  if (/thunderstorm/.test(s)) return 'STORMS';
+  if (/freezing\s+rain/.test(s)) return 'FRZ RAIN';
+  if (/freezing\s+drizzle/.test(s)) return 'FRZ DRZL';
+  if (/snow|flurries|sleet/.test(s)) return 'SNOW';
+  if (/shower/.test(s)) return 'SHWRS';
+  if (/drizzle/.test(s)) return 'DRIZZLE';
+  if (/rain/.test(s)) return 'RAIN';
+  if (/fog|mist|haze|smoke/.test(s)) return 'FOG';
+  if (/overcast|mostly\s+cloudy/.test(s)) return 'CLOUDY';
+  if (/partly\s+(cloudy|sunny)/.test(s)) return 'PARTLY CLDY';
+  if (/mostly\s+(sunny|clear)/.test(s)) return 'MOSTLY CLR';
+  if (/sunny|clear/.test(s)) return 'CLEAR';
+  if (/cloudy/.test(s)) return 'CLOUDY';
+  return 'CLOUDY';
 }
 
-function nwsNextHourSummary(hourly) {
-  // Two different layout targets depending on the user's VERBOSE_WEATHER_STYLE:
-  //   "large" / default: summary gets its own GOTHIC_18_BOLD row across
-  //   ~184px — roughly 24 chars of bold text.
-  //   "one_line": summary shares a single GOTHIC_24_BOLD row with the temp
-  //   ("82°F ") + a small 18px icon. The watch only has ~170px for text
-  //   total — roughly 14 chars of bold text minus "82°F " (5 chars) leaves
-  //   ~9-11 chars for the summary. Aggressive abbreviation needed; fall
-  //   back to the primary phenomenon noun if all else fails.
+// Map NWS shortForecast to Open-Meteo's event-label subset (precip events
+// only). Returns null when no precip is present in the phrase.
+function nwsEventLabelFromShortForecast(text) {
+  var s = String(text || '').toLowerCase();
+  if (/thunderstorm/.test(s)) return 'STORMS';
+  if (/freezing\s+rain/.test(s)) return 'FRZ RAIN';
+  if (/freezing\s+drizzle/.test(s)) return 'FRZ DRZL';
+  if (/snow|flurries|sleet/.test(s)) return 'SNOW';
+  if (/shower/.test(s)) return 'SHWRS';
+  if (/rain/.test(s)) return 'RAIN';
+  if (/drizzle/.test(s)) return 'DRIZZLE';
+  return null;
+}
+
+function nwsPeriodEpoch(period) {
+  if (!period || !period.startTime) return null;
+  var ms = Date.parse(period.startTime);
+  return isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
+function nwsPeriodPrecipChance(period) {
+  if (!period || !period.probabilityOfPrecipitation) return 0;
+  var v = Number(period.probabilityOfPrecipitation.value);
+  return isFinite(v) ? clamp(Math.round(v), 0, 100) : 0;
+}
+
+// Mirrors Open-Meteo's significantWeatherEvent: a precip event "counts"
+// when its probability is >= 30%, OR when it's frozen precip (snow/sleet,
+// which Open-Meteo escalates unconditionally via "code >= 71").
+function nwsSignificantWeatherEvent(period) {
+  if (!period) return null;
+  var label = nwsEventLabelFromShortForecast(period.shortForecast);
+  if (!label) return null;
+  var isFrozen = /snow|flurries|sleet/i.test(period.shortForecast || '');
+  if (isFrozen) return label;
+  return nwsPeriodPrecipChance(period) >= 30 ? label : null;
+}
+
+function nwsHourlyOffsetSeconds(hourly) {
+  if (!hourly || !hourly.properties || !hourly.properties.periods
+      || !hourly.properties.periods.length) {
+    return 0;
+  }
+  var t = String(hourly.properties.periods[0].startTime || '');
+  var m = t.match(/([+-])(\d{2}):(\d{2})$/);
+  if (!m) return 0;
+  var sign = m[1] === '-' ? -1 : 1;
+  return sign * ((Number(m[2]) * 3600) + (Number(m[3]) * 60));
+}
+
+function nwsLocalDayNumber(epochSeconds, offsetSeconds) {
+  return Math.floor((epochSeconds + (Number(offsetSeconds) || 0)) / 86400);
+}
+
+function nwsFormatHourFromEpoch(epochSeconds, offsetSeconds) {
+  var offset = Number(offsetSeconds) || 0;
+  var date = new Date((epochSeconds + offset) * 1000);
+  var hours = date.getUTCHours();
+  var suffix = hours >= 12 ? 'P' : 'A';
+  var hour = hours % 12 || 12;
+  return hour + suffix;
+}
+
+// NWS-data driven equivalent of verboseWeatherSummary. Same vocabulary,
+// same "ALL DAY" / "TIL X" / "AT X" / fallback-base-label algorithm; NWS
+// hourly periods feed it in place of Open-Meteo's hourly arrays.
+function nwsVerboseWeatherSummary(hourly) {
   if (!hourly || !hourly.properties || !hourly.properties.periods
       || !hourly.properties.periods.length) {
     return '';
   }
-  var raw = String(hourly.properties.periods[0].shortForecast || '');
+  var periods = hourly.properties.periods;
+  var offsetSeconds = nwsHourlyOffsetSeconds(hourly);
+  var nowEpoch = Math.floor(Date.now() / 1000);
+  var todayLocalDay = nwsLocalDayNumber(nowEpoch, offsetSeconds);
+  var fallback = nwsBaseLabelFromShortForecast(periods[0].shortForecast);
 
-  var settings = readSettings();
-  var oneLineMode = settings.VERBOSE_WEATHER_STYLE !== 'large';
-  var targetLen = oneLineMode ? 14 : 24;
+  var currentEvent = nwsSignificantWeatherEvent(periods[0]);
+  var dryHoursRequired = 3;
 
-  // Stage 1: cosmetic — "and" -> "/". Always applied; pure punctuation swap.
-  var s = raw.replace(/\s+and\s+/gi, ' / ');
-  if (s.length <= targetLen) return s;
+  if (currentEvent) {
+    var dryRun = 0;
+    var firstDryIndex = -1;
+    for (var i = 1; i < periods.length; i++) {
+      var stopEpoch = nwsPeriodEpoch(periods[i]);
+      if (stopEpoch === null
+          || nwsLocalDayNumber(stopEpoch, offsetSeconds) !== todayLocalDay) {
+        return currentEvent + ' ALL DAY';
+      }
+      if (!nwsSignificantWeatherEvent(periods[i])) {
+        if (dryRun === 0) firstDryIndex = i;
+        dryRun++;
+        if (dryRun >= dryHoursRequired) {
+          var dryEpoch = nwsPeriodEpoch(periods[firstDryIndex]);
+          if (dryEpoch !== null) {
+            return currentEvent + ' TIL '
+                + nwsFormatHourFromEpoch(dryEpoch, offsetSeconds);
+          }
+          return currentEvent + ' ALL DAY';
+        }
+      } else {
+        dryRun = 0;
+        firstDryIndex = -1;
+      }
+    }
+    return currentEvent + ' ALL DAY';
+  }
 
-  // Stage 2: idiomatic phrase-level replacement. "Thunderstorms" -> "T-storms".
-  s = s.replace(/thunderstorms?/gi, 'T-storms');
-  if (s.length <= targetLen) return s;
+  // No current event — scan the next 18 hours for the next one.
+  var latest = nowEpoch + (18 * 60 * 60);
+  for (var j = 1; j < periods.length; j++) {
+    var eventEpoch = nwsPeriodEpoch(periods[j]);
+    if (eventEpoch === null || eventEpoch > latest) break;
+    var nextEvent = nwsSignificantWeatherEvent(periods[j]);
+    if (nextEvent) {
+      return nextEvent + ' AT '
+          + nwsFormatHourFromEpoch(eventEpoch, offsetSeconds);
+    }
+  }
 
-  // Stage 3: drop the "Slight " probability qualifier. The weather phenomenon
-  // stays intact; lower-probability nuance is the sacrifice.
-  s = s.replace(/^slight\s+/i, '');
-  if (s.length <= targetLen) return s;
-
-  // Stage 4: single-vowel drop on "Chance" -> "Chnce". The only word allowed
-  // to lose a letter; preserves word shape.
-  s = s.replace(/chance/gi, 'Chnce');
-  if (s.length <= targetLen) return s;
-
-  // Stage 5: drop the "Chnce " / "Chance " probability qualifier altogether.
-  // Result is the phenomenon-only string ("Showers / T-storms").
-  s = s.replace(/^chn?ce\s+/i, '');
-  if (s.length <= targetLen) return s;
-
-  // Stage 6: collapse to the primary phenomenon noun. Always readable; the
-  // multi-phenomenon nuance (showers AND t-storms) collapses to whichever
-  // NWS named first in the original phrase.
-  var primary = nwsExtractPrimaryNoun(raw);
-  if (primary && primary.length <= targetLen) return primary;
-
-  // Stage 7: hard cap.
-  return (primary || s).slice(0, targetLen);
+  return fallback;
 }
 
 function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
@@ -1419,7 +1498,7 @@ function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
     dictA[keys.NWS_HOURLY_TEMPS_F] = nwsHourlyPackTemps(hourly);
     dictA[keys.NWS_HOURLY_PRECIP_PCT] = nwsHourlyPackPrecip(hourly);
     dictA[keys.NWS_HOURLY_START_T] = nwsHourlyStartEpoch(hourly);
-    var summary = nwsNextHourSummary(hourly);
+    var summary = nwsVerboseWeatherSummary(hourly);
     if (summary) {
       dictA[keys.WEATHER_SUMMARY] = summary;
     }
