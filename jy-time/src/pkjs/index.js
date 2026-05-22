@@ -1326,44 +1326,39 @@ function nwsStorePoints(lat, lon, data) {
 }
 
 function nwsNextHourSummary(hourly) {
-  // Goal: keep the verbose-weather row at GOTHIC_24_BOLD on the main face
-  // by feeding it summary strings short enough to not trigger the C-side
-  // overflow shrink. Target <= 14 chars; very long NWS forecasts will
-  // still trigger 18-bold but remain readable.
+  // The forced-large NWS verbose layout gives the summary its own row at
+  // GOTHIC_18_BOLD across ~184px of width — roughly 24 characters at the
+  // font's average bold glyph width. Stay <= 24 chars. When abbreviation
+  // is needed, preserve readable words; never strip vowels from multiple
+  // words. Single allowed exception: "Chance" -> "Chnce" as a last resort.
   if (!hourly || !hourly.properties || !hourly.properties.periods
       || !hourly.properties.periods.length) {
     return '';
   }
   var raw = String(hourly.properties.periods[0].shortForecast || '');
 
-  // Stage 1: cosmetic normalization (always applied).
+  // Stage 1: cosmetic — "and" -> "/". Always applied; pure punctuation swap.
   var s = raw.replace(/\s+and\s+/gi, ' / ');
+  if (s.length <= 24) return s;
 
-  // Stage 2: progressive abbreviations, broad to narrow. Each pass only
-  // runs if the string is still too long.
-  var abbreviations = [
-    [/thunderstorms?/gi, 'T-storms'],
-    [/showers?/gi,       'Shwrs'],
-    [/slight chance/gi,  'Sl Chc'],
-    [/chance/gi,         'Chc'],
-    [/mostly/gi,         'Mst'],
-    [/partly/gi,         'Prt'],
-    [/cloudy/gi,         'Cldy'],
-    [/patchy/gi,         'Ptchy'],
-    [/scattered/gi,      'Sctd'],
-    [/isolated/gi,       'Iso'],
-    [/freezing/gi,       'Frzg'],
-    [/T-storms?/g,       'T-stm']
-  ];
-  for (var i = 0; i < abbreviations.length && s.length > 14; i++) {
-    s = s.replace(abbreviations[i][0], abbreviations[i][1]);
-  }
+  // Stage 2: idiomatic phrase-level replacement. "Thunderstorms" -> the
+  // NWS-canonical short form "T-storms".
+  s = s.replace(/thunderstorms?/gi, 'T-storms');
+  if (s.length <= 24) return s;
 
-  // Stage 3: hard cap below the 32-char watch buffer so the verbose row
-  // never has to ellipsize NWS-side; long phrases still trigger the C
-  // shrink to 18-bold but the wording stays intact.
-  if (s.length > 24) s = s.slice(0, 24);
-  return s;
+  // Stage 3: drop the "Slight " probability qualifier. The weather phenomenon
+  // ("Chance Showers") stays intact; the lower-probability nuance is the
+  // sacrifice.
+  s = s.replace(/^slight\s+/i, '');
+  if (s.length <= 24) return s;
+
+  // Stage 4: single-vowel drop on "Chance" -> "Chnce". The only word allowed
+  // to lose a letter — keeps word shape recognizable.
+  s = s.replace(/chance/gi, 'Chnce');
+  if (s.length <= 24) return s;
+
+  // Stage 5: hard cap — nothing left to abbreviate sensibly.
+  return s.slice(0, 24);
 }
 
 function nwsSendData(lat, lon, points, forecast, hourly, alerts) {

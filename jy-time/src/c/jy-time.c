@@ -616,9 +616,19 @@ static void fill_inverted_section_background(GContext *ctx, ColorSection section
   graphics_fill_rect(ctx, frame, 0, GCornerNone);
 }
 
+// True when the verbose-weather row should render in two-row "large" mode.
+// Honors the user's explicit VERBOSE_WEATHER_STYLE = large pick, AND
+// forces it on when the active provider is NWS so the longer NWS
+// shortForecast strings don't trigger the one-line layout's auto-shrink
+// (icon and temp must stay big under NWS).
+static bool verbose_weather_layout_is_large(void) {
+  return s_verbose_weather_large
+      || s_weather_provider == WeatherProviderNws;
+}
+
 static int weather_band_y(void) {
   if (s_verbose_weather_enabled) {
-    return s_verbose_weather_large ? 148 : 162;
+    return verbose_weather_layout_is_large() ? 148 : 162;
   }
 
   return COMPLICATION_CENTER_Y - COMPLICATION_RADIUS - 1;
@@ -2849,8 +2859,10 @@ static void nws_draw_dual_chart(GContext *ctx, GRect frame) {
   }
   graphics_context_set_stroke_width(ctx, 1);
 
-  // Temp line (solid)
-  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  // Temp line — deep red. GColorDarkCandyAppleRed (#AA0000) reads as a
+  // clear red on emery without the neon/pink cast GColorRed picks up
+  // against the dark overlay background.
+  graphics_context_set_stroke_color(ctx, GColorDarkCandyAppleRed);
   graphics_context_set_stroke_width(ctx, 2);
   for (int i = 0; i < n - 1; i++) {
     int x1 = frame.origin.x + (i * (frame.size.w - 1)) / (n - 1);
@@ -2934,13 +2946,16 @@ static void nws_forecast_chart_heavy_draw(GContext *ctx) {
   char y_lbl[8];
   snprintf(y_lbl, sizeof(y_lbl), "%d", t_max);
   draw_text(ctx, y_lbl, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(2, 38, 24, 16), theme_fg_color(), GTextAlignmentRight);
+            GRect(2, 38, 24, 16),
+            GColorDarkCandyAppleRed, GTextAlignmentRight);
   snprintf(y_lbl, sizeof(y_lbl), "%d", (t_max + t_min) / 2);
   draw_text(ctx, y_lbl, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(2, 79, 24, 16), theme_fg_color(), GTextAlignmentRight);
+            GRect(2, 79, 24, 16),
+            GColorDarkCandyAppleRed, GTextAlignmentRight);
   snprintf(y_lbl, sizeof(y_lbl), "%d", t_min);
   draw_text(ctx, y_lbl, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(2, 118, 24, 16), theme_fg_color(), GTextAlignmentRight);
+            GRect(2, 118, 24, 16),
+            GColorDarkCandyAppleRed, GTextAlignmentRight);
 
   // Y-axis precip labels (right), aligned to chart's new top / mid / bottom.
   // Use Picton blue so the legend matches the new precip line color.
@@ -3259,7 +3274,7 @@ static void draw_verbose_weather_row(GContext *ctx) {
 
   const char *summary = s_weather_summary_buf[0] ? s_weather_summary_buf : "WEATHER";
 
-  if (s_verbose_weather_large) {
+  if (verbose_weather_layout_is_large()) {
     char large_temp_text[12];
     snprintf(large_temp_text, sizeof(large_temp_text), "%s", temp_text);
 
@@ -3352,8 +3367,8 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
       s_verbose_weather_enabled &&
       section_backgrounds_differ(ColorSectionWeather, ColorSectionMeetingBar);
   const bool large_weather_meeting_color_break =
-      s_verbose_weather_large && verbose_weather_meeting_color_break;
-  const bool large_weather_layout = s_verbose_weather_enabled && s_verbose_weather_large;
+      verbose_weather_layout_is_large() && verbose_weather_meeting_color_break;
+  const bool large_weather_layout = s_verbose_weather_enabled && verbose_weather_layout_is_large();
   const bool compact_weather_meeting_inverted =
       !s_verbose_weather_enabled &&
       section_inverted(ColorSectionWeather) &&
