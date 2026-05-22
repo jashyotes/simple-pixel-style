@@ -9,6 +9,10 @@ jy-time/node_modules/
 jy-time/.lock-waf*
 jy-time/.waf*
 jy-time/.wafpickle*
+jy-tidemaps/build/
+jy-tidemaps/node_modules/
+jy-tidemaps/.lock-waf*
+jy-tidemaps/.waf*
 
 # Android/Gradle build outputs and local IDE state
 jy-time-companion/.gradle/

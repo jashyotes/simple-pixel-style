@@ -1,0 +1,62 @@
+[
+  {
+    "type": "heading",
+    "defaultValue": "US Tidemaps"
+  },
+  {
+    "type": "text",
+    "defaultValue": "Configure a NOAA tide station to see the next 48 hours of predicted tide levels. Find your station's 7-digit ID at <a href=\"https://tidesandcurrents.noaa.gov/\">tidesandcurrents.noaa.gov</a>."
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Tide station"
+      },
+      {
+        "type": "input",
+        "messageKey": "TIDE_STATION_ID",
+        "label": "Station ID",
+        "attributes": {
+          "placeholder": "8418150",
+          "limit": 15
+        }
+      },
+      {
+        "type": "select",
+        "messageKey": "TIDE_UNITS",
+        "label": "Units",
+        "defaultValue": "feet",
+        "options": [
+          { "label": "Feet", "value": "feet" },
+          { "label": "Meters", "value": "meters" }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Refresh"
+      },
+      {
+        "type": "select",
+        "messageKey": "REFRESH_MINUTES",
+        "label": "Refresh interval",
+        "defaultValue": 60,
+        "options": [
+          { "label": "Every 30 minutes", "value": 30 },
+          { "label": "Every hour", "value": 60 },
+          { "label": "Every 2 hours", "value": 120 }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "submit",
+    "defaultValue": "Save"
+  }
+]

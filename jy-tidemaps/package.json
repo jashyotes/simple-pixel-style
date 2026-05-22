@@ -1,0 +1,50 @@
+{
+  "name": "us-tidemaps",
+  "author": "Josh Yates",
+  "version": "0.1.0",
+  "keywords": [
+    "pebble-app",
+    "tide",
+    "noaa"
+  ],
+  "private": true,
+  "dependencies": {
+    "@rebble/clay": "^1.0.8"
+  },
+  "pebble": {
+    "displayName": "US Tidemaps",
+    "uuid": "0133e0dd-44e3-47df-9089-68068d830daf",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "emery"
+    ],
+    "capabilities": [
+      "configurable"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": [
+      "TIDE_HOURLY_LEVELS[48]",
+      "TIDE_NEXT_HIGH_T",
+      "TIDE_NEXT_HIGH_LEVEL",
+      "TIDE_NEXT_LOW_T",
+      "TIDE_NEXT_LOW_LEVEL",
+      "TIDE_STATION_NAME",
+      "TIDE_UNITS",
+      "TIDE_STATION_ID",
+      "REFRESH_MINUTES"
+    ],
+    "resources": {
+      "media": [
+        {
+          "file": "images/RES_ICON.PNG",
+          "menuIcon": true,
+          "name": "RES_ICON",
+          "type": "bitmap"
+        }
+      ]
+    }
+  }
+}
