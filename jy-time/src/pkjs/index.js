@@ -1324,29 +1324,12 @@ function nwsStorePoints(lat, lon, data) {
 }
 
 function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
-  var dict = {};
-  dict[keys.NWS_LOCATION_LABEL] =
-      nwsToShortString(nwsLocationFromPoints(points, lat, lon), NWS_LOCATION_LEN);
-
-  if (hourly) {
-    dict[keys.NWS_HOURLY_TEMPS_F] = nwsHourlyPackTemps(hourly);
-    dict[keys.NWS_HOURLY_PRECIP_PCT] = nwsHourlyPackPrecip(hourly);
-    dict[keys.NWS_HOURLY_START_T] = nwsHourlyStartEpoch(hourly);
-  }
-
-  var periods = (forecast && forecast.properties && forecast.properties.periods) || [];
-  var slots = [
-    { lbl: keys.NWS_P1_LABEL, sh: keys.NWS_P1_SHORT, det: keys.NWS_P1_DETAILED, tmp: keys.NWS_P1_TEMP },
-    { lbl: keys.NWS_P2_LABEL, sh: keys.NWS_P2_SHORT, det: keys.NWS_P2_DETAILED, tmp: keys.NWS_P2_TEMP },
-    { lbl: keys.NWS_P3_LABEL, sh: keys.NWS_P3_SHORT, det: keys.NWS_P3_DETAILED, tmp: keys.NWS_P3_TEMP }
-  ];
-  for (var i = 0; i < slots.length; i++) {
-    var p = periods[i] || {};
-    dict[slots[i].lbl] = nwsToShortString(p.name || '', NWS_LABEL_LEN).toUpperCase();
-    dict[slots[i].sh] = nwsToShortString(p.shortForecast || '', NWS_SHORT_LEN);
-    dict[slots[i].det] = nwsToShortString(p.detailedForecast || '', NWS_DETAILED_LEN);
-    dict[slots[i].tmp] = nwsClampInt8(p.temperature || 0);
-  }
+  // The full NWS payload runs ~1200 bytes when serialized as one AppMessage
+  // dict (three ~192-char detailed narratives plus hourly arrays). Pebble's
+  // default inbox is 512 bytes, so a single dict that large is dropped
+  // silently. Splitting into 4 frames keeps each well under 512 bytes; the
+  // C-side inbox handler processes them independently and the static state
+  // converges to the full picture once all frames land.
 
   var alertTitle = '';
   if (alerts && alerts.features && alerts.features.length) {
@@ -1355,10 +1338,36 @@ function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
       alertTitle = first.properties.event || first.properties.headline || '';
     }
   }
-  dict[keys.NWS_ALERT_TITLE] = nwsToShortString(alertTitle, NWS_ALERT_LEN);
-  dict[keys.NWS_LAST_UPDATE_T] = Math.floor(Date.now() / 1000);
 
-  sendToWatch(dict, 'NWS');
+  // Frame A — header / hourly / alert. ~210 bytes.
+  var dictA = {};
+  dictA[keys.NWS_LOCATION_LABEL] =
+      nwsToShortString(nwsLocationFromPoints(points, lat, lon), NWS_LOCATION_LEN);
+  if (hourly) {
+    dictA[keys.NWS_HOURLY_TEMPS_F] = nwsHourlyPackTemps(hourly);
+    dictA[keys.NWS_HOURLY_PRECIP_PCT] = nwsHourlyPackPrecip(hourly);
+    dictA[keys.NWS_HOURLY_START_T] = nwsHourlyStartEpoch(hourly);
+  }
+  dictA[keys.NWS_ALERT_TITLE] = nwsToShortString(alertTitle, NWS_ALERT_LEN);
+  dictA[keys.NWS_LAST_UPDATE_T] = Math.floor(Date.now() / 1000);
+  sendToWatch(dictA, 'NWS A (hourly + alert)');
+
+  // Frames B/C/D — one period each. ~300 bytes apiece.
+  var periods = (forecast && forecast.properties && forecast.properties.periods) || [];
+  var slots = [
+    { lbl: keys.NWS_P1_LABEL, sh: keys.NWS_P1_SHORT, det: keys.NWS_P1_DETAILED, tmp: keys.NWS_P1_TEMP, label: 'NWS B (period 1)' },
+    { lbl: keys.NWS_P2_LABEL, sh: keys.NWS_P2_SHORT, det: keys.NWS_P2_DETAILED, tmp: keys.NWS_P2_TEMP, label: 'NWS C (period 2)' },
+    { lbl: keys.NWS_P3_LABEL, sh: keys.NWS_P3_SHORT, det: keys.NWS_P3_DETAILED, tmp: keys.NWS_P3_TEMP, label: 'NWS D (period 3)' }
+  ];
+  for (var i = 0; i < slots.length; i++) {
+    var p = periods[i] || {};
+    var dictP = {};
+    dictP[slots[i].lbl] = nwsToShortString(p.name || '', NWS_LABEL_LEN).toUpperCase();
+    dictP[slots[i].sh] = nwsToShortString(p.shortForecast || '', NWS_SHORT_LEN);
+    dictP[slots[i].det] = nwsToShortString(p.detailedForecast || '', NWS_DETAILED_LEN);
+    dictP[slots[i].tmp] = nwsClampInt8(p.temperature || 0);
+    sendToWatch(dictP, slots[i].label);
+  }
 }
 
 function nwsFetchForCoordinates(lat, lon, done) {

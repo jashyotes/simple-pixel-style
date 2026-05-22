@@ -5341,7 +5341,7 @@ static void init(void) {
 
   app_message_register_inbox_received(inbox_received_handler);
   app_message_register_inbox_dropped(inbox_dropped_handler);
-  app_message_open(512, 64);
+  app_message_open(1024, 64);
 }
 
 static void deinit(void) {
