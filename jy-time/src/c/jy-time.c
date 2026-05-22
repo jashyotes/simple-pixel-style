@@ -2866,14 +2866,56 @@ static void nws_draw_dual_chart(GContext *ctx, GRect frame) {
   graphics_context_set_stroke_width(ctx, 1);
 }
 
+// Compact NWS period label for tight one-line contexts (the Chart Heavy
+// sub-header). The full label is preserved in s_nws_p1_label and rendered
+// untruncated in Narrative Weather. NWS-canonical labels are uppercase.
+static void nws_compact_period_label(const char *src, char *dst, size_t dst_len) {
+  if (!src || !dst || dst_len == 0) return;
+  // Order longest-first so prefixes don't shadow more-specific matches.
+  static const struct { const char *full; const char *abbr; } kMap[] = {
+    {"THIS AFTERNOON",  "AFTRN"},
+    {"THIS MORNING",    "MORN"},
+    {"THIS EVENING",    "EVE"},
+    {"OVERNIGHT",       "OVNT"},
+    {"TONIGHT",         "TNGHT"},
+    {"TODAY",           "TODAY"},
+    {"MONDAY NIGHT",    "MON NT"},
+    {"TUESDAY NIGHT",   "TUE NT"},
+    {"WEDNESDAY NIGHT", "WED NT"},
+    {"THURSDAY NIGHT",  "THU NT"},
+    {"FRIDAY NIGHT",    "FRI NT"},
+    {"SATURDAY NIGHT",  "SAT NT"},
+    {"SUNDAY NIGHT",    "SUN NT"},
+    {"MONDAY",          "MON"},
+    {"TUESDAY",         "TUE"},
+    {"WEDNESDAY",       "WED"},
+    {"THURSDAY",        "THU"},
+    {"FRIDAY",          "FRI"},
+    {"SATURDAY",        "SAT"},
+    {"SUNDAY",          "SUN"},
+  };
+  for (size_t i = 0; i < sizeof(kMap) / sizeof(kMap[0]); i++) {
+    if (strcmp(src, kMap[i].full) == 0) {
+      strncpy(dst, kMap[i].abbr, dst_len - 1);
+      dst[dst_len - 1] = '\0';
+      return;
+    }
+  }
+  strncpy(dst, src, dst_len - 1);
+  dst[dst_len - 1] = '\0';
+}
+
 // Layout A — Chart Heavy. Header + sub-header + dual-line chart + hour
 // legend (right below chart) + narrative block at the bottom.
 static void nws_forecast_chart_heavy_draw(GContext *ctx) {
   nws_draw_header(ctx);
 
-  char sub[32];
+  char compact_label[12];
+  nws_compact_period_label(s_nws_p1_label, compact_label,
+                           sizeof(compact_label));
+  char sub[40];
   snprintf(sub, sizeof(sub), "%s  %d\xC2\xB0""F  H%d\xC2\xB0""/L%d\xC2\xB0",
-           s_nws_p1_label, (int)s_nws_hourly_temps_f[0],
+           compact_label, (int)s_nws_hourly_temps_f[0],
            (int)s_nws_p1_temp, (int)s_nws_p2_temp);
   draw_text(ctx, sub, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
             GRect(8, 22, SCREEN_W - 16, 18),

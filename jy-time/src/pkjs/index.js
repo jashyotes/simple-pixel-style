@@ -1326,22 +1326,43 @@ function nwsStorePoints(lat, lon, data) {
 }
 
 function nwsNextHourSummary(hourly) {
-  // The verbose-weather complication buffer is 32 chars on the watch.
-  // NWS shortForecast strings are often longer ("Slight Chance Showers
-  // And Thunderstorms" = 38). Apply simple abbreviations to preserve as
-  // much information as possible, then truncate.
+  // Goal: keep the verbose-weather row at GOTHIC_24_BOLD on the main face
+  // by feeding it summary strings short enough to not trigger the C-side
+  // overflow shrink. Target <= 14 chars; very long NWS forecasts will
+  // still trigger 18-bold but remain readable.
   if (!hourly || !hourly.properties || !hourly.properties.periods
       || !hourly.properties.periods.length) {
     return '';
   }
-  var raw = hourly.properties.periods[0].shortForecast || '';
-  var s = String(raw).replace(/\s+and\s+/gi, ' / ');
-  if (s.length > 31) {
-    s = s.replace(/thunderstorms/gi, 'T-storms');
+  var raw = String(hourly.properties.periods[0].shortForecast || '');
+
+  // Stage 1: cosmetic normalization (always applied).
+  var s = raw.replace(/\s+and\s+/gi, ' / ');
+
+  // Stage 2: progressive abbreviations, broad to narrow. Each pass only
+  // runs if the string is still too long.
+  var abbreviations = [
+    [/thunderstorms?/gi, 'T-storms'],
+    [/showers?/gi,       'Shwrs'],
+    [/slight chance/gi,  'Sl Chc'],
+    [/chance/gi,         'Chc'],
+    [/mostly/gi,         'Mst'],
+    [/partly/gi,         'Prt'],
+    [/cloudy/gi,         'Cldy'],
+    [/patchy/gi,         'Ptchy'],
+    [/scattered/gi,      'Sctd'],
+    [/isolated/gi,       'Iso'],
+    [/freezing/gi,       'Frzg'],
+    [/T-storms?/g,       'T-stm']
+  ];
+  for (var i = 0; i < abbreviations.length && s.length > 14; i++) {
+    s = s.replace(abbreviations[i][0], abbreviations[i][1]);
   }
-  if (s.length > 31) {
-    s = s.slice(0, 31);
-  }
+
+  // Stage 3: hard cap below the 32-char watch buffer so the verbose row
+  // never has to ellipsize NWS-side; long phrases still trigger the C
+  // shrink to 18-bold but the wording stays intact.
+  if (s.length > 24) s = s.slice(0, 24);
   return s;
 }
 
