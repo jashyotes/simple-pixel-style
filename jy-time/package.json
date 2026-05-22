@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "0.88.0",
+  "version": "0.90.0",
   "keywords": [
     "pebble-app"
   ],
@@ -135,7 +135,27 @@
       "FORECAST_TEMP_F[24]",
       "FORECAST_PRECIP_PCT[24]",
       "FORECAST_START_T",
-      "FORECAST_LAST_UPDATE_T"
+      "FORECAST_LAST_UPDATE_T",
+      "WEATHER_PROVIDER",
+      "NWS_HOURLY_TEMPS_F[24]",
+      "NWS_HOURLY_PRECIP_PCT[24]",
+      "NWS_HOURLY_START_T",
+      "NWS_P1_LABEL",
+      "NWS_P1_SHORT",
+      "NWS_P1_DETAILED",
+      "NWS_P1_TEMP",
+      "NWS_P2_LABEL",
+      "NWS_P2_SHORT",
+      "NWS_P2_DETAILED",
+      "NWS_P2_TEMP",
+      "NWS_P3_LABEL",
+      "NWS_P3_SHORT",
+      "NWS_P3_DETAILED",
+      "NWS_P3_TEMP",
+      "NWS_ALERT_TITLE",
+      "NWS_LOCATION_LABEL",
+      "NWS_LAST_UPDATE_T",
+      "NWS_FORECAST_STYLE"
     ],
     "resources": {
       "media": [

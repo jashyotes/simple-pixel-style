@@ -69,6 +69,11 @@ function customClay() {
     'TIDE_UNITS'
   ];
 
+  var SHAKE_NWS_ITEM_KEYS = [
+    'shake-nws-heading',
+    'NWS_FORECAST_STYLE'
+  ];
+
   var SHAKE_PRICES_ITEM_KEYS = [
     'shake-prices-heading',
     'PRICES_STOCK_1_SYMBOL',
@@ -123,6 +128,7 @@ function customClay() {
       setGroupVisible(SHAKE_ALTTZ_ITEM_KEYS, v === 'alt_timezone');
       setGroupVisible(SHAKE_TIDE_ITEM_KEYS, v === 'tide_chart');
       setGroupVisible(SHAKE_PRICES_ITEM_KEYS, v === 'prices');
+      setGroupVisible(SHAKE_NWS_ITEM_KEYS, v === 'nws_forecast');
     }
 
     colorModeItem.on('change', syncColorMode);
@@ -175,6 +181,8 @@ var DEFAULT_SETTINGS = {
   WEATHER_LON: '',
   TEMPERATURE_UNIT: 'fahrenheit',
   WEATHER_REFRESH_MIN: '30',
+  WEATHER_PROVIDER: 'open_meteo',
+  NWS_FORECAST_STYLE: 'chart_heavy',
   CALENDAR_ENABLED: false,
   CALENDAR_ICS_URL: '',
   CALENDAR_ICS_URL_2: '',
@@ -251,8 +259,8 @@ var SHAKE_BEHAVIOR_IDS = {
   heart_rate: 6,
   prices: 7,
   tide_chart: 8,
-  battery_history: 9,
-  step_history: 10
+  step_history: 10,
+  nws_forecast: 11
 };
 
 function clamp(value, min, max) {
@@ -360,6 +368,9 @@ function sendLayoutSetting(settings) {
   dict[keys.COMPLICATION_2] = complicationId(settings.COMPLICATION_2, COMPLICATION_IDS.rain);
   dict[keys.COMPLICATION_3] = complicationId(settings.COMPLICATION_3, COMPLICATION_IDS.heart_rate);
   dict[keys.TEMPERATURE_UNIT] = temperatureUnit(settings) === 'celsius' ? 1 : 0;
+  dict[keys.WEATHER_PROVIDER] = weatherProviderId(settings);
+  dict[keys.NWS_FORECAST_STYLE] =
+      settings.NWS_FORECAST_STYLE === 'narrative' ? 1 : 0;
   var emptyLabel = String(settings.EMPTY_EVENT_LABEL || '').trim();
   if (!emptyLabel) emptyLabel = '[None]';
   dict[keys.EMPTY_EVENT_LABEL] = emptyLabel.slice(0, 24);
@@ -1162,6 +1173,226 @@ function fetchWeatherForCoordinates(lat, lon, unit, done) {
   xhr.send();
 }
 
+// ---------- NWS (National Weather Service) provider ----------
+
+var NWS_USER_AGENT = 'jy-time-watchface (joshtyates@gmail.com)';
+var NWS_HOURLY_HOURS = 24;
+var NWS_LABEL_LEN = 23;
+var NWS_SHORT_LEN = 39;
+var NWS_DETAILED_LEN = 191;
+var NWS_ALERT_LEN = 63;
+var NWS_LOCATION_LEN = 31;
+
+function weatherProviderId(settings) {
+  return settings.WEATHER_PROVIDER === 'nws' ? 1 : 0;
+}
+
+function nwsClampInt8(value) {
+  var v = Math.round(Number(value));
+  if (!isFinite(v)) return 0;
+  if (v < -127) return -127;
+  if (v > 127) return 127;
+  return v;
+}
+
+function nwsToShortString(value, max) {
+  var s = String(value || '').replace(/\s+/g, ' ').trim();
+  if (s.length > max) s = s.slice(0, max);
+  return s;
+}
+
+function nwsLocationFromPoints(data, lat, lon) {
+  if (!data || !data.properties) {
+    return Number(lat).toFixed(2) + ',' + Number(lon).toFixed(2);
+  }
+  var rel = data.properties.relativeLocation;
+  if (rel && rel.properties) {
+    var city = rel.properties.city || '';
+    var state = rel.properties.state || '';
+    var label = (city && state) ? (city + ', ' + state) : (city || state);
+    if (label) return label.toUpperCase();
+  }
+  return Number(lat).toFixed(2) + ',' + Number(lon).toFixed(2);
+}
+
+function nwsHourlyStartEpoch(hourly) {
+  if (!hourly || !hourly.properties || !hourly.properties.periods
+      || !hourly.properties.periods.length) {
+    return 0;
+  }
+  var first = hourly.properties.periods[0].startTime;
+  if (!first) return 0;
+  var ms = Date.parse(first);
+  return isFinite(ms) ? Math.floor(ms / 1000) : 0;
+}
+
+function nwsHourlyPackTemps(hourly) {
+  var arr = [];
+  if (hourly && hourly.properties && hourly.properties.periods) {
+    var periods = hourly.properties.periods.slice(0, NWS_HOURLY_HOURS);
+    for (var i = 0; i < periods.length; i++) {
+      arr.push(nwsClampInt8(periods[i].temperature) & 0xFF);
+    }
+  }
+  while (arr.length < NWS_HOURLY_HOURS) arr.push(0);
+  return arr;
+}
+
+function nwsHourlyPackPrecip(hourly) {
+  var arr = [];
+  if (hourly && hourly.properties && hourly.properties.periods) {
+    var periods = hourly.properties.periods.slice(0, NWS_HOURLY_HOURS);
+    for (var i = 0; i < periods.length; i++) {
+      var pp = periods[i].probabilityOfPrecipitation;
+      var v = (pp && typeof pp.value !== 'undefined' && pp.value !== null)
+          ? Number(pp.value) : 0;
+      if (!isFinite(v)) v = 0;
+      if (v < 0) v = 0;
+      if (v > 100) v = 100;
+      arr.push(Math.round(v));
+    }
+  }
+  while (arr.length < NWS_HOURLY_HOURS) arr.push(0);
+  return arr;
+}
+
+function nwsHttpGet(url, label, callback) {
+  console.log(label + ' GET ' + url.slice(0, 110));
+  var xhr = new XMLHttpRequest();
+  var finished = false;
+  function finishOnce(result) {
+    if (finished) return;
+    finished = true;
+    callback(result);
+  }
+  xhr.timeout = 15000;
+  xhr.onload = function() {
+    if (xhr.status && xhr.status !== 200) {
+      console.log(label + ' HTTP ' + xhr.status);
+      finishOnce(null);
+      return;
+    }
+    try {
+      finishOnce(JSON.parse(xhr.responseText));
+    } catch (e) {
+      console.log(label + ' parse failed: ' + e);
+      finishOnce(null);
+    }
+  };
+  xhr.onerror = function() { console.log(label + ' request failed'); finishOnce(null); };
+  xhr.ontimeout = function() { console.log(label + ' timeout'); finishOnce(null); };
+  try {
+    xhr.open('GET', url);
+    xhr.setRequestHeader('User-Agent', NWS_USER_AGENT);
+    xhr.setRequestHeader('Accept', 'application/geo+json');
+    xhr.send();
+  } catch (e) {
+    console.log(label + ' send threw: ' + e);
+    finishOnce(null);
+  }
+}
+
+function nwsPointsUrl(lat, lon) {
+  // NWS rounds to 4 decimal places; reduce coordinate churn so the points
+  // cache stays hot for typical phone-GPS jitter.
+  var la = Number(lat).toFixed(4);
+  var lo = Number(lon).toFixed(4);
+  return 'https://api.weather.gov/points/' + la + ',' + lo;
+}
+
+function nwsAlertsUrl(lat, lon) {
+  var la = Number(lat).toFixed(4);
+  var lo = Number(lon).toFixed(4);
+  return 'https://api.weather.gov/alerts/active?point=' + la + ',' + lo
+      + '&status=actual';
+}
+
+function nwsCachedPoints(lat, lon) {
+  var key = 'nws-points-' + Number(lat).toFixed(2) + ',' + Number(lon).toFixed(2);
+  try {
+    var raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) { return null; }
+}
+
+function nwsStorePoints(lat, lon, data) {
+  var key = 'nws-points-' + Number(lat).toFixed(2) + ',' + Number(lon).toFixed(2);
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) { /* ignore quota */ }
+}
+
+function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
+  var dict = {};
+  dict[keys.NWS_LOCATION_LABEL] =
+      nwsToShortString(nwsLocationFromPoints(points, lat, lon), NWS_LOCATION_LEN);
+
+  if (hourly) {
+    dict[keys.NWS_HOURLY_TEMPS_F] = nwsHourlyPackTemps(hourly);
+    dict[keys.NWS_HOURLY_PRECIP_PCT] = nwsHourlyPackPrecip(hourly);
+    dict[keys.NWS_HOURLY_START_T] = nwsHourlyStartEpoch(hourly);
+  }
+
+  var periods = (forecast && forecast.properties && forecast.properties.periods) || [];
+  var slots = [
+    { lbl: keys.NWS_P1_LABEL, sh: keys.NWS_P1_SHORT, det: keys.NWS_P1_DETAILED, tmp: keys.NWS_P1_TEMP },
+    { lbl: keys.NWS_P2_LABEL, sh: keys.NWS_P2_SHORT, det: keys.NWS_P2_DETAILED, tmp: keys.NWS_P2_TEMP },
+    { lbl: keys.NWS_P3_LABEL, sh: keys.NWS_P3_SHORT, det: keys.NWS_P3_DETAILED, tmp: keys.NWS_P3_TEMP }
+  ];
+  for (var i = 0; i < slots.length; i++) {
+    var p = periods[i] || {};
+    dict[slots[i].lbl] = nwsToShortString(p.name || '', NWS_LABEL_LEN).toUpperCase();
+    dict[slots[i].sh] = nwsToShortString(p.shortForecast || '', NWS_SHORT_LEN);
+    dict[slots[i].det] = nwsToShortString(p.detailedForecast || '', NWS_DETAILED_LEN);
+    dict[slots[i].tmp] = nwsClampInt8(p.temperature || 0);
+  }
+
+  var alertTitle = '';
+  if (alerts && alerts.features && alerts.features.length) {
+    var first = alerts.features[0];
+    if (first && first.properties) {
+      alertTitle = first.properties.event || first.properties.headline || '';
+    }
+  }
+  dict[keys.NWS_ALERT_TITLE] = nwsToShortString(alertTitle, NWS_ALERT_LEN);
+  dict[keys.NWS_LAST_UPDATE_T] = Math.floor(Date.now() / 1000);
+
+  sendToWatch(dict, 'NWS');
+}
+
+function nwsFetchForCoordinates(lat, lon, done) {
+  function withPoints(points) {
+    if (!points || !points.properties || !points.properties.forecast
+        || !points.properties.forecastHourly) {
+      console.log('NWS: invalid points response — fallback gracefully');
+      if (done) done();
+      return;
+    }
+    nwsStorePoints(lat, lon, points);
+
+    var forecastUrl = points.properties.forecast;
+    var hourlyUrl = points.properties.forecastHourly;
+    nwsHttpGet(forecastUrl, 'NWS forecast', function(forecast) {
+      nwsHttpGet(hourlyUrl, 'NWS hourly', function(hourly) {
+        nwsHttpGet(nwsAlertsUrl(lat, lon), 'NWS alerts', function(alerts) {
+          nwsSendData(lat, lon, points, forecast, hourly, alerts);
+          if (done) done();
+        });
+      });
+    });
+  }
+
+  var cached = nwsCachedPoints(lat, lon);
+  if (cached) {
+    withPoints(cached);
+    return;
+  }
+  nwsHttpGet(nwsPointsUrl(lat, lon), 'NWS points', withPoints);
+}
+
+// ---------- end NWS provider ----------
+
 function refreshWeather(skipTide) {
   var settings = readSettings();
   var refreshTide = function() {
@@ -1169,6 +1400,20 @@ function refreshWeather(skipTide) {
       refreshTidesForSettings(settings);
     }
   };
+  var refreshNws = function(lat, lon, andThen) {
+    if (settings.WEATHER_PROVIDER === 'nws') {
+      nwsFetchForCoordinates(lat, lon, andThen);
+    } else if (andThen) {
+      andThen();
+    }
+  };
+
+  // Always send the current provider id to the watch so the overlay knows
+  // which provider is authoritative (and shows the right placeholder text
+  // when not configured).
+  var providerDict = {};
+  providerDict[keys.WEATHER_PROVIDER] = weatherProviderId(settings);
+  sendToWatch(providerDict, 'Weather provider');
 
   if (!settings.WEATHER_ENABLED) {
     refreshTide();
@@ -1180,18 +1425,27 @@ function refreshWeather(skipTide) {
   var hasManual = isFinite(manualLat) && isFinite(manualLon);
   var unit = temperatureUnit(settings);
 
+  var nwsThenTide = function(lat, lon) {
+    return function() {
+      refreshNws(lat, lon, refreshTide);
+    };
+  };
+
   if (settings.WEATHER_SOURCE === 'manual' && hasManual) {
-    fetchWeatherForCoordinates(manualLat, manualLon, unit, refreshTide);
+    fetchWeatherForCoordinates(manualLat, manualLon, unit,
+                               nwsThenTide(manualLat, manualLon));
     return;
   }
 
   navigator.geolocation.getCurrentPosition(function(position) {
-    fetchWeatherForCoordinates(position.coords.latitude, position.coords.longitude, unit,
-        refreshTide);
+    var lat = position.coords.latitude;
+    var lon = position.coords.longitude;
+    fetchWeatherForCoordinates(lat, lon, unit, nwsThenTide(lat, lon));
   }, function(error) {
     console.log('Location failed: ' + JSON.stringify(error));
     if (hasManual) {
-      fetchWeatherForCoordinates(manualLat, manualLon, unit, refreshTide);
+      fetchWeatherForCoordinates(manualLat, manualLon, unit,
+                                 nwsThenTide(manualLat, manualLon));
     } else {
       refreshTide();
     }

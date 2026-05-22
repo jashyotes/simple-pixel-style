@@ -512,6 +512,23 @@
             "value": "60"
           }
         ]
+      },
+      {
+        "type": "select",
+        "messageKey": "WEATHER_PROVIDER",
+        "label": "NWS Forecast provider",
+        "defaultValue": "open_meteo",
+        "description": "When set to NWS, the NWS Forecast shake overlay pulls hourly + narrative data from api.weather.gov. NWS only covers the United States. The main face and Detailed Weather overlay always use Open-Meteo.",
+        "options": [
+          {
+            "label": "Open-Meteo only (global, default)",
+            "value": "open_meteo"
+          },
+          {
+            "label": "NWS (api.weather.gov, US only)",
+            "value": "nws"
+          }
+        ]
       }
     ]
   },
@@ -634,12 +651,12 @@
             "value": "tide_chart"
           },
           {
-            "label": "Battery history",
-            "value": "battery_history"
-          },
-          {
             "label": "Step history",
             "value": "step_history"
+          },
+          {
+            "label": "NWS Forecast",
+            "value": "nws_forecast"
           }
         ],
         "description": "Each overlay's color follows the Light mode toggle in the Theme section above. Fitness rings has its own three ring colors; every other overlay uses Light/Dark only."
@@ -1067,6 +1084,33 @@
           "max": "840",
           "step": "15"
         }
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "id": "shake-nws-heading",
+        "defaultValue": "NWS Forecast settings"
+      },
+      {
+        "type": "select",
+        "messageKey": "NWS_FORECAST_STYLE",
+        "label": "Forecast style",
+        "defaultValue": "chart_heavy",
+        "description": "Chart Heavy shows the 24h temperature + precipitation chart with the current period narrative below. Narrative Weather drops the chart and stacks This Afternoon / Tonight / Tomorrow prose blocks.",
+        "options": [
+          {
+            "label": "Chart Heavy",
+            "value": "chart_heavy"
+          },
+          {
+            "label": "Narrative Weather",
+            "value": "narrative"
+          }
+        ]
       }
     ]
   },

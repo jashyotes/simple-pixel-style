@@ -97,8 +97,6 @@
 #define PERSIST_KEY_TIDE_STATION_NAME 185
 #define PERSIST_KEY_TIDE_UNITS 186
 #define PERSIST_KEY_TIDE_STATION_ID 187
-#define PERSIST_KEY_BATTERY_HISTORY 188
-#define PERSIST_KEY_BATTERY_HEAD 189
 #define PERSIST_KEY_TIDE_DATA_VERSION 192
 #define PERSIST_KEY_PRICES_STOCK_1_SYMBOL 193
 #define PERSIST_KEY_PRICES_STOCK_2_SYMBOL 194
@@ -125,6 +123,65 @@
 #define PERSIST_KEY_FORECAST_START_T 215
 #define PERSIST_KEY_FORECAST_LAST_UPDATE_T 216
 #define PERSIST_KEY_CASIO_PHANTOM 217
+#define PERSIST_KEY_WEATHER_PROVIDER 218
+#define PERSIST_KEY_NWS_HOURLY_TEMPS_F 219
+#define PERSIST_KEY_NWS_HOURLY_PRECIP_PCT 220
+#define PERSIST_KEY_NWS_HOURLY_START_T 221
+#define PERSIST_KEY_NWS_P1_LABEL 222
+#define PERSIST_KEY_NWS_P1_SHORT 223
+#define PERSIST_KEY_NWS_P1_DETAILED 224
+#define PERSIST_KEY_NWS_P1_TEMP 225
+#define PERSIST_KEY_NWS_P2_LABEL 226
+#define PERSIST_KEY_NWS_P2_SHORT 227
+#define PERSIST_KEY_NWS_P2_DETAILED 228
+#define PERSIST_KEY_NWS_P2_TEMP 229
+#define PERSIST_KEY_NWS_P3_LABEL 230
+#define PERSIST_KEY_NWS_P3_SHORT 231
+#define PERSIST_KEY_NWS_P3_DETAILED 232
+#define PERSIST_KEY_NWS_P3_TEMP 233
+#define PERSIST_KEY_NWS_ALERT_TITLE 234
+#define PERSIST_KEY_NWS_LOCATION_LABEL 235
+#define PERSIST_KEY_NWS_LAST_UPDATE_T 236
+#define PERSIST_KEY_NWS_FORECAST_STYLE 237
+
+#define NWS_HOURLY_HOURS 24
+#define NWS_LABEL_LEN 24
+#define NWS_SHORT_LEN 40
+#define NWS_DETAILED_LEN 192
+#define NWS_ALERT_LEN 64
+#define NWS_LOCATION_LEN 32
+
+typedef enum {
+  WeatherProviderOpenMeteo = 0,
+  WeatherProviderNws = 1,
+} WeatherProvider;
+
+typedef enum {
+  NwsForecastStyleChartHeavy = 0,
+  NwsForecastStyleNarrative = 1,
+} NwsForecastStyle;
+
+static WeatherProvider s_weather_provider = WeatherProviderOpenMeteo;
+static NwsForecastStyle s_nws_forecast_style = NwsForecastStyleChartHeavy;
+
+static int8_t s_nws_hourly_temps_f[NWS_HOURLY_HOURS];
+static uint8_t s_nws_hourly_precip_pct[NWS_HOURLY_HOURS];
+static uint32_t s_nws_hourly_start_t = 0;
+static char s_nws_p1_label[NWS_LABEL_LEN];
+static char s_nws_p1_short[NWS_SHORT_LEN];
+static char s_nws_p1_detailed[NWS_DETAILED_LEN];
+static int8_t s_nws_p1_temp = 0;
+static char s_nws_p2_label[NWS_LABEL_LEN];
+static char s_nws_p2_short[NWS_SHORT_LEN];
+static char s_nws_p2_detailed[NWS_DETAILED_LEN];
+static int8_t s_nws_p2_temp = 0;
+static char s_nws_p3_label[NWS_LABEL_LEN];
+static char s_nws_p3_short[NWS_SHORT_LEN];
+static char s_nws_p3_detailed[NWS_DETAILED_LEN];
+static int8_t s_nws_p3_temp = 0;
+static char s_nws_alert_title[NWS_ALERT_LEN];
+static char s_nws_location_label[NWS_LOCATION_LEN];
+static uint32_t s_nws_last_update_t = 0;
 
 #define SCREEN_W 200
 #define SCREEN_H 228
@@ -191,8 +248,11 @@ typedef enum {
   ShakeBehaviorHeartRate = 6,
   ShakeBehaviorPrices = 7,
   ShakeBehaviorTideChart = 8,
-  ShakeBehaviorBatteryHistory = 9,
+  // Value 9 is reserved (was ShakeBehaviorBatteryHistory in 0.88, removed in
+  // 0.89). Do not reuse 9 — keeps persisted 0.88 SHAKE_BEHAVIOR=10 picks
+  // (Step history) working on upgrade. sanitize_shake_behavior falls 9 to Off.
   ShakeBehaviorStepHistory = 10,
+  ShakeBehaviorNwsForecast = 11,
 } ShakeBehavior;
 
 typedef enum {
@@ -369,12 +429,6 @@ static char s_empty_event_label[32] = "[None]";
 // Tide chart sends a 24-byte hourly window centered on "now":
 // indices [0..11] = past 12 hours, [TIDE_NOW_INDEX] = current hour,
 // [13..23] = next 11 hours. JS keeps the same convention.
-#define BATTERY_HISTORY_HOURS 168
-
-static uint8_t s_battery_history[BATTERY_HISTORY_HOURS];
-static uint16_t s_battery_history_head = 0;
-static bool s_battery_history_loaded = false;
-
 #define TIDE_WINDOW_HOURS 24
 #define TIDE_NOW_INDEX 12
 // Bump TIDE_DATA_VERSION whenever the byte-array layout / window-centering
@@ -606,8 +660,8 @@ static ShakeBehavior sanitize_shake_behavior(int value) {
     case ShakeBehaviorHeartRate:
     case ShakeBehaviorPrices:
     case ShakeBehaviorTideChart:
-    case ShakeBehaviorBatteryHistory:
     case ShakeBehaviorStepHistory:
+    case ShakeBehaviorNwsForecast:
       return (ShakeBehavior)value;
     default:
       return ShakeBehaviorOff;
@@ -2712,139 +2766,264 @@ static void tide_chart_draw_overlay(GContext *ctx) {
             fitness_muted_text_color(), GTextAlignmentLeft);
 }
 
-// Forecast return values: -1 = insufficient data, -2 = charging/stable,
-// otherwise positive minutes-to-empty derived from recent drain rate.
-static int compute_battery_forecast_minutes(void) {
-  uint8_t recent[6];
-  int n_samples = 0;
-  for (int back = 1;
-       back <= BATTERY_HISTORY_HOURS && n_samples < 6; back++) {
-    int idx = ((int)s_battery_history_head - back + BATTERY_HISTORY_HOURS)
-        % BATTERY_HISTORY_HOURS;
-    if (s_battery_history[idx] != 0xFF) {
-      recent[n_samples++] = s_battery_history[idx];
-    }
-  }
-  if (n_samples < 3) {
-    return -1;
-  }
-  if (recent[0] >= recent[n_samples - 1]) {
-    return -2;
-  }
-  int drain = (int)recent[n_samples - 1] - (int)recent[0];
-  int hours = n_samples - 1;
-  if (drain <= 0 || hours <= 0) {
-    return -2;
-  }
-  int current = (int)s_watch_battery_pct;
-  if (current <= 0) {
-    return 0;
-  }
-  return (current * hours * 60) / drain;
-}
-
-static int battery_history_dow_label_idx(int dow) {
-  // Pebble tm_wday: 0=Sun .. 6=Sat. Map to label table {M,T,W,T,F,S,S}.
-  // Mon->0, Tue->1, Wed->2, Thu->3, Fri->4, Sat->5, Sun->6.
+// Pebble tm_wday: 0=Sun .. 6=Sat. Map to label table {M,T,W,T,F,S,S}.
+// Mon->0, Tue->1, Wed->2, Thu->3, Fri->4, Sat->5, Sun->6.
+static int shake_dow_to_label_idx(int dow) {
   return (dow + 6) % 7;
 }
 
-static void battery_history_draw_overlay(GContext *ctx) {
-  const int chart_left = 8;
-  const int chart_right = SCREEN_W - 8;
-  const int chart_top = 32;
-  const int chart_bottom = 170;
-  const int chart_w = chart_right - chart_left;
-  const int chart_h = chart_bottom - chart_top;
-
-  char pct_buf[8];
-  snprintf(pct_buf, sizeof(pct_buf), "%d%%", (int)s_watch_battery_pct);
-  draw_text(ctx, "BATTERY", s_font_top, GRect(8, 4, 120, 22),
-            theme_fg_color(), GTextAlignmentLeft);
-  draw_text(ctx, pct_buf, s_font_top,
-            GRect(SCREEN_W - 80, 4, 72, 22),
-            theme_fg_color(), GTextAlignmentRight);
-
+// "!" alert badge rendered as a 14x14 inset square with a centered "!".
+// Mirrors the style Codex used on the approved mockups so the live render
+// matches the visual reference.
+static void nws_draw_alert_badge(GContext *ctx, GRect frame) {
+  if (s_nws_alert_title[0] == '\0') return;
   graphics_context_set_stroke_color(ctx, theme_fg_color());
   graphics_context_set_stroke_width(ctx, 1);
-  graphics_draw_rect(ctx, GRect(chart_left, chart_top, chart_w, chart_h));
+  graphics_draw_rect(ctx, frame);
+  draw_text(ctx, "!", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(frame.origin.x, frame.origin.y - 1,
+                  frame.size.w, frame.size.h),
+            theme_fg_color(), GTextAlignmentCenter);
+}
 
-  // Dashed grid at 25 / 50 / 75 %.
+static void nws_draw_header(GContext *ctx) {
+  const char *location = s_nws_location_label[0]
+      ? s_nws_location_label : "NWS FORECAST";
+  draw_text(ctx, location, s_font_top, GRect(8, 0, SCREEN_W - 38, 22),
+            theme_fg_color(), GTextAlignmentLeft);
+  nws_draw_alert_badge(ctx, GRect(SCREEN_W - 24, 4, 16, 16));
+}
+
+// Render the dual-line chart (24h temp + 24h precip%) used by the Chart
+// Heavy layout. `frame` is the chart-only rectangle (no labels — labels
+// are positioned by the caller). Temp scales to its own min/max range;
+// precip scales 0-100% fixed.
+static void nws_draw_dual_chart(GContext *ctx, GRect frame) {
+  const int n = NWS_HOURLY_HOURS;
+  int t_min = 127, t_max = -127;
+  for (int i = 0; i < n; i++) {
+    int v = (int)s_nws_hourly_temps_f[i];
+    if (v < t_min) t_min = v;
+    if (v > t_max) t_max = v;
+  }
+  if (t_max <= t_min) t_max = t_min + 1;
+
+  // Pad the temp range so the line doesn't kiss the chart frame.
+  int span = t_max - t_min;
+  int pad = (span < 6) ? 2 : (span / 6);
+  if (pad < 1) pad = 1;
+  int y_min = t_min - pad;
+  int y_max = t_max + pad;
+
+  // Frame
+  graphics_context_set_stroke_color(ctx, theme_fg_color());
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_rect(ctx, frame);
+
+  // Dashed grid at 25 / 50 / 75 %
   for (int pct = 25; pct <= 75; pct += 25) {
-    int y = chart_bottom - (pct * chart_h) / 100;
-    for (int x = chart_left + 2; x < chart_right - 2; x += 4) {
+    int y = frame.origin.y + frame.size.h
+        - (pct * frame.size.h) / 100;
+    for (int x = frame.origin.x + 2;
+         x < frame.origin.x + frame.size.w - 2; x += 4) {
       graphics_draw_pixel(ctx, GPoint(x, y));
       graphics_draw_pixel(ctx, GPoint(x + 1, y));
     }
   }
 
-  // Day-boundary tick marks across the bottom edge: one tick every 24 samples.
-  for (int d = 1; d < 7; d++) {
-    int x = chart_left + (d * 24 * chart_w) / (BATTERY_HISTORY_HOURS - 1);
-    graphics_draw_line(ctx, GPoint(x, chart_bottom - 2),
-                       GPoint(x, chart_bottom + 2));
+  // Precip line (dashed, drawn first so temp overlays it)
+  for (int i = 0; i < n - 1; i++) {
+    int x1 = frame.origin.x + (i * (frame.size.w - 1)) / (n - 1);
+    int x2 = frame.origin.x + ((i + 1) * (frame.size.w - 1)) / (n - 1);
+    int p1 = s_nws_hourly_precip_pct[i];
+    int p2 = s_nws_hourly_precip_pct[i + 1];
+    if (p1 > 100) p1 = 100;
+    if (p2 > 100) p2 = 100;
+    int y1 = frame.origin.y + frame.size.h
+        - (p1 * frame.size.h) / 100;
+    int y2 = frame.origin.y + frame.size.h
+        - (p2 * frame.size.h) / 100;
+    // Stipple: every other pixel along the line for a dashed feel.
+    int dx = x2 - x1;
+    int dy = y2 - y1;
+    int steps = dx > 0 ? dx : 1;
+    for (int s = 0; s <= steps; s += 2) {
+      int px = x1 + s;
+      int py = y1 + (dy * s) / steps;
+      graphics_draw_pixel(ctx, GPoint(px, py));
+    }
   }
 
-  // Sparkline: walk samples chronologically from oldest to newest. The
-  // ring-buffer head points at the slot we will write next, which is also
-  // the oldest sample after one full lap.
+  // Temp line (solid)
+  graphics_context_set_stroke_color(ctx, theme_fg_color());
   graphics_context_set_stroke_width(ctx, 2);
-  GPoint last = GPoint(-1, -1);
-  for (int i = 0; i < BATTERY_HISTORY_HOURS; i++) {
-    int idx = (s_battery_history_head + i) % BATTERY_HISTORY_HOURS;
-    uint8_t sample = s_battery_history[idx];
-    if (sample == 0xFF) {
-      last = GPoint(-1, -1);
-      continue;
-    }
-    if (sample > 100) {
-      sample = 100;
-    }
-    int x = chart_left
-        + (i * chart_w) / (BATTERY_HISTORY_HOURS - 1);
-    int y = chart_bottom - ((int)sample * chart_h) / 100;
-    GPoint pt = GPoint(x, y);
-    if (last.x >= 0) {
-      graphics_draw_line(ctx, last, pt);
-    }
-    last = pt;
+  for (int i = 0; i < n - 1; i++) {
+    int x1 = frame.origin.x + (i * (frame.size.w - 1)) / (n - 1);
+    int x2 = frame.origin.x + ((i + 1) * (frame.size.w - 1)) / (n - 1);
+    int t1 = (int)s_nws_hourly_temps_f[i];
+    int t2 = (int)s_nws_hourly_temps_f[i + 1];
+    int y1 = frame.origin.y + frame.size.h
+        - ((t1 - y_min) * frame.size.h) / (y_max - y_min);
+    int y2 = frame.origin.y + frame.size.h
+        - ((t2 - y_min) * frame.size.h) / (y_max - y_min);
+    graphics_draw_line(ctx, GPoint(x1, y1), GPoint(x2, y2));
   }
   graphics_context_set_stroke_width(ctx, 1);
+}
 
-  int forecast = compute_battery_forecast_minutes();
-  char forecast_buf[24];
-  if (forecast == -1) {
-    snprintf(forecast_buf, sizeof(forecast_buf), "No data");
-  } else if (forecast == -2) {
-    snprintf(forecast_buf, sizeof(forecast_buf), "Charging");
-  } else if (forecast >= 60) {
-    snprintf(forecast_buf, sizeof(forecast_buf), "~%dh to empty",
-             forecast / 60);
-  } else {
-    snprintf(forecast_buf, sizeof(forecast_buf), "~%dm to empty",
-             forecast);
+// Layout A — Chart Heavy. Header + sub-header + dual-line chart + narrative +
+// hour legend at bottom.
+static void nws_forecast_chart_heavy_draw(GContext *ctx) {
+  nws_draw_header(ctx);
+
+  char sub[32];
+  snprintf(sub, sizeof(sub), "%s  %d\xC2\xB0""F  H%d\xC2\xB0""/L%d\xC2\xB0",
+           s_nws_p1_label, (int)s_nws_hourly_temps_f[0],
+           (int)s_nws_p1_temp, (int)s_nws_p2_temp);
+  draw_text(ctx, sub, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(8, 22, SCREEN_W - 16, 18),
+            theme_fg_color(), GTextAlignmentLeft);
+
+  const GRect chart = GRect(28, 42, SCREEN_W - 56, 100);
+
+  // Y-axis temp labels (left)
+  int t_min = 127, t_max = -127;
+  for (int i = 0; i < NWS_HOURLY_HOURS; i++) {
+    int v = (int)s_nws_hourly_temps_f[i];
+    if (v < t_min) t_min = v;
+    if (v > t_max) t_max = v;
   }
-  draw_text(ctx, forecast_buf, s_font_complication,
-            GRect(0, 175, SCREEN_W, 22),
-            theme_fg_color(), GTextAlignmentCenter);
+  if (t_max <= t_min) t_max = t_min + 1;
+  char y_lbl[8];
+  snprintf(y_lbl, sizeof(y_lbl), "%d", t_max);
+  draw_text(ctx, y_lbl, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(2, 38, 24, 16), theme_fg_color(), GTextAlignmentRight);
+  snprintf(y_lbl, sizeof(y_lbl), "%d", (t_max + t_min) / 2);
+  draw_text(ctx, y_lbl, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(2, 84, 24, 16), theme_fg_color(), GTextAlignmentRight);
+  snprintf(y_lbl, sizeof(y_lbl), "%d", t_min);
+  draw_text(ctx, y_lbl, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(2, 128, 24, 16), theme_fg_color(), GTextAlignmentRight);
 
-  // Day-of-week label row, today on the right.
-  time_t now = time(NULL);
-  struct tm *tm_now = localtime(&now);
-  int today_dow = tm_now ? tm_now->tm_wday : 0;
-  static const char * const k_labels[7] = {"M", "T", "W", "T", "F", "S", "S"};
-  for (int pos = 0; pos < 7; pos++) {
-    int days_ago = 6 - pos;
-    int dow = (today_dow - days_ago + 70) % 7;
-    int label_idx = battery_history_dow_label_idx(dow);
-    int x = chart_left + (pos * chart_w) / 6;
-    draw_text(ctx, k_labels[label_idx],
-              fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-              GRect(x - 12, 200, 24, 18),
-              theme_fg_color(), GTextAlignmentCenter);
-    if (pos == 6) {
-      graphics_draw_line(ctx, GPoint(x - 5, 215), GPoint(x + 5, 215));
+  // Y-axis precip labels (right)
+  draw_text(ctx, "100%", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(SCREEN_W - 28, 38, 26, 16),
+            fitness_muted_text_color(), GTextAlignmentLeft);
+  draw_text(ctx, "50%", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(SCREEN_W - 28, 84, 26, 16),
+            fitness_muted_text_color(), GTextAlignmentLeft);
+  draw_text(ctx, "0%", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(SCREEN_W - 28, 128, 26, 16),
+            fitness_muted_text_color(), GTextAlignmentLeft);
+
+  nws_draw_dual_chart(ctx, chart);
+
+  // Narrative block
+  draw_text(ctx, s_nws_p1_short, s_font_complication,
+            GRect(8, 146, SCREEN_W - 16, 20),
+            theme_fg_color(), GTextAlignmentLeft);
+  draw_text(ctx, s_nws_p1_detailed,
+            fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(8, 166, SCREEN_W - 16, 40),
+            fitness_muted_text_color(), GTextAlignmentLeft);
+
+  // Hour legend: relative to s_nws_hourly_start_t. Compute the local hour
+  // at indices 0, 4, 8, 12, 16, 20 and render their wallclock labels.
+  if (s_nws_hourly_start_t > 0) {
+    time_t base = (time_t)s_nws_hourly_start_t;
+    char legend[28] = "";
+    const int idxs[6] = {0, 4, 8, 12, 16, 20};
+    for (int i = 0; i < 6; i++) {
+      time_t t = base + idxs[i] * 3600;
+      struct tm *tm_t = localtime(&t);
+      int hh = tm_t ? tm_t->tm_hour : 0;
+      int disp = hh % 12; if (disp == 0) disp = 12;
+      const char *ampm = (hh < 12) ? "A" : "P";
+      char piece[6];
+      snprintf(piece, sizeof(piece), "%d%s ", disp, ampm);
+      strncat(legend, piece, sizeof(legend) - strlen(legend) - 1);
     }
+    draw_text(ctx, legend, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+              GRect(8, 208, SCREEN_W - 16, 18),
+              fitness_muted_text_color(), GTextAlignmentCenter);
+  }
+}
+
+// Render a single period block for the Narrative layout. Returns the y
+// where the next block should start.
+static int nws_draw_period_block(GContext *ctx, int y, const char *label,
+                                  int temp_high, int temp_low_or_none,
+                                  const char *detailed, int line_count) {
+  char header[40];
+  if (temp_low_or_none == INT16_MIN) {
+    snprintf(header, sizeof(header), "%s  %d\xC2\xB0", label, temp_high);
+  } else {
+    snprintf(header, sizeof(header), "%s  %d\xC2\xB0/%d\xC2\xB0",
+             label, temp_high, temp_low_or_none);
+  }
+  draw_text(ctx, header, s_font_complication,
+            GRect(8, y, SCREEN_W - 16, 22),
+            theme_fg_color(), GTextAlignmentLeft);
+  draw_text(ctx, detailed,
+            fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(8, y + 22, SCREEN_W - 16, line_count * 18 + 2),
+            fitness_muted_text_color(), GTextAlignmentLeft);
+  int next_y = y + 22 + line_count * 18 + 6;
+  // Horizontal rule
+  graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
+  graphics_draw_line(ctx, GPoint(8, next_y - 2),
+                     GPoint(SCREEN_W - 8, next_y - 2));
+  return next_y;
+}
+
+// Layout B — Narrative Weather. Header + three stacked period blocks.
+static void nws_forecast_narrative_draw(GContext *ctx) {
+  nws_draw_header(ctx);
+  int y = 26;
+  // Block 1: current period — pair with the next period's low (assumed to
+  // be Tonight when current is daytime) to render H/L when available.
+  int p1_low = (s_nws_p2_temp != 0) ? (int)s_nws_p2_temp : INT16_MIN;
+  y = nws_draw_period_block(ctx, y, s_nws_p1_label,
+                            (int)s_nws_p1_temp, p1_low,
+                            s_nws_p1_detailed, 3);
+  if (s_nws_p2_label[0]) {
+    y = nws_draw_period_block(ctx, y, s_nws_p2_label,
+                              (int)s_nws_p2_temp, INT16_MIN,
+                              s_nws_p2_detailed, 2);
+  }
+  if (s_nws_p3_label[0]) {
+    int p3_low = (s_nws_p3_temp != 0 && s_nws_p3_temp < s_nws_p2_temp)
+        ? (int)s_nws_p3_temp : INT16_MIN;
+    nws_draw_period_block(ctx, y, s_nws_p3_label,
+                          (int)s_nws_p3_temp, p3_low,
+                          s_nws_p3_detailed, 2);
+  }
+}
+
+static void nws_forecast_draw_overlay(GContext *ctx) {
+  if (s_weather_provider != WeatherProviderNws) {
+    nws_draw_header(ctx);
+    draw_text(ctx, "Set provider to NWS", s_font_complication,
+              GRect(8, 60, SCREEN_W - 16, 24),
+              theme_fg_color(), GTextAlignmentCenter);
+    draw_text(ctx, "in Pebble app settings", s_font_complication,
+              GRect(8, 86, SCREEN_W - 16, 24),
+              fitness_muted_text_color(), GTextAlignmentCenter);
+    return;
+  }
+
+  if (s_nws_p1_label[0] == '\0') {
+    nws_draw_header(ctx);
+    draw_text(ctx, "Waiting for NWS data...", s_font_complication,
+              GRect(8, 80, SCREEN_W - 16, 28),
+              theme_fg_color(), GTextAlignmentCenter);
+    return;
+  }
+
+  if (s_nws_forecast_style == NwsForecastStyleNarrative) {
+    nws_forecast_narrative_draw(ctx);
+  } else {
+    nws_forecast_chart_heavy_draw(ctx);
   }
 }
 
@@ -2881,8 +3060,11 @@ static void step_history_draw_overlay(GContext *ctx) {
   format_number_commas(goal_buf, sizeof(goal_buf), s_fitness_target_steps);
   snprintf(goal_line, sizeof(goal_line), "/ %s", goal_buf);
 
-  GFont hero_font = s_font_roboto ? s_font_roboto : s_font_time;
-  draw_text(ctx, steps_buf, hero_font,
+  // s_font_roboto is FONT_KEY_ROBOTO_BOLD_SUBSET_49, which omits punctuation
+  // (only carries the digits + colon used by the time face). The comma in
+  // 1,234-style step counts shows as the missing-glyph box. Use Bitham 42,
+  // which carries the full Latin set.
+  draw_text(ctx, steps_buf, s_font_time,
             GRect(0, 28, SCREEN_W, 56),
             theme_fg_color(), GTextAlignmentCenter);
   draw_text(ctx, goal_line, s_font_complication,
@@ -2964,7 +3146,7 @@ static void step_history_draw_overlay(GContext *ctx) {
   for (int pos = 0; pos < n_bars; pos++) {
     int days_ago = (n_bars - 1) - pos;
     int dow = (today_dow - days_ago + 70) % 7;
-    int label_idx = battery_history_dow_label_idx(dow);
+    int label_idx = shake_dow_to_label_idx(dow);
     int x = chart_left + (pos * slot_w) + slot_w / 2;
     draw_text(ctx, k_labels[label_idx],
               fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
@@ -3012,11 +3194,11 @@ static void shake_overlay_update_proc(Layer *layer, GContext *ctx) {
     case ShakeBehaviorTideChart:
       tide_chart_draw_overlay(ctx);
       break;
-    case ShakeBehaviorBatteryHistory:
-      battery_history_draw_overlay(ctx);
-      break;
     case ShakeBehaviorStepHistory:
       step_history_draw_overlay(ctx);
+      break;
+    case ShakeBehaviorNwsForecast:
+      nws_forecast_draw_overlay(ctx);
       break;
     case ShakeBehaviorOff:
     default:
@@ -3312,28 +3494,10 @@ static void update_stats(void) {
   mark_face_dirty();
 }
 
-static void battery_history_sample(void) {
-  if (!s_battery_history_loaded) {
-    return;
-  }
-  uint8_t pct = s_watch_battery_pct;
-  if (pct > 100) {
-    pct = 100;
-  }
-  s_battery_history[s_battery_history_head] = pct;
-  s_battery_history_head =
-      (s_battery_history_head + 1) % BATTERY_HISTORY_HOURS;
-  persist_write_data(PERSIST_KEY_BATTERY_HISTORY, s_battery_history,
-                     sizeof(s_battery_history));
-  persist_write_int(PERSIST_KEY_BATTERY_HEAD, (int)s_battery_history_head);
-}
-
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
+  (void)units_changed;
   update_time_date(tick_time);
   update_stats();
-  if (units_changed & HOUR_UNIT) {
-    battery_history_sample();
-  }
 }
 
 static void battery_handler(BatteryChargeState charge) {
@@ -3484,6 +3648,125 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_int(PERSIST_KEY_FORECAST_LAST_UPDATE_T,
                       (int)s_forecast_last_update_t);
     forecast_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_WEATHER_PROVIDER);
+  if (t) {
+    s_weather_provider = (t->value->int32 == 1)
+        ? WeatherProviderNws : WeatherProviderOpenMeteo;
+    persist_write_int(PERSIST_KEY_WEATHER_PROVIDER, (int)s_weather_provider);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_NWS_HOURLY_TEMPS_F);
+  if (t && t->type == TUPLE_BYTE_ARRAY) {
+    uint16_t n = t->length;
+    if (n > sizeof(s_nws_hourly_temps_f)) n = sizeof(s_nws_hourly_temps_f);
+    memcpy(s_nws_hourly_temps_f, t->value->data, n);
+    persist_write_data(PERSIST_KEY_NWS_HOURLY_TEMPS_F, s_nws_hourly_temps_f,
+                       sizeof(s_nws_hourly_temps_f));
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_NWS_HOURLY_PRECIP_PCT);
+  if (t && t->type == TUPLE_BYTE_ARRAY) {
+    uint16_t n = t->length;
+    if (n > sizeof(s_nws_hourly_precip_pct)) n = sizeof(s_nws_hourly_precip_pct);
+    memcpy(s_nws_hourly_precip_pct, t->value->data, n);
+    persist_write_data(PERSIST_KEY_NWS_HOURLY_PRECIP_PCT, s_nws_hourly_precip_pct,
+                       sizeof(s_nws_hourly_precip_pct));
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_NWS_HOURLY_START_T);
+  if (t) {
+    s_nws_hourly_start_t = (uint32_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_NWS_HOURLY_START_T,
+                      (int)s_nws_hourly_start_t);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_NWS_P1_LABEL);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_nws_p1_label, sizeof(s_nws_p1_label),
+                         PERSIST_KEY_NWS_P1_LABEL, t->value->cstring);
+  }
+  t = dict_find(iter, MESSAGE_KEY_NWS_P1_SHORT);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_nws_p1_short, sizeof(s_nws_p1_short),
+                         PERSIST_KEY_NWS_P1_SHORT, t->value->cstring);
+  }
+  t = dict_find(iter, MESSAGE_KEY_NWS_P1_DETAILED);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_nws_p1_detailed, sizeof(s_nws_p1_detailed),
+                         PERSIST_KEY_NWS_P1_DETAILED, t->value->cstring);
+  }
+  t = dict_find(iter, MESSAGE_KEY_NWS_P1_TEMP);
+  if (t) {
+    s_nws_p1_temp = (int8_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_NWS_P1_TEMP, (int)s_nws_p1_temp);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_NWS_P2_LABEL);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_nws_p2_label, sizeof(s_nws_p2_label),
+                         PERSIST_KEY_NWS_P2_LABEL, t->value->cstring);
+  }
+  t = dict_find(iter, MESSAGE_KEY_NWS_P2_SHORT);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_nws_p2_short, sizeof(s_nws_p2_short),
+                         PERSIST_KEY_NWS_P2_SHORT, t->value->cstring);
+  }
+  t = dict_find(iter, MESSAGE_KEY_NWS_P2_DETAILED);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_nws_p2_detailed, sizeof(s_nws_p2_detailed),
+                         PERSIST_KEY_NWS_P2_DETAILED, t->value->cstring);
+  }
+  t = dict_find(iter, MESSAGE_KEY_NWS_P2_TEMP);
+  if (t) {
+    s_nws_p2_temp = (int8_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_NWS_P2_TEMP, (int)s_nws_p2_temp);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_NWS_P3_LABEL);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_nws_p3_label, sizeof(s_nws_p3_label),
+                         PERSIST_KEY_NWS_P3_LABEL, t->value->cstring);
+  }
+  t = dict_find(iter, MESSAGE_KEY_NWS_P3_SHORT);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_nws_p3_short, sizeof(s_nws_p3_short),
+                         PERSIST_KEY_NWS_P3_SHORT, t->value->cstring);
+  }
+  t = dict_find(iter, MESSAGE_KEY_NWS_P3_DETAILED);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_nws_p3_detailed, sizeof(s_nws_p3_detailed),
+                         PERSIST_KEY_NWS_P3_DETAILED, t->value->cstring);
+  }
+  t = dict_find(iter, MESSAGE_KEY_NWS_P3_TEMP);
+  if (t) {
+    s_nws_p3_temp = (int8_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_NWS_P3_TEMP, (int)s_nws_p3_temp);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_NWS_ALERT_TITLE);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_nws_alert_title, sizeof(s_nws_alert_title),
+                         PERSIST_KEY_NWS_ALERT_TITLE, t->value->cstring);
+  }
+  t = dict_find(iter, MESSAGE_KEY_NWS_LOCATION_LABEL);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_nws_location_label, sizeof(s_nws_location_label),
+                         PERSIST_KEY_NWS_LOCATION_LABEL, t->value->cstring);
+  }
+  t = dict_find(iter, MESSAGE_KEY_NWS_LAST_UPDATE_T);
+  if (t) {
+    s_nws_last_update_t = (uint32_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_NWS_LAST_UPDATE_T,
+                      (int)s_nws_last_update_t);
+  }
+  t = dict_find(iter, MESSAGE_KEY_NWS_FORECAST_STYLE);
+  if (t) {
+    s_nws_forecast_style = (t->value->int32 == 1)
+        ? NwsForecastStyleNarrative : NwsForecastStyleChartHeavy;
+    persist_write_int(PERSIST_KEY_NWS_FORECAST_STYLE,
+                      (int)s_nws_forecast_style);
   }
 
   t = dict_find(iter, MESSAGE_KEY_NEXT_EVENT_DELTA);
@@ -4232,20 +4515,6 @@ static void inbox_dropped_handler(AppMessageResult reason, void *context) {
 }
 
 static void load_persisted(void) {
-  memset(s_battery_history, 0xFF, sizeof(s_battery_history));
-  s_battery_history_head = 0;
-  if (persist_exists(PERSIST_KEY_BATTERY_HISTORY)) {
-    persist_read_data(PERSIST_KEY_BATTERY_HISTORY, s_battery_history,
-                      sizeof(s_battery_history));
-  }
-  if (persist_exists(PERSIST_KEY_BATTERY_HEAD)) {
-    int head = persist_read_int(PERSIST_KEY_BATTERY_HEAD);
-    if (head >= 0 && head < BATTERY_HISTORY_HOURS) {
-      s_battery_history_head = (uint16_t)head;
-    }
-  }
-  s_battery_history_loaded = true;
-
   if (persist_exists(PERSIST_KEY_PHONE_BATTERY)) {
     s_phone_battery_pct = (uint8_t)persist_read_int(PERSIST_KEY_PHONE_BATTERY);
     s_phone_battery_known = true;
@@ -4704,6 +4973,90 @@ static void load_persisted(void) {
   }
   if (persist_exists(PERSIST_KEY_PRICES_SHOW_CRYPTO)) {
     s_prices_show_crypto = persist_read_bool(PERSIST_KEY_PRICES_SHOW_CRYPTO);
+  }
+
+  if (persist_exists(PERSIST_KEY_WEATHER_PROVIDER)) {
+    s_weather_provider =
+        (persist_read_int(PERSIST_KEY_WEATHER_PROVIDER) == 1)
+            ? WeatherProviderNws : WeatherProviderOpenMeteo;
+  }
+  memset(s_nws_hourly_temps_f, 0, sizeof(s_nws_hourly_temps_f));
+  memset(s_nws_hourly_precip_pct, 0, sizeof(s_nws_hourly_precip_pct));
+  if (persist_exists(PERSIST_KEY_NWS_HOURLY_TEMPS_F)) {
+    persist_read_data(PERSIST_KEY_NWS_HOURLY_TEMPS_F, s_nws_hourly_temps_f,
+                      sizeof(s_nws_hourly_temps_f));
+  }
+  if (persist_exists(PERSIST_KEY_NWS_HOURLY_PRECIP_PCT)) {
+    persist_read_data(PERSIST_KEY_NWS_HOURLY_PRECIP_PCT,
+                      s_nws_hourly_precip_pct,
+                      sizeof(s_nws_hourly_precip_pct));
+  }
+  if (persist_exists(PERSIST_KEY_NWS_HOURLY_START_T)) {
+    s_nws_hourly_start_t =
+        (uint32_t)persist_read_int(PERSIST_KEY_NWS_HOURLY_START_T);
+  }
+  if (persist_exists(PERSIST_KEY_NWS_P1_LABEL)) {
+    persist_read_string(PERSIST_KEY_NWS_P1_LABEL, s_nws_p1_label,
+                        sizeof(s_nws_p1_label));
+  }
+  if (persist_exists(PERSIST_KEY_NWS_P1_SHORT)) {
+    persist_read_string(PERSIST_KEY_NWS_P1_SHORT, s_nws_p1_short,
+                        sizeof(s_nws_p1_short));
+  }
+  if (persist_exists(PERSIST_KEY_NWS_P1_DETAILED)) {
+    persist_read_string(PERSIST_KEY_NWS_P1_DETAILED, s_nws_p1_detailed,
+                        sizeof(s_nws_p1_detailed));
+  }
+  if (persist_exists(PERSIST_KEY_NWS_P1_TEMP)) {
+    s_nws_p1_temp = (int8_t)persist_read_int(PERSIST_KEY_NWS_P1_TEMP);
+  }
+  if (persist_exists(PERSIST_KEY_NWS_P2_LABEL)) {
+    persist_read_string(PERSIST_KEY_NWS_P2_LABEL, s_nws_p2_label,
+                        sizeof(s_nws_p2_label));
+  }
+  if (persist_exists(PERSIST_KEY_NWS_P2_SHORT)) {
+    persist_read_string(PERSIST_KEY_NWS_P2_SHORT, s_nws_p2_short,
+                        sizeof(s_nws_p2_short));
+  }
+  if (persist_exists(PERSIST_KEY_NWS_P2_DETAILED)) {
+    persist_read_string(PERSIST_KEY_NWS_P2_DETAILED, s_nws_p2_detailed,
+                        sizeof(s_nws_p2_detailed));
+  }
+  if (persist_exists(PERSIST_KEY_NWS_P2_TEMP)) {
+    s_nws_p2_temp = (int8_t)persist_read_int(PERSIST_KEY_NWS_P2_TEMP);
+  }
+  if (persist_exists(PERSIST_KEY_NWS_P3_LABEL)) {
+    persist_read_string(PERSIST_KEY_NWS_P3_LABEL, s_nws_p3_label,
+                        sizeof(s_nws_p3_label));
+  }
+  if (persist_exists(PERSIST_KEY_NWS_P3_SHORT)) {
+    persist_read_string(PERSIST_KEY_NWS_P3_SHORT, s_nws_p3_short,
+                        sizeof(s_nws_p3_short));
+  }
+  if (persist_exists(PERSIST_KEY_NWS_P3_DETAILED)) {
+    persist_read_string(PERSIST_KEY_NWS_P3_DETAILED, s_nws_p3_detailed,
+                        sizeof(s_nws_p3_detailed));
+  }
+  if (persist_exists(PERSIST_KEY_NWS_P3_TEMP)) {
+    s_nws_p3_temp = (int8_t)persist_read_int(PERSIST_KEY_NWS_P3_TEMP);
+  }
+  if (persist_exists(PERSIST_KEY_NWS_ALERT_TITLE)) {
+    persist_read_string(PERSIST_KEY_NWS_ALERT_TITLE, s_nws_alert_title,
+                        sizeof(s_nws_alert_title));
+  }
+  if (persist_exists(PERSIST_KEY_NWS_LOCATION_LABEL)) {
+    persist_read_string(PERSIST_KEY_NWS_LOCATION_LABEL,
+                        s_nws_location_label,
+                        sizeof(s_nws_location_label));
+  }
+  if (persist_exists(PERSIST_KEY_NWS_LAST_UPDATE_T)) {
+    s_nws_last_update_t =
+        (uint32_t)persist_read_int(PERSIST_KEY_NWS_LAST_UPDATE_T);
+  }
+  if (persist_exists(PERSIST_KEY_NWS_FORECAST_STYLE)) {
+    s_nws_forecast_style =
+        (persist_read_int(PERSIST_KEY_NWS_FORECAST_STYLE) == 1)
+            ? NwsForecastStyleNarrative : NwsForecastStyleChartHeavy;
   }
 }
 
