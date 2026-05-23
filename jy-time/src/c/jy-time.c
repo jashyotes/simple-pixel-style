@@ -848,7 +848,27 @@ static void fitness_draw_ring(GContext *ctx, GPoint center, int radius, int stro
   graphics_context_set_stroke_color(ctx, fitness_track_color());
   graphics_draw_arc(ctx, frame, GOvalScaleModeFitCircle, 0, TRIG_MAX_ANGLE);
 
-  if (target < 1 || value < 1) {
+  // 12 o'clock reference notch -- small outward tick to anchor the
+  // "loop closes here" position, so users can read "almost complete"
+  // vs "complete" at a glance without comparing arc endpoints.
+  graphics_context_set_stroke_color(ctx, fitness_track_color());
+  graphics_context_set_stroke_width(ctx, 2);
+  graphics_draw_line(ctx,
+                     GPoint(center.x, center.y - radius - 6),
+                     GPoint(center.x, center.y - radius - 9));
+
+  if (target < 1) {
+    return;
+  }
+  if (value < 1) {
+    // Zero-state indicator: small colored dot at the 12 o'clock start
+    // position so "loaded, you're at zero" is distinguishable from
+    // "data missing." Uses the metric color so it's clearly tied to
+    // this specific ring even when all three are stacked.
+    graphics_context_set_fill_color(ctx, color);
+    graphics_fill_circle(ctx,
+                         GPoint(center.x, center.y - radius),
+                         3);
     return;
   }
 
@@ -2185,7 +2205,8 @@ static void your_day_draw_overlay(GContext *ctx) {
   } else {
     snprintf(title_buf, sizeof(title_buf), "FUTURE");
   }
-  draw_text(ctx, title_buf, s_font_top, GRect(8, 64, SCREEN_W - 16, 24),
+  draw_text(ctx, title_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(8, 64, SCREEN_W - 16, 18),
             fitness_muted_text_color(), GTextAlignmentCenter);
 
   time_t now = time(NULL);
@@ -2430,7 +2451,7 @@ static void draw_forecast_graph(GContext *ctx, GRect bounds) {
   graphics_context_set_stroke_width(ctx, 1);
 
   // 5. Hour labels along bottom (0, 3, 6, ... 21) using the forecast's local
-  // start hour, not 0. Tick mark per hour, label every 3rd.
+  // start hour, not 0. Tick marks only anchor labeled hours.
   GFont label_font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
   struct tm *start_tm = localtime(&graph_start);
   int start_hour = start_tm ? start_tm->tm_hour : 0;
@@ -2438,15 +2459,16 @@ static void draw_forecast_graph(GContext *ctx, GRect bounds) {
   for (int i = 0; i < FORECAST_HOURS; i++) {
     int x = forecast_x_for_index(plot, i);
     int is_label = (i % 3) == 0;
-    int tick_h = is_label ? 4 : 2;
+    if (!is_label) {
+      continue;
+    }
+    int tick_h = 4;
     graphics_draw_line(ctx, GPoint(x, plot_bottom + 1),
                        GPoint(x, plot_bottom + 1 + tick_h));
-    if (is_label) {
-      char label[4];
-      snprintf(label, sizeof(label), "%d", (start_hour + i) % 24);
-      draw_text(ctx, label, label_font, GRect(x - 12, plot_bottom + 4, 24, 14),
-                fitness_muted_text_color(), GTextAlignmentCenter);
-    }
+    char label[4];
+    snprintf(label, sizeof(label), "%d", (start_hour + i) % 24);
+    draw_text(ctx, label, label_font, GRect(x - 12, plot_bottom + 4, 24, 14),
+              fitness_muted_text_color(), GTextAlignmentCenter);
   }
 }
 
@@ -2825,19 +2847,23 @@ static void nws_draw_dual_chart(GContext *ctx, GRect frame) {
   int y_min = t_min - pad;
   int y_max = t_max + pad;
 
-  // Frame
-  graphics_context_set_stroke_color(ctx, theme_fg_color());
-  graphics_context_set_stroke_width(ctx, 1);
-  graphics_draw_rect(ctx, frame);
-
-  // Dashed grid at 25 / 50 / 75 %
-  for (int pct = 25; pct <= 75; pct += 25) {
-    int y = frame.origin.y + frame.size.h
-        - (pct * frame.size.h) / 100;
-    for (int x = frame.origin.x + 2;
-         x < frame.origin.x + frame.size.w - 2; x += 4) {
-      graphics_draw_pixel(ctx, GPoint(x, y));
-      graphics_draw_pixel(ctx, GPoint(x + 1, y));
+  if (s_nws_hourly_start_t > 0) {
+    time_t graph_start = (time_t)s_nws_hourly_start_t;
+    time_t graph_end = graph_start + (n - 1) * 60 * 60;
+    int64_t total = (int64_t)graph_end - graph_start;
+    graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
+    graphics_context_set_stroke_width(ctx, 1);
+    if (s_sunrise_known && s_sunrise_t > graph_start && s_sunrise_t < graph_end) {
+      int64_t elapsed = (int64_t)s_sunrise_t - graph_start;
+      int sx = frame.origin.x + (int)((elapsed * (frame.size.w - 1)) / total);
+      graphics_draw_line(ctx, GPoint(sx, frame.origin.y),
+                         GPoint(sx, frame.origin.y + frame.size.h - 1));
+    }
+    if (s_sunset_known && s_sunset_t > graph_start && s_sunset_t < graph_end) {
+      int64_t elapsed = (int64_t)s_sunset_t - graph_start;
+      int sx = frame.origin.x + (int)((elapsed * (frame.size.w - 1)) / total);
+      graphics_draw_line(ctx, GPoint(sx, frame.origin.y),
+                         GPoint(sx, frame.origin.y + frame.size.h - 1));
     }
   }
 
@@ -2935,7 +2961,7 @@ static void nws_forecast_chart_heavy_draw(GContext *ctx) {
 
   const GRect chart = GRect(28, 42, SCREEN_W - 56, 90);
 
-  // Y-axis temp labels (left), aligned to chart's new top / mid / bottom.
+  // Y-axis temp labels (left), aligned to chart's top / bottom.
   int t_min = 127, t_max = -127;
   for (int i = 0; i < NWS_HOURLY_HOURS; i++) {
     int v = (int)s_nws_hourly_temps_f[i];
@@ -2947,27 +2973,19 @@ static void nws_forecast_chart_heavy_draw(GContext *ctx) {
   snprintf(y_lbl, sizeof(y_lbl), "%d", t_max);
   draw_text(ctx, y_lbl, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
             GRect(2, 38, 24, 16),
-            GColorDarkCandyAppleRed, GTextAlignmentRight);
-  snprintf(y_lbl, sizeof(y_lbl), "%d", (t_max + t_min) / 2);
-  draw_text(ctx, y_lbl, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(2, 79, 24, 16),
-            GColorDarkCandyAppleRed, GTextAlignmentRight);
+            fitness_muted_text_color(), GTextAlignmentRight);
   snprintf(y_lbl, sizeof(y_lbl), "%d", t_min);
   draw_text(ctx, y_lbl, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
             GRect(2, 118, 24, 16),
-            GColorDarkCandyAppleRed, GTextAlignmentRight);
+            fitness_muted_text_color(), GTextAlignmentRight);
 
-  // Y-axis precip labels (right), aligned to chart's new top / mid / bottom.
-  // Use Picton blue so the legend matches the new precip line color.
+  // Y-axis precip labels (right), aligned to chart's top / bottom.
   draw_text(ctx, "100", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
             GRect(SCREEN_W - 28, 38, 26, 16),
-            GColorPictonBlue, GTextAlignmentLeft);
-  draw_text(ctx, "50%", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(SCREEN_W - 28, 79, 26, 16),
-            GColorPictonBlue, GTextAlignmentLeft);
-  draw_text(ctx, "0%", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            fitness_muted_text_color(), GTextAlignmentLeft);
+  draw_text(ctx, "0", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
             GRect(SCREEN_W - 28, 118, 26, 16),
-            GColorPictonBlue, GTextAlignmentLeft);
+            fitness_muted_text_color(), GTextAlignmentLeft);
 
   nws_draw_dual_chart(ctx, chart);
 

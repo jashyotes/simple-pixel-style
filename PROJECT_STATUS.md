@@ -475,3 +475,52 @@ The rain-axis label at the top of the forecast chart in the Detailed Weather sha
 ### Emulator install gotcha (worth flagging)
 
 `pebble install --emulator emery` hangs silently when there's stale state in `~/.pebble-sdk/<ver>/emery/qemu_spi_flash.bin` from a previous half-started qemu-pebble run. Fix: `pkill -9 -f "qemu-pebble|pebble-tool|pypkjs"` then `pebble wipe` then retry. Memory note `feedback_pebble_emulator_install.md` updated with the wipe path.
+
+## 1.01 shipped — 2026-05-23
+
+Artifact: `release-assets/simple-pixel-style-1.01.0-emery.pbw`.
+
+Tufte-aligned cleanups across both weather graphs plus the Your Day overlay and the fitness ring overlay. All changes ran through the `tufte-viz` skill applied to existing visualizations.
+
+### Weather graph changes
+
+**NWS Chart Heavy (`nws_draw_dual_chart` / `nws_forecast_chart_heavy_draw`):**
+- Deleted the chart frame border (data lines now define the chart extent themselves — range-frame principle).
+- Deleted the dashed 25 / 50 / 75 % horizontal gridlines (moiré + redundant ink).
+- Dropped the mid-axis labels on both temp and precip axes. Labels now show only data extremes (max/min temp, 100/0 precip), with `"0%"` simplified to `"0"` for symmetry with `"100"`.
+- Muted both axis label colors from saturated `GColorDarkCandyAppleRed` / `GColorPictonBlue` to `fitness_muted_text_color()` so the colored data lines visually dominate (Tufte layering: data > labels).
+- Added sunrise/sunset vertical lines on the chart (ported pattern from the Detailed Weather graph), drawn in muted color at stroke 1 so they recede behind the stroke-2 data lines. Bounds-checked to skip drawing if the event falls outside the chart's 24h window. `int64_t` time arithmetic to avoid overflow on Pebble's 32-bit `time_t`.
+
+**Detailed Weather graph (`draw_forecast_graph`):**
+- Dropped minor tick marks. Previously drew a tick at every hour (height 2 unlabeled, height 4 labeled). Now ticks only render at the labeled positions (every 3rd hour) at height 4. The 21 unlabeled minor ticks were pure non-data ink.
+
+### Your Day overlay change
+
+- Title ("FUTURE" / "X HOUR WORKDAY") font dropped from `FONT_KEY_GOTHIC_18_BOLD` to `FONT_KEY_GOTHIC_14_BOLD`, GRect height reduced from 24 to 18. Position, color (`fitness_muted_text_color()`), and divider line unchanged. The pip row now reads as the primary information; the title recedes as a mode label.
+
+### Fitness ring overlay changes (`fitness_draw_ring`)
+
+- **12 o'clock reference notch on each track ring.** Small outward tick at the loop-closes position, drawn in track color at stroke 2. Sized so it sits in the gap between rings (or just outside the outermost ring) where it's actually visible — first-pass implementation had the notch landing inside the gray ring stroke and rendering invisible; fixed by moving offsets from -2/-5 to -6/-9 and bumping stroke 1 → 2.
+- **Zero-state indicator dot.** When `value < 1` and `target > 0`, a small color-matched filled circle (radius 3) draws at the 12 o'clock start position so "data loaded, you're at zero" is visually distinguishable from "data missing." Uses the metric color so each ring's zero state is clearly tied to its specific metric.
+
+Explicitly out of scope for this release (queued in `FUTURE_FEATURES.md` or rejected):
+- Current-time dot + inline value annotation on chart data lines (rejected, scope).
+- 12-hour-format hour labels on the Detailed Weather graph (rejected, separate from Tufte cleanup).
+- Cross-graph consistency between the two charts' hour-label formats (rejected, separate concern).
+- Fitness ring sparklines showing historical comparison (queued for a future release; requires daily persist).
+- Overflow visualization on completed fitness rings (text row already shows raw numbers).
+
+### Files changed
+
+- `jy-time/src/c/jy-time.c` — `draw_forecast_graph`, `nws_draw_dual_chart`, `nws_forecast_chart_heavy_draw`, `your_day_draw_overlay`, `fitness_draw_ring` function bodies only. No new helpers, no new statics, no new `#define`s, no new message keys.
+- `jy-time/package.json` — version bumped to 1.01.0.
+
+### Verification
+
+- `pebble build` succeeds. No new warnings (existing pre-existing warnings for unused `forecast_x_for_time`, `snprintf` format-truncation, and linker RWX all carried over unchanged).
+- Sample screenshots captured during planning (under repo root: `tufte-nws-sample.png`, `tufte-detailed-weather-sample.png`) verified the graph cleanups before commit. Fitness ring notch / zero-dot changes were math-verified against the ring stroke geometry (stroke 11 centered on radius → outer edge at radius + 5.5) but not screenshot-verified — visible inspection on watch is the final verification step.
+
+### Process notes
+
+- `tufte-viz` skill installed at `~/.claude/skills/tufte-viz/` from a downloaded SKILL.md + references bundle. Used here for the first time on this project.
+- Codex implementation of the chart cleanups + ring additions went cleanly once the sample-build prompt was tightened with explicit DO NOT guard rails (no test-data injection, no emulator drive, no version bump, no commit). One math bug in the notch offsets was on my spec, not on Codex's implementation — fixed in a follow-up patch before commit.
