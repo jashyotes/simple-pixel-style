@@ -446,7 +446,16 @@ New `WEATHER_SUMMARY_COMPACT` AppMessage key + persist key 238 + 32-byte buffer 
 
 Open-Meteo's `verboseWeatherSummary` is intentionally untouched as the control group — switch `WEATHER_PROVIDER` between `nws` and `open_meteo` via Clay config to A/B compare.
 
-### 3. Detailed Weather shake graph — "100%" → "100"
+### 3. NWS weather icon respects the v2 classifier
+
+QA pass after the first 0.99 build caught a mismatch on the NWS path: the icon mapper called `nwsShortForecastToWmoCode(periods[0].shortForecast)` directly, which would match `/thunderstorm/` on "Chance Showers And Thunderstorms" and render a thunderstorm icon next to "SUNNY, 30% STORMS AM" text. New helper `nwsDisplayWeatherCode` routes through the same classifier the verbose summary uses:
+
+- Current hour ACTIVE → icon from current `shortForecast` (storm icon when storming)
+- Current hour CHANCE / SLIGHT / CLEAR → icon from the dominant base condition (sun / cloud icon, matches text)
+
+Only changes behavior in the specific mismatched case; other tiers' icons unchanged.
+
+### 4. Detailed Weather shake graph — "100%" → "100"
 
 The rain-axis label at the top of the forecast chart in the Detailed Weather shake overlay was truncating to "10…" because its 26-px-wide GRect couldn't fit "100%" in `FONT_KEY_GOTHIC_14_BOLD`. Dropped the `%` only from the 100 label since the axis context (the 50% and 0% labels still carry the unit) makes it unambiguous.
 

@@ -1387,6 +1387,30 @@ function measureG18B(text) {
   return total;
 }
 
+// Pick the WMO weather code that should drive the C-side icon, using the
+// same certainty-aware classifier as the v2 verbose summary. Without this,
+// a current hour with shortForecast = "Chance Showers And Thunderstorms"
+// would render a thunderstorm icon next to a "MOSTLY SUNNY" text — the
+// icon mapper's /thunderstorm/ regex doesn't respect the "Chance" qualifier
+// any more than the old text logic did. Match the text:
+//   - ACTIVE current  → current shortForecast (storm icon when storming)
+//   - CHANCE/SLIGHT/CLEAR → dominant base (sun/cloud icon, matches text)
+function nwsDisplayWeatherCode(hourly, forecast) {
+  if (!hourly || !hourly.properties || !hourly.properties.periods
+      || !hourly.properties.periods.length) {
+    return 3;
+  }
+  var p0 = hourly.properties.periods[0];
+  if (nwsClassifyHourState(p0) === 'ACTIVE') {
+    return nwsShortForecastToWmoCode(p0.shortForecast);
+  }
+  var base = nwsDominantBase(hourly, forecast);
+  if (base) {
+    return nwsShortForecastToWmoCode(base);
+  }
+  return nwsShortForecastToWmoCode(p0.shortForecast);
+}
+
 // Verbose-weather summary pixel budgets in 18_BOLD:
 //   - Two-line layout: GRect(8, ..., SCREEN_W - 16, 20) = 184 px hard cap.
 //   - One-line layout: row text = "<temp>°F <summary>" shares
@@ -1924,11 +1948,14 @@ function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
     // day" overlay, and any complication that reads RAIN_CHANCE /
     // WEATHER_CODE follows NWS when it's the primary provider. Same
     // override-after-Open-Meteo pattern as WEATHER_SUMMARY above.
+    // WEATHER_CODE goes through nwsDisplayWeatherCode so the icon respects
+    // the same certainty classifier as the verbose summary (a 31% chance
+    // shouldn't render a storm icon next to "MOSTLY SUNNY" text).
     var periods0 = hourly.properties && hourly.properties.periods;
     if (periods0 && periods0.length) {
       var p0 = periods0[0];
       dictA[keys.RAIN_CHANCE] = nwsPeriodPrecipChance(p0);
-      dictA[keys.WEATHER_CODE] = nwsShortForecastToWmoCode(p0.shortForecast);
+      dictA[keys.WEATHER_CODE] = nwsDisplayWeatherCode(hourly, forecast);
     }
   }
   var hiLo = nwsTodayHiLo(forecast);
