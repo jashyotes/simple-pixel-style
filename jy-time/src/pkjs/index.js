@@ -1348,6 +1348,91 @@ function nwsBaseLabelFromShortForecast(text) {
   return 'CLOUDY';
 }
 
+// Empirically measured pixel widths of FONT_KEY_GOTHIC_18_BOLD for printable
+// ASCII (chars 32-126), captured by booting the watchface with a one-shot
+// graphics_text_layout_get_content_size loop and reading the APP_LOG values
+// from `pebble logs --emulator emery`. The summary row in two-line mode
+// always uses this font, and in one-line mode it's the fallback when 24_BOLD
+// doesn't fit — so sizing summaries to 18_BOLD's width budget guarantees
+// they'll render in either mode. The degree symbol (°, UTF-8 0xC2 0xB0) is
+// derived from string measurements: "75\xC2\xB0F " - "75F " = 7 px.
+var RG18B_W = {
+  32:4, 33:4, 34:7, 35:9, 36:9, 37:14, 38:10, 39:4, 40:6, 41:6,
+  42:8, 43:10, 44:4, 45:7, 46:4, 47:8, 48:8, 49:8, 50:8, 51:8,
+  52:8, 53:8, 54:8, 55:8, 56:8, 57:8, 58:4, 59:4, 60:8, 61:10,
+  62:8, 63:8, 64:12, 65:9, 66:9, 67:9, 68:9, 69:8, 70:8, 71:9,
+  72:9, 73:4, 74:7, 75:8, 76:8, 77:12, 78:9, 79:9, 80:9, 81:9,
+  82:9, 83:9, 84:8, 85:9, 86:9, 87:12, 88:9, 89:10, 90:8, 91:5,
+  92:8, 93:5, 94:8, 95:9, 96:6, 97:8, 98:8, 99:8, 100:8, 101:8,
+  102:6, 103:8, 104:8, 105:4, 106:3, 107:7, 108:4, 109:12, 110:8, 111:8,
+  112:8, 113:8, 114:6, 115:7, 116:6, 117:8, 118:8, 119:12, 120:8, 121:8,
+  122:7, 123:6, 124:4, 125:6, 126:7
+};
+var RG18B_DEGREE_W = 7;
+var RG18B_DEFAULT_W = 9; // safe upper bound for any unmeasured char
+
+function measureG18B(text) {
+  if (!text) return 0;
+  var total = 0;
+  var s = String(text);
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    if (c === 0xC2 && i + 1 < s.length && s.charCodeAt(i + 1) === 0xB0) {
+      total += RG18B_DEGREE_W;
+      i++;
+      continue;
+    }
+    total += (typeof RG18B_W[c] !== 'undefined') ? RG18B_W[c] : RG18B_DEFAULT_W;
+  }
+  return total;
+}
+
+// Verbose-weather summary pixel budgets in 18_BOLD:
+//   - Two-line layout: GRect(8, ..., SCREEN_W - 16, 20) = 184 px hard cap.
+//   - One-line layout: row text = "<temp>°F <summary>" shares
+//     max_row_width(192) - icon(18) - gap(4) = 170 px. Worst-case temp
+//     "100°F " = 43 px; so summary needs to fit in 170 - 43 = 127 px in
+//     18_BOLD. Round down to 125 for safety margin. (24_BOLD is still tried
+//     first by the C-side renderer when the whole row fits there.)
+var SUMMARY_BUDGET_TWO_LINE = 184;
+var SUMMARY_BUDGET_ONE_LINE = 125;
+
+// Pick the widest candidate that fits within budgetPx. Candidates should
+// already be ordered most-detailed first, so this prefers fuller summaries
+// whenever they fit. Returns the last candidate (most-truncated) if none fit
+// — that one was designed for a tight budget and should always render.
+function pickFittingSummary(candidates, budgetPx) {
+  for (var i = 0; i < candidates.length; i++) {
+    var s = candidates[i];
+    if (!s) continue;
+    if (measureG18B(s) <= budgetPx) return s;
+  }
+  return candidates[candidates.length - 1] || '';
+}
+
+// Map NWS shortForecast to a WMO weather code so the C-side icon mapper
+// (which speaks Open-Meteo's WMO codes) can render the right glyph when
+// NWS is the primary provider. Mirrors the regex order in
+// nwsBaseLabelFromShortForecast so "Mostly Sunny with Thunderstorms"
+// resolves to a storm icon.
+function nwsShortForecastToWmoCode(text) {
+  var s = String(text || '').toLowerCase();
+  if (/thunderstorm/.test(s)) return 95;
+  if (/freezing\s+rain/.test(s)) return 66;
+  if (/freezing\s+drizzle/.test(s)) return 57;
+  if (/snow|flurries|sleet/.test(s)) return 73;
+  if (/shower/.test(s)) return 81;
+  if (/drizzle/.test(s)) return 53;
+  if (/rain/.test(s)) return 63;
+  if (/fog|mist|haze|smoke/.test(s)) return 45;
+  if (/overcast|mostly\s+cloudy/.test(s)) return 3;
+  if (/partly\s+(cloudy|sunny)/.test(s)) return 2;
+  if (/mostly\s+(sunny|clear)/.test(s)) return 1;
+  if (/sunny|clear/.test(s)) return 0;
+  if (/cloudy/.test(s)) return 3;
+  return 3;
+}
+
 // Map NWS shortForecast to Open-Meteo's event-label subset (precip events
 // only). Returns null when no precip is present in the phrase.
 function nwsEventLabelFromShortForecast(text) {
@@ -1366,6 +1451,27 @@ function nwsPeriodEpoch(period) {
   if (!period || !period.startTime) return null;
   var ms = Date.parse(period.startTime);
   return isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
+// Pull today's high / low from NWS's 12-hour forecast periods. Looks at
+// the first three periods so the late-evening case (periods[0] is
+// "Tonight") still surfaces a sensible high from tomorrow's daytime
+// period. Returns nulls when a side is missing from a partial response.
+function nwsTodayHiLo(forecast) {
+  var result = { high: null, low: null };
+  var periods = (forecast && forecast.properties && forecast.properties.periods) || [];
+  for (var i = 0; i < periods.length && i < 3; i++) {
+    var p = periods[i];
+    if (!p || typeof p.temperature === 'undefined') continue;
+    var temp = Number(p.temperature);
+    if (!isFinite(temp)) continue;
+    if (p.isDaytime && result.high === null) {
+      result.high = temp;
+    } else if (!p.isDaytime && result.low === null) {
+      result.low = temp;
+    }
+  }
+  return result;
 }
 
 function nwsPeriodPrecipChance(period) {
@@ -1409,6 +1515,310 @@ function nwsFormatHourFromEpoch(epochSeconds, offsetSeconds) {
   var suffix = hours >= 12 ? 'P' : 'A';
   var hour = hours % 12 || 12;
   return hour + suffix;
+}
+
+// === New NWS verbose summary (v2): certainty-aware, pixel-fit aware ===
+//
+// The original nwsVerboseWeatherSummary (kept below as a control) treats any
+// hour with /thunderstorm/ + PoP>=30 as if precipitation were ACTIVELY
+// happening, then prints "STORMS TIL/AT/ALL DAY". This conflates "31% chance
+// of thunderstorms" with "actively thunderstorming," which is wrong: a 31%
+// chance means "probably not, but possibly." A reasonable person would say
+// "mostly sunny, slight storm risk this morning," not "storming until 1pm."
+//
+// v2 classifies each hour into ACTIVE / CHANCE / SLIGHT / CLEAR using NWS's
+// own phrasing prefix ("Chance", "Slight Chance", "Likely", bare) AND the
+// explicit PoP. "@ [Time]" / "TIL [Time]" only appears at true ACTIVE
+// transitions (active precip starting / ending); chance levels get a
+// "+X% KIND" qualifier on top of the dominant base condition instead. The
+// dominant base label comes from the first non-chance hour in the next 18h,
+// falling back to the 12-hour forecast period's detailedForecast prose if
+// no clear hour shows up in that window.
+
+// Classifier states used by the new logic.
+// ACTIVE: precip is happening or essentially certain (PoP>=60 or bare phrase
+//   like "Showers And Thunderstorms" with no Chance/Slight Chance qualifier
+//   or phrase contains "Likely").
+// CHANCE: PoP 30-59 OR phrase has "Chance " (but not "Slight Chance").
+// SLIGHT: PoP 10-29 OR phrase has "Slight Chance"/"Areas of"/"Patchy".
+// CLEAR : PoP<10 AND no precip term in shortForecast.
+function nwsClassifyHourState(period) {
+  if (!period) return 'CLEAR';
+  var s = String(period.shortForecast || '').toLowerCase();
+  var pop = nwsPeriodPrecipChance(period);
+  var hasPrecipTerm = /thunderstorm|rain|shower|snow|flurries|sleet|drizzle|freezing/.test(s);
+  var hasSlight = /slight\s+chance|areas\s+of|patchy/.test(s);
+  var hasChance = /\bchance\b/.test(s) && !/slight\s+chance/.test(s);
+  var hasLikely = /\blikely\b/.test(s);
+  var hasBarePrecip = hasPrecipTerm && !hasSlight && !hasChance && !hasLikely;
+  if (hasLikely || hasBarePrecip || pop >= 60) return 'ACTIVE';
+  if (hasChance || pop >= 30) return 'CHANCE';
+  if (hasSlight || pop >= 10) return 'SLIGHT';
+  return 'CLEAR';
+}
+
+// Map an hour's shortForecast to the precip kind being forecast (independent
+// of certainty). Returns null when no precip term is present at all.
+function nwsHourPrecipKind(period) {
+  if (!period) return null;
+  return nwsEventLabelFromShortForecast(period.shortForecast);
+}
+
+// Compact base-condition labels suited to the verbose-weather pixel budgets.
+// Mirrors nwsBaseLabelFromShortForecast but uses shorter forms ("CLR" for
+// CLEAR, "M CLDY" for MOSTLY CLOUDY) so the base alone leaves room for a
+// qualifier suffix in tight budgets.
+function nwsBaseLabelCompact(text) {
+  var s = String(text || '').toLowerCase();
+  if (/mostly\s+sunny/.test(s)) return 'MOSTLY SUNNY';
+  if (/mostly\s+clear/.test(s)) return 'MOSTLY CLR';
+  if (/partly\s+(cloudy|sunny)/.test(s)) return 'PARTLY CLDY';
+  if (/mostly\s+cloudy|overcast/.test(s)) return 'MOSTLY CLDY';
+  if (/fog|mist|haze|smoke/.test(s)) return 'FOG';
+  if (/sunny/.test(s)) return 'SUNNY';
+  if (/clear/.test(s)) return 'CLEAR';
+  if (/cloudy/.test(s)) return 'CLOUDY';
+  return '';
+}
+
+// When the full base + qualifier doesn't fit, drop the "MOSTLY"/"PARTLY"
+// modifier and keep a plain word. "M SUNNY" / "PT CLDY" reads as a typo on
+// a watch face; "SUNNY" or "CLOUDY" reads as a natural sentence. This loses
+// some nuance ("partly cloudy" → "cloudy") but the qualifier (chance + kind
+// + time bucket) is the load-bearing information.
+function nwsBaseLabelSimple(text) {
+  var full = nwsBaseLabelCompact(text);
+  switch (full) {
+    case 'MOSTLY SUNNY': return 'SUNNY';
+    case 'MOSTLY CLR':   return 'CLEAR';
+    case 'PARTLY CLDY':  return 'CLOUDY';
+    case 'MOSTLY CLDY':  return 'CLOUDY';
+    default: return full;
+  }
+}
+
+// Parse the detailedForecast prose for the dominant base condition. NWS
+// detailed text typically reads: "A chance of showers and thunderstorms
+// before 4pm. Mostly sunny, with a high near 86. [...]" — the chance
+// qualifier is the lead, the base condition is the second sentence. Scan
+// the full string for any known base phrase and return the first match.
+function nwsExtractBaseFromDetailed(text) {
+  var s = String(text || '').toLowerCase();
+  var patterns = [
+    [/mostly\s+sunny/, 'MOSTLY SUNNY'],
+    [/mostly\s+clear/, 'MOSTLY CLR'],
+    [/partly\s+(cloudy|sunny)/, 'PARTLY CLDY'],
+    [/mostly\s+cloudy/, 'MOSTLY CLDY'],
+    [/\bovercast\b/, 'MOSTLY CLDY'],
+    [/\bsunny\b/, 'SUNNY'],
+    [/\bclear\b/, 'CLEAR'],
+    [/\bcloudy\b/, 'CLOUDY'],
+    [/\bfog|\bmist|\bhaze/, 'FOG']
+  ];
+  for (var i = 0; i < patterns.length; i++) {
+    if (patterns[i][0].test(s)) return patterns[i][1];
+  }
+  return '';
+}
+
+// Find the dominant base condition for use in CHANCE/SLIGHT-tier summaries.
+// Strategy: scan the next 18 hourly periods looking for the first CLEAR
+// hour; use its shortForecast. If no CLEAR hour is found in the window
+// (e.g., the whole day has at least chance of precip threaded through),
+// fall back to the 12-hour forecast.periods[0].detailedForecast and pull
+// the base condition phrase out of its prose. Returns '' if neither yields
+// a known base.
+function nwsDominantBase(hourly, forecast) {
+  if (hourly && hourly.properties && hourly.properties.periods) {
+    var periods = hourly.properties.periods;
+    var maxScan = Math.min(periods.length, 18);
+    for (var i = 0; i < maxScan; i++) {
+      if (nwsClassifyHourState(periods[i]) === 'CLEAR') {
+        var label = nwsBaseLabelCompact(periods[i].shortForecast);
+        if (label) return label;
+      }
+    }
+  }
+  var fp = forecast && forecast.properties && forecast.properties.periods;
+  if (fp && fp.length) {
+    return nwsExtractBaseFromDetailed(fp[0].detailedForecast);
+  }
+  return '';
+}
+
+// Bucket an epoch into AM (0-11), PM (12-17), EVE (18-23), LATE (0-5 next).
+// Used as the time hint on CHANCE/SLIGHT qualifiers where a specific time
+// would overstate precision.
+function nwsTimeBucket(epochSec, offsetSec) {
+  var offset = Number(offsetSec) || 0;
+  var d = new Date((epochSec + offset) * 1000);
+  var h = d.getUTCHours();
+  if (h < 6)  return 'LATE';
+  if (h < 12) return 'AM';
+  if (h < 18) return 'PM';
+  return 'EVE';
+}
+
+// Find first hour in next 18 that classifies ACTIVE; returns index or -1.
+function nwsFirstActiveIdx(hourly) {
+  if (!hourly || !hourly.properties || !hourly.properties.periods) return -1;
+  var periods = hourly.properties.periods;
+  var maxScan = Math.min(periods.length, 18);
+  for (var i = 0; i < maxScan; i++) {
+    if (nwsClassifyHourState(periods[i]) === 'ACTIVE') return i;
+  }
+  return -1;
+}
+
+// Find the end of an ACTIVE run starting at startIdx: the first hour after
+// startIdx where state != ACTIVE AND the next 2 hours are also not ACTIVE
+// (3-consecutive-non-ACTIVE rule). Returns the index of the first
+// non-ACTIVE hour, or -1 if ACTIVE persists through the end of the window.
+function nwsEndOfActiveRun(hourly, startIdx) {
+  if (!hourly || !hourly.properties || !hourly.properties.periods) return -1;
+  var periods = hourly.properties.periods;
+  var maxScan = Math.min(periods.length, 18);
+  var dryRun = 0;
+  var firstDry = -1;
+  for (var i = startIdx + 1; i < maxScan; i++) {
+    if (nwsClassifyHourState(periods[i]) !== 'ACTIVE') {
+      if (dryRun === 0) firstDry = i;
+      dryRun++;
+      if (dryRun >= 3) return firstDry;
+    } else {
+      dryRun = 0;
+      firstDry = -1;
+    }
+  }
+  return -1;
+}
+
+// Find peak PoP and its time bucket across the chance window in next 18h.
+function nwsPeakChanceInfo(hourly) {
+  var info = { pop: 0, kind: null, bucket: null, epoch: null };
+  if (!hourly || !hourly.properties || !hourly.properties.periods) return info;
+  var periods = hourly.properties.periods;
+  var offset = nwsHourlyOffsetSeconds(hourly);
+  var maxScan = Math.min(periods.length, 18);
+  for (var i = 0; i < maxScan; i++) {
+    var pop = nwsPeriodPrecipChance(periods[i]);
+    if (pop > info.pop) {
+      info.pop = pop;
+      info.kind = nwsHourPrecipKind(periods[i]);
+      info.epoch = nwsPeriodEpoch(periods[i]);
+      info.bucket = info.epoch !== null ? nwsTimeBucket(info.epoch, offset) : null;
+    }
+  }
+  return info;
+}
+
+// Round a probability down to the nearest 5 so the displayed number doesn't
+// drift hour-to-hour on noise (e.g., 31% vs 33% renders identically).
+function nwsRoundPop(pop) {
+  return Math.max(0, Math.floor(Number(pop) / 5) * 5);
+}
+
+// Build a list of candidate summary strings for the current weather state.
+// Ordered most-detailed first so pickFittingSummary returns the longest
+// candidate that fits the caller's pixel budget.
+function nwsBuildSummaryCandidates(hourly, forecast) {
+  if (!hourly || !hourly.properties || !hourly.properties.periods
+      || !hourly.properties.periods.length) {
+    return [''];
+  }
+  var periods = hourly.properties.periods;
+  var offset = nwsHourlyOffsetSeconds(hourly);
+  var currentState = nwsClassifyHourState(periods[0]);
+  var currentKind = nwsHourPrecipKind(periods[0]);
+  var firstActiveIdx = nwsFirstActiveIdx(hourly);
+
+  // Tier 1: currently ACTIVE.
+  if (currentState === 'ACTIVE') {
+    var kind = currentKind || 'RAIN';
+    var endIdx = nwsEndOfActiveRun(hourly, 0);
+    if (endIdx > 0) {
+      var endEpoch = nwsPeriodEpoch(periods[endIdx]);
+      var endTime = endEpoch !== null ? nwsFormatHourFromEpoch(endEpoch, offset) : '';
+      return [
+        kind + ' TIL ' + endTime,
+        kind + ' TIL ' + endTime,
+        kind
+      ];
+    }
+    return [kind + ' ALL DAY', kind + ' ALL DAY', kind];
+  }
+
+  // Tier 2: not active now, ACTIVE somewhere in next 18h.
+  if (firstActiveIdx > 0) {
+    var startEpoch = nwsPeriodEpoch(periods[firstActiveIdx]);
+    var startTime = startEpoch !== null ? nwsFormatHourFromEpoch(startEpoch, offset) : '';
+    var kind2 = nwsHourPrecipKind(periods[firstActiveIdx]) || 'RAIN';
+    var bucket2 = startEpoch !== null ? nwsTimeBucket(startEpoch, offset) : '';
+    return [
+      kind2 + ' AT ' + startTime,
+      kind2 + ' AT ' + startTime,
+      kind2 + ' ' + bucket2
+    ];
+  }
+
+  // Tier 3/4: chance window present, no ACTIVE in 18h. Build base + qualifier.
+  // Phrasing rules (chosen for naturalness over information density):
+  //   - "30% STORMS AM" (number then kind then time bucket) reads as a
+  //     percentage statement; "+30%" reads as offset notation.
+  //   - Base names stay full ("MOSTLY SUNNY") or simplify whole-word
+  //     ("SUNNY") rather than abbreviating to "M SUN" which reads as a typo.
+  //   - Comma separates the base clause from the chance clause so the line
+  //     parses as English ("Mostly sunny, with 30% storms in the morning").
+  //   - When even base + chance doesn't fit, drop the chance clause rather
+  //     than mangling either side — at low PoP (~30%) the base condition is
+  //     the dominant truth, so falling back to just the base is honest.
+  var peak = nwsPeakChanceInfo(hourly);
+  if (peak.pop >= 10) {
+    var base = nwsDominantBase(hourly, forecast);
+    var baseSimple = nwsBaseLabelSimple(base) || base;
+    var kind3 = peak.kind || currentKind || 'RAIN';
+    var pop = nwsRoundPop(peak.pop);
+    var bucket3 = peak.bucket || '';
+    var pctClause = pop + '% ' + kind3;          // "30% STORMS"
+    var pctWithTime = pctClause + (bucket3 ? ' ' + bucket3 : '');
+    var timeClause = (bucket3 ? bucket3 + ' ' : '') + kind3;  // "AM STORMS"
+
+    var candidates = [];
+    if (base) {
+      candidates.push(base + ', ' + pctWithTime);              // MOSTLY SUNNY, 30% STORMS AM
+      candidates.push(base + ', ' + pctClause);                // MOSTLY SUNNY, 30% STORMS
+      candidates.push(base + ', ' + timeClause);               // MOSTLY SUNNY, AM STORMS
+      candidates.push(baseSimple + ', ' + pctWithTime);        // SUNNY, 30% STORMS AM
+      candidates.push(baseSimple + ', ' + pctClause);          // SUNNY, 30% STORMS
+      candidates.push(baseSimple + ', ' + timeClause);         // SUNNY, AM STORMS
+      candidates.push(base);                                    // MOSTLY SUNNY
+      candidates.push(baseSimple);                              // SUNNY
+    } else {
+      candidates.push(pctWithTime);
+      candidates.push(pctClause);
+    }
+    return candidates;
+  }
+
+  // Tier 5: nothing precip in 18h. Just the base condition. Prefer the full
+  // name; the simple form is the fallback if the full one ever stretches.
+  var fallbackBase = nwsBaseLabelCompact(periods[0].shortForecast)
+                  || nwsDominantBase(hourly, forecast)
+                  || 'CLEAR';
+  return [
+    fallbackBase,
+    nwsBaseLabelSimple(fallbackBase) || fallbackBase
+  ];
+}
+
+// Build the two-line and one-line verbose summaries from the candidate list.
+function nwsBuildVerboseSummariesV2(hourly, forecast) {
+  var candidates = nwsBuildSummaryCandidates(hourly, forecast);
+  var trimmed = candidates.map(function(s) { return String(s || '').replace(/\s+/g, ' ').trim(); });
+  return {
+    twoLine: pickFittingSummary(trimmed, SUMMARY_BUDGET_TWO_LINE),
+    oneLine: pickFittingSummary(trimmed, SUMMARY_BUDGET_ONE_LINE)
+  };
 }
 
 // NWS-data driven equivalent of verboseWeatherSummary. Same vocabulary,
@@ -1498,11 +1908,32 @@ function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
     dictA[keys.NWS_HOURLY_TEMPS_F] = nwsHourlyPackTemps(hourly);
     dictA[keys.NWS_HOURLY_PRECIP_PCT] = nwsHourlyPackPrecip(hourly);
     dictA[keys.NWS_HOURLY_START_T] = nwsHourlyStartEpoch(hourly);
-    var summary = nwsVerboseWeatherSummary(hourly);
-    if (summary) {
-      dictA[keys.WEATHER_SUMMARY] = summary;
+    // v2 verbose summary: certainty-aware (respects "Chance" vs "Likely" vs
+    // bare phrasing) and pixel-fit aware (picks the longest candidate that
+    // fits the budget for the user's verbose-weather layout). Open-Meteo
+    // intentionally keeps the original verboseWeatherSummary so the user can
+    // A/B compare by switching WEATHER_PROVIDER.
+    var summaries = nwsBuildVerboseSummariesV2(hourly, forecast);
+    if (summaries.twoLine) {
+      dictA[keys.WEATHER_SUMMARY] = summaries.twoLine;
+    }
+    if (summaries.oneLine) {
+      dictA[keys.WEATHER_SUMMARY_COMPACT] = summaries.oneLine;
+    }
+    // Override the shared current-conditions keys so the main face, "Your
+    // day" overlay, and any complication that reads RAIN_CHANCE /
+    // WEATHER_CODE follows NWS when it's the primary provider. Same
+    // override-after-Open-Meteo pattern as WEATHER_SUMMARY above.
+    var periods0 = hourly.properties && hourly.properties.periods;
+    if (periods0 && periods0.length) {
+      var p0 = periods0[0];
+      dictA[keys.RAIN_CHANCE] = nwsPeriodPrecipChance(p0);
+      dictA[keys.WEATHER_CODE] = nwsShortForecastToWmoCode(p0.shortForecast);
     }
   }
+  var hiLo = nwsTodayHiLo(forecast);
+  addRounded(dictA, keys.HIGH_TEMP, hiLo.high, -99, 127);
+  addRounded(dictA, keys.LOW_TEMP, hiLo.low, -99, 127);
   dictA[keys.NWS_ALERT_TITLE] = nwsToShortString(alertTitle, NWS_ALERT_LEN);
   dictA[keys.NWS_LAST_UPDATE_T] = Math.floor(Date.now() / 1000);
   sendToWatch(dictA, 'NWS A (hourly + alert)');

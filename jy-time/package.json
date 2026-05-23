@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "0.97.0",
+  "version": "0.99.0",
   "keywords": [
     "pebble-app"
   ],
@@ -42,6 +42,7 @@
       "TEMPERATURE_UNIT",
       "VERBOSE_WEATHER",
       "WEATHER_SUMMARY",
+      "WEATHER_SUMMARY_COMPACT",
       "VERBOSE_WEATHER_STYLE",
       "LIGHT_MODE",
       "INVERT_TOP_BAR",

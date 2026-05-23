@@ -26,6 +26,7 @@
 #define PERSIST_KEY_TEMP_UNIT      114
 #define PERSIST_KEY_VERBOSE_WEATHER 115
 #define PERSIST_KEY_WEATHER_SUMMARY 116
+#define PERSIST_KEY_WEATHER_SUMMARY_COMPACT 238
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -329,6 +330,7 @@ static char s_wind_buf[8];
 static char s_uv_buf[8];
 static char s_event_delta_buf[8];
 static char s_weather_summary_buf[32] = "CLOUDY";
+static char s_weather_summary_compact_buf[32] = "";
 static char s_calendar_event_titles[4][80];
 static char s_calendar_event_deltas[4][16];
 static char s_alt_tz_label[24] = "LONDON";
@@ -2957,7 +2959,7 @@ static void nws_forecast_chart_heavy_draw(GContext *ctx) {
 
   // Y-axis precip labels (right), aligned to chart's new top / mid / bottom.
   // Use Picton blue so the legend matches the new precip line color.
-  draw_text(ctx, "100%", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+  draw_text(ctx, "100", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
             GRect(SCREEN_W - 28, 38, 26, 16),
             GColorPictonBlue, GTextAlignmentLeft);
   draw_text(ctx, "50%", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
@@ -3270,7 +3272,19 @@ static void draw_verbose_weather_row(GContext *ctx) {
     snprintf(temp_text, sizeof(temp_text), "--");
   }
 
-  const char *summary = s_weather_summary_buf[0] ? s_weather_summary_buf : "WEATHER";
+  // Two-line layout has the summary on its own 184-px row; one-line layout
+  // shares a 170-px row with the temperature, so it gets a shorter variant
+  // pre-sized in pkjs against the per-char widths of FONT_KEY_GOTHIC_18_BOLD.
+  // Fall back to the full summary if compact is empty (Open-Meteo path,
+  // first boot before any pkjs delivery, or persist not yet populated).
+  const char *summary;
+  if (verbose_weather_layout_is_large()) {
+    summary = s_weather_summary_buf[0] ? s_weather_summary_buf : "WEATHER";
+  } else {
+    summary = s_weather_summary_compact_buf[0]
+                ? s_weather_summary_compact_buf
+                : (s_weather_summary_buf[0] ? s_weather_summary_buf : "WEATHER");
+  }
 
   if (verbose_weather_layout_is_large()) {
     char large_temp_text[12];
@@ -4070,6 +4084,15 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_string(PERSIST_KEY_WEATHER_SUMMARY, s_weather_summary_buf);
   }
 
+  t = dict_find(iter, MESSAGE_KEY_WEATHER_SUMMARY_COMPACT);
+  if (t && t->type == TUPLE_CSTRING) {
+    strncpy(s_weather_summary_compact_buf, t->value->cstring,
+            sizeof(s_weather_summary_compact_buf) - 1);
+    s_weather_summary_compact_buf[sizeof(s_weather_summary_compact_buf) - 1] = '\0';
+    persist_write_string(PERSIST_KEY_WEATHER_SUMMARY_COMPACT,
+                         s_weather_summary_compact_buf);
+  }
+
   t = dict_find(iter, MESSAGE_KEY_COMPLICATION_1);
   if (t) {
     s_complication_slots[0] = sanitize_complication(t->value->int32, ComplicationTemperature);
@@ -4723,6 +4746,12 @@ static void load_persisted(void) {
     persist_read_string(PERSIST_KEY_WEATHER_SUMMARY, s_weather_summary_buf,
                         sizeof(s_weather_summary_buf));
     s_weather_summary_buf[sizeof(s_weather_summary_buf) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_WEATHER_SUMMARY_COMPACT)) {
+    persist_read_string(PERSIST_KEY_WEATHER_SUMMARY_COMPACT,
+                        s_weather_summary_compact_buf,
+                        sizeof(s_weather_summary_compact_buf));
+    s_weather_summary_compact_buf[sizeof(s_weather_summary_compact_buf) - 1] = '\0';
   }
   if (persist_exists(PERSIST_KEY_EVENT_DELTA)) {
     persist_read_string(PERSIST_KEY_EVENT_DELTA, s_event_delta_buf, sizeof(s_event_delta_buf));

@@ -378,3 +378,91 @@ Plan: `Plan To Implement - 0.82 CASIO Cleanup (Phantom Segments + Anchor Fixes).
 - 0.79 features intact: forecast graph, sun icon, all complications, weather, meeting bar.
 
 Future feature notes appended to `FUTURE_FEATURES.md`: additional time fonts (ForecasWatch 2 et al.), bring-back conditions for seconds, bring-back conditions for medium/large digit sizes.
+
+## 0.87 shipped — 2026-05-17
+
+Final release of the day. Commit `3901d09`, artifacts at `release-assets/simple-pixel-style-0.87-emery.pbw` and `release-assets/RELEASE_NOTES_0.87.md`.
+
+The CASIO iteration (0.79 through 0.86) consolidated into a stable 0.87 with these visible changes vs the prior shipped state:
+
+- **Time font select** at the top of Layout. Four options: Default (`FONT_KEY_BITHAM_42_BOLD`, the original; AM/PM keeps its `visual_bottom` anchor), CASIO style (vendored WV-58A DIGITAL_BOLD at point 55, drawn in the same time_frame as the other fonts with no special centering math), Roboto (`FONT_KEY_ROBOTO_BOLD_SUBSET_49`, AM/PM anchored to digit bottom), LECO (`FONT_KEY_LECO_32_BOLD_NUMBERS`, AM/PM anchored to digit bottom). Replaces the LARGE_CASIO_TIME boolean. Persist key 212 reused with backward-compatible mapping (0 = Default, 1 = CASIO).
+- **CASIO phantom 88:88 backdrop toggle.** Defaults ON. The JS sender bug from prior 0.84 builds (used `=== false` which missed Clay's integer payloads) is fixed; toggling off actually disables the backdrop now. `CASIO_PHANTOM: true` added to `defaultSettings`.
+- **Forecast graph in Detailed Weather shake overlay rebuilt** as a closer port of forecaswatch2 by mattrossman. Correct draw order: night-hatch background, precip filled area, sunrise/sunset boundary lines, temp line on top with stroke width 3. Hour labels using the local start hour, tick marks every hour, no plot border. Night hatching uses forecaswatch2's diagonal-aligned algorithm (x + y_start modulo spacing) so diagonals stay continuous across segments.
+- **Sunrise/sunset labels widened** from 48/58 px to 72/76 px and icons re-spaced so "12:45AM" and "12:45PM" no longer truncate the AM/PM letters.
+- **Mouse icon hard-anchored** to `TIME_VISUAL_BOTTOM - QUIET_TIME_ICON_SIZE` (Y=93) in every font mode and every layout. Decoupled from weather-bar `slot_bottom` which was causing position drift in verbose modes.
+- **Color picker label** "Black & White - Tuxedo" renamed to "B&W - Tuxdeo".
+- **Removed from Clay**: LARGE_CASIO_TIME toggle, CASIO_DIGIT_SIZE select, CASIO_DROPSHADOW toggle, CASIO_SECONDS toggle. CASIO 70 and 90 pt font handles stay loaded on the C side so the size selector can return when its fit envelope is reworked.
+- **Step counter font stays W800 sprite only.** Experimental Roboto and CASIO step font options from intermediate 0.84 builds were pulled (user found them broken / hard to rationalize). The W800 sprite already adds a comma separator for 4+ digit counts.
+
+Bundled at commit time but not yet pushed:
+- 7 commits ahead of `origin/main` (the 6 prior unpushed releases 0.63 through 0.76 plus the new 0.87). Push blocked by `Bash(git push*)` deny rule in `~/.claude/settings.json`; needs manual push from terminal or removal of the deny rule.
+
+Vendored deps committed to repo (were untracked before):
+- `jy-time/resources/fonts/DIGITAL_BOLD.TTF`
+- `jy-time/resources/images/wv58a-am.png`, `wv58a-pm.png`
+- `jy-time/resources/images/icon-bitcoin-bubble.png`, `icon-stocks-bubble.png`
+- `jy-time/LICENSES/WV-58A-ATTRIBUTION.txt`
+
+Source of truth for the iteration: `Plan To Implement - 0.80 CASIO Fix.md`, `Plan To Implement - 0.81 CASIO Fix Pass.md`, `Plan To Implement - 0.82 CASIO Cleanup (Phantom Segments + Anchor Fixes).md`. Plans drove the work but the final 0.87 ship deviated from the per-version plans in places (e.g., the step font experiment was pulled mid-iteration rather than carried forward).
+
+`FUTURE_FEATURES.md` still tracks the queue. Two items worth flagging here for the next planning pass:
+
+- **NetHack-style Your Day shake overlay.** Plan: `Plan To Implement - Your NetHack Day Shake Overlay.md`. Roguelike-styled variant of the existing Your Day overlay (ASCII / dungeon-map vibe with events along the day's timeline). Has its own dedicated plan file; not yet scheduled.
+- **Sun and moon day/night progress bar** as a meeting-bar replacement mode. 24 dots, one per hour, full-day window. **The center of the bar is noon** (bar runs midnight on the left, 11pm on the right, so the geometric midpoint lands on the noon mark — gives a left=AM / right=PM read at a glance). Sun icon by day, moon icon (with vendored `moon_phases.ttf` from pebble-mss) by night. Past dots filled, future dots hollow. Lift 200 to 300 lines plus one vendored font.
+
+Other queued items in `FUTURE_FEATURES.md`: additional time fonts beyond LECO, bring-back conditions for the CASIO seconds toggle, bring-back conditions for medium/large CASIO digit sizes.
+
+## 0.99 shipped — 2026-05-23
+
+Artifact: `release-assets/simple-pixel-style-0.99.0-emery.pbw`.
+
+Three weather-path changes bundled together:
+
+### 1. NWS overrides for the Your Day overlay (carried from 0.98)
+
+When `WEATHER_PROVIDER = nws`, the NWS path now also writes `RAIN_CHANCE`, `WEATHER_CODE`, `HIGH_TEMP`, and `LOW_TEMP` from NWS hourly + forecast data, not just `WEATHER_SUMMARY`. Previously these stayed on Open-Meteo even when NWS was selected, which caused the Your Day overlay to display 6% rain while NWS reported 20% for the same ZIP. Two new helpers: `nwsShortForecastToWmoCode` (maps NWS shortForecast strings to the WMO codes the C-side icon mapper expects) and `nwsTodayHiLo` (extracts today's high/low from `forecast.properties.periods` with the late-evening case handled — when periods[0] is "Tonight", low comes from periods[0] and high from periods[1]).
+
+### 2. NWS verbose-weather summary v2 — certainty-aware, pixel-fit aware
+
+Replaces the NWS path's `nwsVerboseWeatherSummary` with a new builder that respects NWS's confidence prefixes ("Chance", "Slight Chance", "Likely", bare) instead of treating any `/thunderstorm/` regex hit + PoP ≥ 30 as actively storming. The old logic produced strings like "STORMS TIL 1P" for a 31% chance morning, which mismatches what NWS itself describes as "Mostly sunny, with a slight chance of showers and thunderstorms before 4pm."
+
+New per-hour classifier returns ACTIVE / CHANCE / SLIGHT / CLEAR:
+- ACTIVE: PoP ≥ 60, or bare precip term, or phrase contains "Likely"
+- CHANCE: PoP 30–59 or phrase contains "Chance" (not "Slight Chance")
+- SLIGHT: PoP 10–29 or phrase contains "Slight Chance" / "Areas of" / "Patchy"
+- CLEAR: PoP < 10 and no precip term
+
+Tiered output (TIL/AT only at real ACTIVE transitions):
+- Tier 1 (currently ACTIVE): "STORMS TIL 4P" or "STORMS ALL DAY"
+- Tier 2 (ACTIVE later): "STORMS AT 2P"
+- Tier 3/4 (CHANCE/SLIGHT, no future ACTIVE): "{base}, {pop}% {kind} {bucket}" e.g. "SUNNY, 40% STORMS LATE" — base condition pulled from the first CLEAR hour in the next 18h, falling back to parsing `forecast.periods[0].detailedForecast` for the base phrase when no hour in the window classifies CLEAR
+- Tier 5 (all CLEAR): just the base condition
+
+Pixel-aware string fitting: per-character widths for `FONT_KEY_GOTHIC_18_BOLD` were measured empirically in the emery emulator (one-shot `graphics_text_layout_get_content_size` loop, ASCII 32–126) and stored as `RG18B_W` in pkjs. `pickFittingSummary` evaluates candidates longest-first and returns the longest that fits the budget. Budgets:
+- Two-line layout: 184 px (the full summary row in 18_BOLD)
+- One-line layout: 125 px (after worst-case "100°F " temp on the shared row)
+
+New `WEATHER_SUMMARY_COMPACT` AppMessage key + persist key 238 + 32-byte buffer on the C side. `draw_verbose_weather_row` reads the compact buffer in one-line mode and the full buffer in two-line, falling back to full when compact is empty so Open-Meteo's path still renders unchanged.
+
+Open-Meteo's `verboseWeatherSummary` is intentionally untouched as the control group — switch `WEATHER_PROVIDER` between `nws` and `open_meteo` via Clay config to A/B compare.
+
+### 3. Detailed Weather shake graph — "100%" → "100"
+
+The rain-axis label at the top of the forecast chart in the Detailed Weather shake overlay was truncating to "10…" because its 26-px-wide GRect couldn't fit "100%" in `FONT_KEY_GOTHIC_14_BOLD`. Dropped the `%` only from the 100 label since the axis context (the 50% and 0% labels still carry the unit) makes it unambiguous.
+
+### Files changed
+
+- `jy-time/src/pkjs/index.js` — width table, `measureG18B`, `pickFittingSummary`, NWS classifier + base extractor + summary builder v2, NWS shared-key overrides for Your Day
+- `jy-time/src/c/jy-time.c` — `PERSIST_KEY_WEATHER_SUMMARY_COMPACT = 238`, compact buffer, inbox handler, persist load, render selector, "100" label
+- `jy-time/package.json` — version 0.99.0, added `WEATHER_SUMMARY_COMPACT` to messageKeys
+
+### Verification
+
+- `pebble build` succeeds for emery
+- Synthetic + live NWS test cases (in throwaway `/tmp/test_nws_v2.js`) cover all five tiers; outputs documented in chat transcript
+- 36542 live data: old "STORMS TIL 1P" → new "SUNNY, 40% STORMS LATE" (two-line) / "MOSTLY SUNNY" (one-line)
+- Pixel widths captured by booting the watchface in the emery emulator with a one-shot measurement loop in `init()`; instrumentation reverted before ship
+
+### Emulator install gotcha (worth flagging)
+
+`pebble install --emulator emery` hangs silently when there's stale state in `~/.pebble-sdk/<ver>/emery/qemu_spi_flash.bin` from a previous half-started qemu-pebble run. Fix: `pkill -9 -f "qemu-pebble|pebble-tool|pypkjs"` then `pebble wipe` then retry. Memory note `feedback_pebble_emulator_install.md` updated with the wipe path.
