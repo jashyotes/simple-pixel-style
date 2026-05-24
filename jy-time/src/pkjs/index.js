@@ -977,76 +977,216 @@ function hourlyRainChance(hourly, index) {
   return isFinite(value) ? clamp(Math.round(value), 0, 100) : 0;
 }
 
-function significantWeatherEvent(hourly, index) {
-  var code = hourlyWeatherCode(hourly, index);
-  if (code === null) {
-    return null;
-  }
+// === Open-Meteo verbose summary v2 ===
+// Same certainty-aware, pixel-fit aware design as the NWS v2 builder
+// (nwsBuildSummaryCandidates / nwsBuildVerboseSummariesV2 farther below).
+// WMO weather codes drive the classifier instead of NWS phrasing prefixes:
+// PoP alone determines certainty (ACTIVE/CHANCE/SLIGHT/CLEAR); the WMO
+// code determines the precip kind (STORMS/RAIN/SNOW/etc) when there is one.
 
-  var label = weatherEventLabel(code);
-  if (!label) {
-    return null;
-  }
-
-  var rainChance = hourlyRainChance(hourly, index);
-  return rainChance >= 30 || code >= 71 ? label : null;
+function omClassifyHourState(code, pop) {
+  pop = Number(pop) || 0;
+  if (pop >= 60) return 'ACTIVE';
+  if (pop >= 30) return 'CHANCE';
+  if (pop >= 10) return 'SLIGHT';
+  return 'CLEAR';
 }
 
-function verboseWeatherSummary(hourly, currentCode, utcOffsetSeconds) {
-  var dryHoursRequired = 3;
-  var fallback = weatherBaseLabel(Number(currentCode));
-  var startIndex = nearestHourlyIndex(hourly, utcOffsetSeconds);
-  if (startIndex < 0 || !hourly.time) {
-    return fallback;
+function omHourPrecipKind(hourly, index) {
+  var code = hourlyWeatherCode(hourly, index);
+  return code !== null ? weatherEventLabel(code) : null;
+}
+
+function omBaseLabelSimple(label) {
+  switch (label) {
+    case 'MOSTLY CLR': return 'CLEAR';
+    case 'PARTLY CLDY': return 'CLOUDY';
+    default: return label;
   }
+}
 
-  var now = Math.floor(Date.now() / 1000);
-  var today = localDayNumber(now, utcOffsetSeconds);
-  var currentEvent = weatherEventLabel(Number(currentCode)) ||
-      significantWeatherEvent(hourly, startIndex);
-
-  if (currentEvent) {
-    var dryRun = 0;
-    var firstDryIndex = -1;
-    for (var i = startIndex + 1; i < hourly.time.length; i++) {
-      var stopEpoch = hourlyEpochSeconds(hourly, i, utcOffsetSeconds);
-      if (stopEpoch === null || localDayNumber(stopEpoch, utcOffsetSeconds) !== today) {
-        return currentEvent + ' ALL DAY';
-      }
-      if (!significantWeatherEvent(hourly, i)) {
-        if (dryRun === 0) {
-          firstDryIndex = i;
+// Scan the next 18 hourly periods for the first CLEAR hour and return its
+// base label. If no CLEAR hour exists in the window, fall back to the
+// current code's base label (if it's a clear/cloud code) or "CLOUDY"
+// (sensible default for a chance-of-precip-throughout day).
+function omDominantBase(hourly, currentCode, utcOffsetSeconds) {
+  if (hourly && hourly.weather_code && hourly.precipitation_probability) {
+    var startIdx = nearestHourlyIndex(hourly, utcOffsetSeconds);
+    if (startIdx >= 0) {
+      var maxScan = Math.min(hourly.weather_code.length, startIdx + 18);
+      for (var i = startIdx; i < maxScan; i++) {
+        var pop = hourlyRainChance(hourly, i);
+        var code = hourlyWeatherCode(hourly, i);
+        if (omClassifyHourState(code, pop) === 'CLEAR' && code !== null) {
+          return weatherBaseLabel(code);
         }
-        dryRun++;
-        if (dryRun >= dryHoursRequired) {
-          var dryEpoch = hourlyEpochSeconds(hourly, firstDryIndex, utcOffsetSeconds);
-          if (dryEpoch !== null) {
-            return currentEvent + ' TIL ' +
-                formatWeatherHourFromEpoch(dryEpoch, utcOffsetSeconds);
-          }
-          return currentEvent + ' ALL DAY';
-        }
-      } else {
-        dryRun = 0;
-        firstDryIndex = -1;
       }
     }
-    return currentEvent + ' ALL DAY';
+  }
+  var currCode = Number(currentCode);
+  if (isFinite(currCode) && currCode >= 0 && currCode <= 48) {
+    return weatherBaseLabel(currCode);
+  }
+  return 'CLOUDY';
+}
+
+function omFirstActiveIdx(hourly, utcOffsetSeconds) {
+  if (!hourly || !hourly.weather_code) return -1;
+  var startIdx = nearestHourlyIndex(hourly, utcOffsetSeconds);
+  if (startIdx < 0) return -1;
+  var maxScan = Math.min(hourly.weather_code.length, startIdx + 18);
+  for (var i = startIdx; i < maxScan; i++) {
+    if (omClassifyHourState(hourlyWeatherCode(hourly, i),
+                            hourlyRainChance(hourly, i)) === 'ACTIVE') {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function omEndOfActiveRun(hourly, startIdx) {
+  if (!hourly || !hourly.weather_code) return -1;
+  var maxScan = Math.min(hourly.weather_code.length, startIdx + 18);
+  var dryRun = 0;
+  var firstDry = -1;
+  for (var i = startIdx + 1; i < maxScan; i++) {
+    var state = omClassifyHourState(hourlyWeatherCode(hourly, i),
+                                    hourlyRainChance(hourly, i));
+    if (state !== 'ACTIVE') {
+      if (dryRun === 0) firstDry = i;
+      dryRun++;
+      if (dryRun >= 3) return firstDry;
+    } else {
+      dryRun = 0;
+      firstDry = -1;
+    }
+  }
+  return -1;
+}
+
+function omPeakChanceInfo(hourly, utcOffsetSeconds) {
+  var info = { pop: 0, kind: null, bucket: null, epoch: null };
+  if (!hourly || !hourly.precipitation_probability) return info;
+  var startIdx = nearestHourlyIndex(hourly, utcOffsetSeconds);
+  if (startIdx < 0) return info;
+  var maxScan = Math.min(hourly.precipitation_probability.length, startIdx + 18);
+  for (var i = startIdx; i < maxScan; i++) {
+    var pop = hourlyRainChance(hourly, i);
+    if (pop > info.pop) {
+      info.pop = pop;
+      info.kind = omHourPrecipKind(hourly, i);
+      info.epoch = hourlyEpochSeconds(hourly, i, utcOffsetSeconds);
+      info.bucket = info.epoch !== null ? nwsTimeBucket(info.epoch, utcOffsetSeconds) : null;
+    }
+  }
+  return info;
+}
+
+// Map current hour to the WMO code that should drive the icon, using the
+// same certainty classifier as the verbose summary. Without this an OM
+// current.weather_code of 63 (rain) with a 25% PoP would render a rain
+// icon next to "CLOUDY, 25% RAIN PM" text.
+function omDisplayWeatherCode(hourly, currentCode, utcOffsetSeconds) {
+  if (!hourly || !hourly.weather_code) return Number(currentCode) || 3;
+  var startIdx = nearestHourlyIndex(hourly, utcOffsetSeconds);
+  if (startIdx < 0) return Number(currentCode) || 3;
+  var state = omClassifyHourState(hourlyWeatherCode(hourly, startIdx),
+                                  hourlyRainChance(hourly, startIdx));
+  if (state === 'ACTIVE') {
+    var code = hourlyWeatherCode(hourly, startIdx);
+    return code !== null ? code : (Number(currentCode) || 3);
+  }
+  // CHANCE/SLIGHT/CLEAR: use dominant base for the icon so it matches the
+  // text's base condition. Map the label back to a representative WMO code.
+  var base = omDominantBase(hourly, currentCode, utcOffsetSeconds);
+  switch (base) {
+    case 'CLEAR': return 0;
+    case 'MOSTLY CLR': return 1;
+    case 'PARTLY CLDY': return 2;
+    case 'CLOUDY': return 3;
+    case 'FOG': return 45;
+    default: return Number(currentCode) || 3;
+  }
+}
+
+function omBuildSummaryCandidates(hourly, currentCode, utcOffsetSeconds) {
+  if (!hourly || !hourly.weather_code || !hourly.precipitation_probability) {
+    return [weatherBaseLabel(Number(currentCode))];
+  }
+  var startIdx = nearestHourlyIndex(hourly, utcOffsetSeconds);
+  if (startIdx < 0) {
+    return [weatherBaseLabel(Number(currentCode))];
+  }
+  var currentState = omClassifyHourState(hourlyWeatherCode(hourly, startIdx),
+                                         hourlyRainChance(hourly, startIdx));
+  var currentKind = omHourPrecipKind(hourly, startIdx);
+  var firstActiveIdx = omFirstActiveIdx(hourly, utcOffsetSeconds);
+
+  // Tier 1: currently ACTIVE.
+  if (currentState === 'ACTIVE') {
+    var kind = currentKind || weatherEventLabel(Number(currentCode)) || 'RAIN';
+    var endIdx = omEndOfActiveRun(hourly, startIdx);
+    if (endIdx > 0) {
+      var endEpoch = hourlyEpochSeconds(hourly, endIdx, utcOffsetSeconds);
+      var endTime = endEpoch !== null ? formatWeatherHourFromEpoch(endEpoch, utcOffsetSeconds) : '';
+      return [kind + ' TIL ' + endTime, kind + ' TIL ' + endTime, kind];
+    }
+    return [kind + ' ALL DAY', kind + ' ALL DAY', kind];
   }
 
-  var latest = now + (18 * 60 * 60);
-  for (var j = startIndex + 1; j < hourly.time.length; j++) {
-    var eventEpoch = hourlyEpochSeconds(hourly, j, utcOffsetSeconds);
-    if (eventEpoch === null || eventEpoch > latest) {
-      break;
-    }
-    var nextEvent = significantWeatherEvent(hourly, j);
-    if (nextEvent) {
-      return nextEvent + ' AT ' + formatWeatherHourFromEpoch(eventEpoch, utcOffsetSeconds);
-    }
+  // Tier 2: not active now, ACTIVE somewhere in next 18h.
+  if (firstActiveIdx > startIdx) {
+    var startEpoch = hourlyEpochSeconds(hourly, firstActiveIdx, utcOffsetSeconds);
+    var startTime = startEpoch !== null ? formatWeatherHourFromEpoch(startEpoch, utcOffsetSeconds) : '';
+    var kind2 = omHourPrecipKind(hourly, firstActiveIdx) || 'RAIN';
+    var bucket2 = startEpoch !== null ? nwsTimeBucket(startEpoch, utcOffsetSeconds) : '';
+    return [kind2 + ' AT ' + startTime, kind2 + ' AT ' + startTime, kind2 + ' ' + bucket2];
   }
 
-  return fallback;
+  // Tier 3/4: chance window present, no ACTIVE in 18h. Base + qualifier.
+  var peak = omPeakChanceInfo(hourly, utcOffsetSeconds);
+  if (peak.pop >= 10) {
+    var base = omDominantBase(hourly, currentCode, utcOffsetSeconds);
+    var baseSimple = omBaseLabelSimple(base) || base;
+    var kind3 = peak.kind || currentKind || 'RAIN';
+    var pop = nwsRoundPop(peak.pop);
+    var bucket3 = peak.bucket || '';
+    var pctClause = pop + '% ' + kind3;
+    var pctWithTime = pctClause + (bucket3 ? ' ' + bucket3 : '');
+    var timeClause = (bucket3 ? bucket3 + ' ' : '') + kind3;
+
+    var candidates = [];
+    if (base) {
+      candidates.push(base + ', ' + pctWithTime);
+      candidates.push(base + ', ' + pctClause);
+      candidates.push(base + ', ' + timeClause);
+      candidates.push(baseSimple + ', ' + pctWithTime);
+      candidates.push(baseSimple + ', ' + pctClause);
+      candidates.push(baseSimple + ', ' + timeClause);
+      candidates.push(base);
+      candidates.push(baseSimple);
+    } else {
+      candidates.push(pctWithTime);
+      candidates.push(pctClause);
+    }
+    return candidates;
+  }
+
+  // Tier 5: nothing precip in 18h.
+  var currentHourCode = hourlyWeatherCode(hourly, startIdx);
+  var fallbackBase = currentHourCode !== null
+      ? weatherBaseLabel(currentHourCode)
+      : (omDominantBase(hourly, currentCode, utcOffsetSeconds) || 'CLEAR');
+  return [fallbackBase, omBaseLabelSimple(fallbackBase) || fallbackBase];
+}
+
+function omBuildVerboseSummariesV2(hourly, currentCode, utcOffsetSeconds) {
+  var candidates = omBuildSummaryCandidates(hourly, currentCode, utcOffsetSeconds);
+  var trimmed = candidates.map(function(s) { return String(s || '').replace(/\s+/g, ' ').trim(); });
+  return {
+    twoLine: pickFittingSummary(trimmed, SUMMARY_BUDGET_TWO_LINE),
+    oneLine: pickFittingSummary(trimmed, SUMMARY_BUDGET_ONE_LINE)
+  };
 }
 
 function firstDailyValue(daily, field) {
@@ -1139,7 +1279,13 @@ function fetchWeatherForCoordinates(lat, lon, unit, done) {
       var dict = {};
       addRounded(dict, keys.TEMPERATURE, data.current.temperature_2m, -99, 127);
       addRounded(dict, keys.FEELS_LIKE, data.current.apparent_temperature, -99, 127);
-      addRounded(dict, keys.WEATHER_CODE, data.current.weather_code, 0, 255);
+      // WEATHER_CODE goes through omDisplayWeatherCode so the icon respects
+      // the v2 certainty classifier — a 31% chance of rain shouldn't render
+      // a rain icon next to "CLOUDY, 30% RAIN AM" text. Same fix as on the
+      // NWS path via nwsDisplayWeatherCode.
+      addRounded(dict, keys.WEATHER_CODE,
+                 omDisplayWeatherCode(data.hourly, data.current.weather_code, data.utc_offset_seconds),
+                 0, 255);
       addRounded(dict, keys.WIND_SPEED, data.current.wind_speed_10m, 0, 255);
       addRounded(dict, keys.HIGH_TEMP, firstDailyValue(data.daily, 'temperature_2m_max'), -99, 127);
       addRounded(dict, keys.LOW_TEMP, firstDailyValue(data.daily, 'temperature_2m_min'), -99, 127);
@@ -1151,8 +1297,17 @@ function fetchWeatherForCoordinates(lat, lon, unit, done) {
                  firstDailyTimestamp(data.daily, 'sunset', data.utc_offset_seconds),
                  0, 2147483647);
       dict[keys.RAIN_CHANCE] = nearestRainChance(data.hourly, data.utc_offset_seconds);
-      dict[keys.WEATHER_SUMMARY] =
-          verboseWeatherSummary(data.hourly, data.current.weather_code, data.utc_offset_seconds);
+      // v2 verbose summary: certainty-aware classifier + pixel-fit aware
+      // candidate picker, same as the NWS path. Sends both two-line and
+      // one-line variants so the renderer can pick the right one for the
+      // current verbose-weather layout.
+      var omSummaries = omBuildVerboseSummariesV2(data.hourly, data.current.weather_code, data.utc_offset_seconds);
+      if (omSummaries.twoLine) {
+        dict[keys.WEATHER_SUMMARY] = omSummaries.twoLine;
+      }
+      if (omSummaries.oneLine) {
+        dict[keys.WEATHER_SUMMARY_COMPACT] = omSummaries.oneLine;
+      }
       var forecast = buildForecastPayload(data.hourly, data.utc_offset_seconds);
       if (forecast) {
         dict[keys.FORECAST_TEMP_F] = forecast.tempBytes;
@@ -1504,18 +1659,6 @@ function nwsPeriodPrecipChance(period) {
   return isFinite(v) ? clamp(Math.round(v), 0, 100) : 0;
 }
 
-// Mirrors Open-Meteo's significantWeatherEvent: a precip event "counts"
-// when its probability is >= 30%, OR when it's frozen precip (snow/sleet,
-// which Open-Meteo escalates unconditionally via "code >= 71").
-function nwsSignificantWeatherEvent(period) {
-  if (!period) return null;
-  var label = nwsEventLabelFromShortForecast(period.shortForecast);
-  if (!label) return null;
-  var isFrozen = /snow|flurries|sleet/i.test(period.shortForecast || '');
-  if (isFrozen) return label;
-  return nwsPeriodPrecipChance(period) >= 30 ? label : null;
-}
-
 function nwsHourlyOffsetSeconds(hourly) {
   if (!hourly || !hourly.properties || !hourly.properties.periods
       || !hourly.properties.periods.length) {
@@ -1541,23 +1684,17 @@ function nwsFormatHourFromEpoch(epochSeconds, offsetSeconds) {
   return hour + suffix;
 }
 
-// === New NWS verbose summary (v2): certainty-aware, pixel-fit aware ===
+// === NWS verbose summary (v2): certainty-aware, pixel-fit aware ===
 //
-// The original nwsVerboseWeatherSummary (kept below as a control) treats any
-// hour with /thunderstorm/ + PoP>=30 as if precipitation were ACTIVELY
-// happening, then prints "STORMS TIL/AT/ALL DAY". This conflates "31% chance
-// of thunderstorms" with "actively thunderstorming," which is wrong: a 31%
-// chance means "probably not, but possibly." A reasonable person would say
-// "mostly sunny, slight storm risk this morning," not "storming until 1pm."
-//
-// v2 classifies each hour into ACTIVE / CHANCE / SLIGHT / CLEAR using NWS's
+// Classifies each hour into ACTIVE / CHANCE / SLIGHT / CLEAR using NWS's
 // own phrasing prefix ("Chance", "Slight Chance", "Likely", bare) AND the
 // explicit PoP. "@ [Time]" / "TIL [Time]" only appears at true ACTIVE
 // transitions (active precip starting / ending); chance levels get a
 // "+X% KIND" qualifier on top of the dominant base condition instead. The
 // dominant base label comes from the first non-chance hour in the next 18h,
 // falling back to the 12-hour forecast period's detailedForecast prose if
-// no clear hour shows up in that window.
+// no clear hour shows up in that window. Mirror of omBuildSummaryCandidates
+// for the Open-Meteo path.
 
 // Classifier states used by the new logic.
 // ACTIVE: precip is happening or essentially certain (PoP>=60 or bare phrase
@@ -1845,66 +1982,6 @@ function nwsBuildVerboseSummariesV2(hourly, forecast) {
   };
 }
 
-// NWS-data driven equivalent of verboseWeatherSummary. Same vocabulary,
-// same "ALL DAY" / "TIL X" / "AT X" / fallback-base-label algorithm; NWS
-// hourly periods feed it in place of Open-Meteo's hourly arrays.
-function nwsVerboseWeatherSummary(hourly) {
-  if (!hourly || !hourly.properties || !hourly.properties.periods
-      || !hourly.properties.periods.length) {
-    return '';
-  }
-  var periods = hourly.properties.periods;
-  var offsetSeconds = nwsHourlyOffsetSeconds(hourly);
-  var nowEpoch = Math.floor(Date.now() / 1000);
-  var todayLocalDay = nwsLocalDayNumber(nowEpoch, offsetSeconds);
-  var fallback = nwsBaseLabelFromShortForecast(periods[0].shortForecast);
-
-  var currentEvent = nwsSignificantWeatherEvent(periods[0]);
-  var dryHoursRequired = 3;
-
-  if (currentEvent) {
-    var dryRun = 0;
-    var firstDryIndex = -1;
-    for (var i = 1; i < periods.length; i++) {
-      var stopEpoch = nwsPeriodEpoch(periods[i]);
-      if (stopEpoch === null
-          || nwsLocalDayNumber(stopEpoch, offsetSeconds) !== todayLocalDay) {
-        return currentEvent + ' ALL DAY';
-      }
-      if (!nwsSignificantWeatherEvent(periods[i])) {
-        if (dryRun === 0) firstDryIndex = i;
-        dryRun++;
-        if (dryRun >= dryHoursRequired) {
-          var dryEpoch = nwsPeriodEpoch(periods[firstDryIndex]);
-          if (dryEpoch !== null) {
-            return currentEvent + ' TIL '
-                + nwsFormatHourFromEpoch(dryEpoch, offsetSeconds);
-          }
-          return currentEvent + ' ALL DAY';
-        }
-      } else {
-        dryRun = 0;
-        firstDryIndex = -1;
-      }
-    }
-    return currentEvent + ' ALL DAY';
-  }
-
-  // No current event — scan the next 18 hours for the next one.
-  var latest = nowEpoch + (18 * 60 * 60);
-  for (var j = 1; j < periods.length; j++) {
-    var eventEpoch = nwsPeriodEpoch(periods[j]);
-    if (eventEpoch === null || eventEpoch > latest) break;
-    var nextEvent = nwsSignificantWeatherEvent(periods[j]);
-    if (nextEvent) {
-      return nextEvent + ' AT '
-          + nwsFormatHourFromEpoch(eventEpoch, offsetSeconds);
-    }
-  }
-
-  return fallback;
-}
-
 function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
   // The full NWS payload runs ~1200 bytes when serialized as one AppMessage
   // dict (three ~192-char detailed narratives plus hourly arrays). Pebble's
@@ -1935,8 +2012,8 @@ function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
     // v2 verbose summary: certainty-aware (respects "Chance" vs "Likely" vs
     // bare phrasing) and pixel-fit aware (picks the longest candidate that
     // fits the budget for the user's verbose-weather layout). Open-Meteo
-    // intentionally keeps the original verboseWeatherSummary so the user can
-    // A/B compare by switching WEATHER_PROVIDER.
+    // runs the same v2 algorithm via omBuildVerboseSummariesV2 on its own
+    // hourly arrays — both providers produce strings from the same taxonomy.
     var summaries = nwsBuildVerboseSummariesV2(hourly, forecast);
     if (summaries.twoLine) {
       dictA[keys.WEATHER_SUMMARY] = summaries.twoLine;
@@ -1956,7 +2033,25 @@ function nwsSendData(lat, lon, points, forecast, hourly, alerts) {
       var p0 = periods0[0];
       dictA[keys.RAIN_CHANCE] = nwsPeriodPrecipChance(p0);
       dictA[keys.WEATHER_CODE] = nwsDisplayWeatherCode(hourly, forecast);
+      // Current temperature and wind speed from NWS hourly's current hour,
+      // so the main-face temp complication and wind complication follow
+      // NWS too. windSpeed comes as a string like "10 mph" or "10 to 20 mph"
+      // — pull the first integer.
+      addRounded(dictA, keys.TEMPERATURE, p0.temperature, -99, 127);
+      var windMatch = String(p0.windSpeed || '').match(/(\d+)/);
+      if (windMatch) {
+        addRounded(dictA, keys.WIND_SPEED, parseInt(windMatch[1], 10), 0, 255);
+      }
     }
+    // Detailed Weather graph (24h temp + 24h precip) reflects NWS data.
+    // Same pack helpers we already use for the NWS_HOURLY_* keys, just
+    // routed to the FORECAST_* keys the Open-Meteo Detailed Weather
+    // overlay reads from. FEELS_LIKE / UV_INDEX / SUNRISE_T / SUNSET_T
+    // intentionally stay on Open-Meteo (NWS doesn't have them).
+    dictA[keys.FORECAST_TEMP_F] = nwsHourlyPackTemps(hourly);
+    dictA[keys.FORECAST_PRECIP_PCT] = nwsHourlyPackPrecip(hourly);
+    dictA[keys.FORECAST_START_T] = nwsHourlyStartEpoch(hourly);
+    dictA[keys.FORECAST_LAST_UPDATE_T] = Math.floor(Date.now() / 1000);
   }
   var hiLo = nwsTodayHiLo(forecast);
   addRounded(dictA, keys.HIGH_TEMP, hiLo.high, -99, 127);

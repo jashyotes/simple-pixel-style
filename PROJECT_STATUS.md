@@ -524,3 +524,55 @@ Explicitly out of scope for this release (queued in `FUTURE_FEATURES.md` or reje
 
 - `tufte-viz` skill installed at `~/.claude/skills/tufte-viz/` from a downloaded SKILL.md + references bundle. Used here for the first time on this project.
 - Codex implementation of the chart cleanups + ring additions went cleanly once the sample-build prompt was tightened with explicit DO NOT guard rails (no test-data injection, no emulator drive, no version bump, no commit). One math bug in the notch offsets was on my spec, not on Codex's implementation — fixed in a follow-up patch before commit.
+
+## 1.02 shipped — 2026-05-23
+
+Artifact: `release-assets/simple-pixel-style-1.02.0-emery.pbw`.
+
+Cross-provider parity: whichever weather source the user selects now drives every weather-related complication on the watch, and both providers produce verbose-summary text from the same v2 taxonomy.
+
+### NWS override coverage extended
+
+The NWS path (`nwsSendData`) now also overrides these shared keys when WEATHER_PROVIDER=nws:
+- `TEMPERATURE` — current temp from NWS hourly `periods[0].temperature`
+- `WIND_SPEED` — first integer parsed from NWS hourly `periods[0].windSpeed` (NWS returns strings like "10 mph" or "10 to 20 mph")
+- `FORECAST_TEMP_F` / `FORECAST_PRECIP_PCT` / `FORECAST_START_T` / `FORECAST_LAST_UPDATE_T` — the 24h arrays the Detailed Weather graph reads from. Same pack helpers (`nwsHourlyPackTemps`, `nwsHourlyPackPrecip`, `nwsHourlyStartEpoch`) we already use for the dedicated NWS_HOURLY_* keys, now routed to FORECAST_* too. The Detailed Weather chart reflects NWS forecast data instead of Open-Meteo's when NWS is selected.
+
+Already covered in 0.99: `HIGH_TEMP`, `LOW_TEMP`, `RAIN_CHANCE`, `WEATHER_CODE`, `WEATHER_SUMMARY`, `WEATHER_SUMMARY_COMPACT`.
+
+Intentionally not overridden by NWS (keeps Open-Meteo even when NWS is provider):
+- `FEELS_LIKE` — NWS doesn't compute apparent temperature. Per user decision, no point computing a synthetic version; real temp is what matters.
+- `UV_INDEX` — NWS doesn't expose UV index in the forecast endpoint.
+- `SUNRISE_T` / `SUNSET_T` — purely astronomical, identical regardless of provider.
+
+### Open-Meteo verbose summary ported to v2
+
+The original Open-Meteo `verboseWeatherSummary` (the "STORMS TIL 1P" logic that conflated 31% chance with active storms) is removed. Replaced with `omBuildVerboseSummariesV2`, which mirrors the NWS v2 design:
+
+- `omClassifyHourState(code, pop)` — same ACTIVE/CHANCE/SLIGHT/CLEAR tiers. PoP-only classification (>= 60 ACTIVE, 30-59 CHANCE, 10-29 SLIGHT, < 10 CLEAR). WMO code separately determines the precip kind via the existing `weatherEventLabel`.
+- `omDominantBase(hourly, currentCode, utcOffsetSeconds)` — scans hourly weather codes for first CLEAR hour in next 18h, falls back to current code's base label (if it's a 0-48 clear/cloud/fog code) or "CLOUDY" (for all-day-precip-chance days).
+- `omBuildSummaryCandidates` — produces the same five-tier candidate list as `nwsBuildSummaryCandidates`, using the same vocabulary: "MOSTLY SUNNY, 30% STORMS AM" for chance tiers, "STORMS TIL 4P" / "STORMS AT 2P" for ACTIVE transitions.
+- `omBuildVerboseSummariesV2` — returns both two-line and one-line variants via the shared `pickFittingSummary` + RG18B width table from 0.99.
+- `omDisplayWeatherCode(hourly, currentCode, utcOffsetSeconds)` — icon respects the v2 classifier. When current hour is CHANCE/SLIGHT, the icon shows the dominant base condition (sun/cloud) instead of the precip kind, matching the text. ACTIVE current still gets the precip icon. Same fix as `nwsDisplayWeatherCode` from 0.99.
+
+Open-Meteo now sends both `WEATHER_SUMMARY` and `WEATHER_SUMMARY_COMPACT`, so the one-line vs two-line verbose-weather layout works identically across providers.
+
+### Dead code removed
+
+Now-orphaned helpers deleted from `src/pkjs/index.js`:
+- `verboseWeatherSummary` (replaced by `omBuildVerboseSummariesV2`)
+- `significantWeatherEvent` (only used by the deleted `verboseWeatherSummary`)
+- `nwsVerboseWeatherSummary` (replaced by `nwsBuildVerboseSummariesV2` in 0.99 but kept as control through 1.01; removed in 1.02 now that v2 is on both providers)
+- `nwsSignificantWeatherEvent` (only used by the deleted `nwsVerboseWeatherSummary`)
+
+No more provider-asymmetric verbose-summary behavior. Switching WEATHER_PROVIDER between `nws` and `open_meteo` toggles the data source but the phrasing taxonomy stays identical.
+
+### Files changed
+
+- `jy-time/src/pkjs/index.js` — Open-Meteo v2 helpers added (`omClassifyHourState`, `omHourPrecipKind`, `omBaseLabelSimple`, `omDominantBase`, `omFirstActiveIdx`, `omEndOfActiveRun`, `omPeakChanceInfo`, `omDisplayWeatherCode`, `omBuildSummaryCandidates`, `omBuildVerboseSummariesV2`); Open-Meteo callsite in `fetchWeatherForCoordinates` updated; NWS override list in `nwsSendData` extended for TEMPERATURE/WIND_SPEED/FORECAST_*; orphan old verbose-summary helpers deleted on both providers.
+- `jy-time/package.json` — version bumped to 1.02.0.
+
+### Verification
+
+- `pebble build` succeeds. No new warnings.
+- Manual emulator verification was attempted but the emulator install hung repeatedly (the documented `pkill + pebble wipe` fix didn't resolve cleanly in this session). Skipped emulator verification. Code-path verification only: tracing through `fetchWeatherForCoordinates` and `nwsSendData` confirms each provider's override pattern writes the new keys, and the v2 helpers were validated against live NWS data for ZIP 36542 during the 1.01 development cycle. Visual verification on actual watch is the final step.
