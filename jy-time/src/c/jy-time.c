@@ -27,6 +27,7 @@
 #define PERSIST_KEY_VERBOSE_WEATHER 115
 #define PERSIST_KEY_WEATHER_SUMMARY 116
 #define PERSIST_KEY_WEATHER_SUMMARY_COMPACT 238
+#define PERSIST_KEY_TIDE_VIEW_HOURS 239
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -428,20 +429,30 @@ static int s_your_day_start_hour = 8;
 static int s_your_day_end_hour = 17;
 static bool s_your_day_half_hour_pips_enabled = false;
 static char s_empty_event_label[32] = "[None]";
-// Tide chart sends a 24-byte hourly window centered on "now":
-// indices [0..11] = past 12 hours, [TIDE_NOW_INDEX] = current hour,
-// [13..23] = next 11 hours. JS keeps the same convention.
-#define TIDE_WINDOW_HOURS 24
-#define TIDE_NOW_INDEX 12
+// Tide chart sends a 48-byte hourly window centered on "now":
+// indices [0..23] = past 24 hours, [TIDE_NOW_INDEX] = current hour,
+// [25..47] = next 23 hours. JS keeps the same convention. The render
+// path slices this down to the user's chosen view window (24 or 48
+// hours, controlled by TIDE_VIEW_HOURS Clay setting) but the stored
+// data is always the full 48 so toggling the view doesn't require a
+// re-fetch.
+#define TIDE_WINDOW_HOURS 48
+#define TIDE_NOW_INDEX 24
 // Bump TIDE_DATA_VERSION whenever the byte-array layout / window-centering
 // changes. On boot, a mismatched persisted version triggers a one-shot wipe
 // of the tide bytes so stale data from an older release can't render as a
 // misleading partial chart while the fresh fetch is still in flight.
 //   1 = 0.72: forward-only 24h window starting at "now"
 //   2 = 0.73: centered window with TIDE_NOW_INDEX=12 (12h past + 12h future)
-#define TIDE_DATA_VERSION 2
+//   3 = 1.04: centered 48h window with TIDE_NOW_INDEX=24, render slices
+//             down to the user's TIDE_VIEW_HOURS choice (24 or 48)
+#define TIDE_DATA_VERSION 3
 
 static uint8_t s_tide_hourly_levels[TIDE_WINDOW_HOURS] = {
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
   0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
   0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
   0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -453,6 +464,10 @@ static uint32_t s_tide_next_low_t = 0;
 static uint8_t s_tide_next_low_level = 0xFF;
 static char s_tide_station_name[24] = "";
 static bool s_tide_units_meters = false;
+// 24 or 48. Stored array is always 48 (centered on now with TIDE_NOW_INDEX
+// at hour 24); s_tide_view_hours picks which slice the chart renders so
+// the user can toggle without re-fetching data.
+static int s_tide_view_hours = 24;
 static char s_tide_station_id[16] = "";
 static char s_prices_stock_1_symbol[12] = "SPY";
 static char s_prices_stock_2_symbol[12] = "QQQ";
@@ -2720,9 +2735,21 @@ static void tide_chart_draw_overlay(GContext *ctx) {
     return;
   }
 
+  // Slice the stored 48h window down to the user's chosen view (24 or 48
+  // hours, centered on TIDE_NOW_INDEX). Everything below operates on the
+  // slice — min/max scan, points array, "now" indicator, and the past/
+  // future stroke loop all iterate view_start..view_end.
+  int view_hours = (s_tide_view_hours == 48) ? 48 : 24;
+  int view_start = TIDE_NOW_INDEX - (view_hours / 2);
+  int view_end = view_start + view_hours;
+  if (view_start < 0) view_start = 0;
+  if (view_end > TIDE_WINDOW_HOURS) view_end = TIDE_WINDOW_HOURS;
+  int view_span = view_end - view_start;
+  if (view_span < 2) view_span = 2;
+
   int min_e = 255;
   int max_e = 0;
-  for (int i = 0; i < TIDE_WINDOW_HOURS; i++) {
+  for (int i = view_start; i < view_end; i++) {
     if (s_tide_hourly_levels[i] == 0xFF) {
       continue;
     }
@@ -2739,11 +2766,14 @@ static void tide_chart_draw_overlay(GContext *ctx) {
 
   GPoint points[TIDE_WINDOW_HOURS];
   for (int i = 0; i < TIDE_WINDOW_HOURS; i++) {
+    points[i] = GPoint(-1, -1);
+  }
+  for (int i = view_start; i < view_end; i++) {
     if (s_tide_hourly_levels[i] == 0xFF) {
-      points[i] = GPoint(-1, -1);
       continue;
     }
-    int x = chart_left + (i * (chart_right - chart_left)) / (TIDE_WINDOW_HOURS - 1);
+    int slot = i - view_start;
+    int x = chart_left + (slot * (chart_right - chart_left)) / (view_span - 1);
     int y = chart_bottom
         - ((s_tide_hourly_levels[i] - min_e) * chart_h) / (max_e - min_e);
     points[i] = GPoint(x, y);
@@ -2751,13 +2781,14 @@ static void tide_chart_draw_overlay(GContext *ctx) {
 
   // Dotted vertical "now" indicator at the TIDE_NOW_INDEX column. Show it
   // whether or not that exact sample has data. The user still wants to see
-  // where "now" is on the timeline.
+  // where "now" is on the timeline. Drawn before the data lines so the
+  // tide curve sits on top of the reference marker.
+  int now_slot = TIDE_NOW_INDEX - view_start;
   int now_x;
   if (points[TIDE_NOW_INDEX].x >= 0) {
     now_x = points[TIDE_NOW_INDEX].x;
   } else {
-    now_x = chart_left + (TIDE_NOW_INDEX * (chart_right - chart_left))
-        / (TIDE_WINDOW_HOURS - 1);
+    now_x = chart_left + (now_slot * (chart_right - chart_left)) / (view_span - 1);
   }
   graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
   graphics_context_set_stroke_width(ctx, 1);
@@ -2769,7 +2800,7 @@ static void tide_chart_draw_overlay(GContext *ctx) {
   // Past hours (indices < TIDE_NOW_INDEX) draw in muted color; future hours
   // draw in the strong theme foreground so "what's coming" reads as primary.
   graphics_context_set_stroke_width(ctx, 2);
-  for (int i = 0; i < TIDE_WINDOW_HOURS - 1; i++) {
+  for (int i = view_start; i < view_end - 1; i++) {
     if (points[i].x < 0 || points[i + 1].x < 0) {
       continue;
     }
@@ -4439,6 +4470,13 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     fitness_settings_changed = true;
   }
 
+  t = dict_find(iter, MESSAGE_KEY_TIDE_VIEW_HOURS);
+  if (t) {
+    s_tide_view_hours = (t->value->int32 == 48) ? 48 : 24;
+    persist_write_int(PERSIST_KEY_TIDE_VIEW_HOURS, s_tide_view_hours);
+    fitness_settings_changed = true;
+  }
+
   t = dict_find(iter, MESSAGE_KEY_TIDE_STATION_ID);
   if (t && t->type == TUPLE_CSTRING) {
     store_overlay_string(s_tide_station_id, sizeof(s_tide_station_id),
@@ -4983,6 +5021,10 @@ static void load_persisted(void) {
   }
   if (persist_exists(PERSIST_KEY_TIDE_UNITS)) {
     s_tide_units_meters = persist_read_bool(PERSIST_KEY_TIDE_UNITS);
+  }
+  if (persist_exists(PERSIST_KEY_TIDE_VIEW_HOURS)) {
+    int v = persist_read_int(PERSIST_KEY_TIDE_VIEW_HOURS);
+    s_tide_view_hours = (v == 48) ? 48 : 24;
   }
   if (persist_exists(PERSIST_KEY_TIDE_STATION_ID)) {
     persist_read_string(PERSIST_KEY_TIDE_STATION_ID, s_tide_station_id,

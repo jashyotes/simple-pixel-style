@@ -600,3 +600,35 @@ Bundled in the same release: the equivalent changes on the standalone US Tidemap
 
 - `pebble build` succeeds with no new warnings.
 - Codex implemented the Pebble watchface side; Claude reviewed the diff for spec correctness and scope before commit. No deviations.
+
+## 1.04 shipped — 2026-05-24
+
+Artifact: `release-assets/simple-pixel-style-1.04.0-emery.pbw`.
+
+Feature parity with the US Tidemaps standalone app: a 24/48-hour view toggle for the tide chart shake overlay, controlled via a new Clay setting.
+
+### What changed
+
+**Clay setting**: new `TIDE_VIEW_HOURS` select in the tide settings section (right after Tide units). Options:
+- "24 hours (12h past + 12h future)" — the prior behavior, default
+- "48 hours (24h past + 24h future)" — matches US Tidemaps' wider window
+
+Default is 24, so existing users see no change unless they opt in. The setting persists across watchface restarts.
+
+**Data layer**: storage doubled from 24 hours to 48 hours centered on now (`TIDE_NOW_INDEX` 12 → 24, `TIDE_WINDOW_HOURS` 24 → 48). NOAA already returns a ±24h window for the existing fetch — only the packing slice widened, no new network requests. `TIDE_DATA_VERSION` bumped 2 → 3 so the existing version-mismatch wipe logic handles the layout migration cleanly on first boot of 1.04.
+
+**Render path**: `tide_chart_draw_overlay` now slices the stored 48-hour array down to the user's chosen view window before computing min/max, building points, and drawing. The "now" indicator and past/future stroke encoding still anchor on `TIDE_NOW_INDEX` but the rendered slot positions are relative to `view_start`. Switching the Clay setting redraws against the same data; no re-fetch needed.
+
+**Message keys**: `TIDE_HOURLY_LEVELS[24]` → `TIDE_HOURLY_LEVELS[48]`, plus new `TIDE_VIEW_HOURS`. Persist key `PERSIST_KEY_TIDE_VIEW_HOURS = 239` added.
+
+### Files changed
+
+- `jy-time/package.json` — version 1.04.0, message keys updated.
+- `jy-time/src/pkjs/config.json` — Clay tide-view-hours select added.
+- `jy-time/src/pkjs/index.js` — `TIDE_HOURS_BEFORE_NOW` / `TIDE_WINDOW_HOURS` doubled, `tideViewHoursValue` helper, `sendTideSetting` updated.
+- `jy-time/src/c/jy-time.c` — `TIDE_WINDOW_HOURS` / `TIDE_NOW_INDEX` / `TIDE_DATA_VERSION` updated, 48-entry array initializer, new persist key + static + inbox handler + persist load, `tide_chart_draw_overlay` rewritten to slice based on `s_tide_view_hours`.
+
+### Verification
+
+- `pebble build` succeeds with no new warnings.
+- Data layout migration is handled by the existing TIDE_DATA_VERSION mismatch path (wipes stale 24-byte data on first boot of 1.04 so the renderer doesn't draw a misleading partial chart while waiting for the fresh 48-byte fetch).

@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "1.03.0",
+  "version": "1.04.0",
   "keywords": [
     "pebble-app"
   ],
@@ -104,7 +104,8 @@
       "DAY_EVENT_HALF_HOURS_SECOND_BITMAP_TOMORROW",
       "DAY_EVENT_HALF_HOURS_SECOND_BITMAP_YESTERDAY",
       "EMPTY_EVENT_LABEL",
-      "TIDE_HOURLY_LEVELS[24]",
+      "TIDE_HOURLY_LEVELS[48]",
+      "TIDE_VIEW_HOURS",
       "TIDE_NEXT_HIGH_T",
       "TIDE_NEXT_HIGH_LEVEL",
       "TIDE_NEXT_LOW_T",

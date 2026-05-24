@@ -211,6 +211,7 @@ var DEFAULT_SETTINGS = {
   YOUR_DAY_HALF_HOUR_PIPS: false,
   TIDE_STATION_ID: '',
   TIDE_UNITS: 'feet',
+  TIDE_VIEW_HOURS: '24',
   PRICES_STOCK_1_SYMBOL: 'SPY',
   PRICES_STOCK_2_SYMBOL: 'QQQ',
   PRICES_CRYPTO_SYMBOL: 'bitcoin',
@@ -429,10 +430,15 @@ function tideUnitsId(settings) {
   return settings.TIDE_UNITS === 'meters' ? 1 : 0;
 }
 
+function tideViewHoursValue(settings) {
+  return String(settings.TIDE_VIEW_HOURS) === '48' ? 48 : 24;
+}
+
 function sendTideSetting(settings) {
   var dict = {};
   dict[keys.TIDE_STATION_ID] = tideStationId(settings);
   dict[keys.TIDE_UNITS] = tideUnitsId(settings);
+  dict[keys.TIDE_VIEW_HOURS] = tideViewHoursValue(settings);
   sendToWatch(dict, 'Tide setting');
   refreshTidesForSettings(settings);
 }
@@ -587,12 +593,14 @@ function twoDigit(value) {
   return value < 10 ? '0' + value : String(value);
 }
 
-// Tide hourly levels are sent as a 24-byte array centered on "now":
-// indices 0..11 are the past 12 hours, index TIDE_NOW_INDEX = 12 is the
-// current hour, indices 13..23 are the next 11 hours. The C side knows
-// where "now" sits by the same TIDE_NOW_INDEX constant.
-var TIDE_HOURS_BEFORE_NOW = 12;
-var TIDE_WINDOW_HOURS = 24;
+// Tide hourly levels are sent as a 48-byte array centered on "now":
+// indices 0..23 are the past 24 hours, index TIDE_NOW_INDEX = 24 is the
+// current hour, indices 25..47 are the next 23 hours. The C side knows
+// where "now" sits by the same TIDE_NOW_INDEX constant and renders either
+// the centered 24-hour window or the full 48-hour window based on the
+// TIDE_VIEW_HOURS Clay setting.
+var TIDE_HOURS_BEFORE_NOW = 24;
+var TIDE_WINDOW_HOURS = 48;
 
 function noaaTimeKey(date) {
   // UTC components. Keys must be TZ-independent so they line up with NOAA's

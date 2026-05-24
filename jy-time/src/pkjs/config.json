@@ -928,6 +928,23 @@
             "value": "meters"
           }
         ]
+      },
+      {
+        "type": "select",
+        "messageKey": "TIDE_VIEW_HOURS",
+        "label": "Tide chart window",
+        "defaultValue": "24",
+        "options": [
+          {
+            "label": "24 hours (12h past + 12h future)",
+            "value": "24"
+          },
+          {
+            "label": "48 hours (24h past + 24h future)",
+            "value": "48"
+          }
+        ],
+        "description": "Matches the US Tidemaps standalone app's view options. 24h is the tighter default; 48h shows more context but compresses the curve."
       }
     ]
   },
