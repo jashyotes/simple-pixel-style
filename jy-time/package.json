@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "1.04.0",
+  "version": "1.14",
   "keywords": [
     "pebble-app"
   ],
@@ -62,6 +62,16 @@
       "FITNESS_COLOR_ACTIVE",
       "FITNESS_COLOR_CALORIES",
       "FITNESS_OVERLAY_DURATION_S",
+      "FITNESS_PIP_ROW_ON",
+      "FITNESS_PIP_DIRECTION",
+      "FITNESS_PIP_STYLE",
+      "FITNESS_PIP_COLOR_LOW",
+      "FITNESS_PIP_COLOR_MID",
+      "FITNESS_PIP_COLOR_HIGH",
+      "FITNESS_PIP_COLOR_DIST",
+      "FITNESS_PIP_COLOR_SOURCE",
+      "FITNESS_PIP_SHAPE",
+      "FITNESS_PIP_SIZE",
       "LOW_TEMP",
       "SUNRISE_T",
       "SUNSET_T",

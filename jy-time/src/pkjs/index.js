@@ -30,6 +30,15 @@ function customClay() {
     'COLOR_SECTION_FG_MEETING_BAR'
   ];
 
+  // Pip color pickers visible iff the user can actually affect the pip
+  // gradient: either FITNESS_PIP_COLOR_SOURCE='color' (always color
+  // override), or 'theme' + global COLOR_MODE='color'.
+  var FITNESS_PIP_COLOR_PICKER_KEYS = [
+    'FITNESS_PIP_COLOR_LOW',
+    'FITNESS_PIP_COLOR_MID',
+    'FITNESS_PIP_COLOR_HIGH'
+  ];
+
   var SHAKE_FITNESS_ITEM_KEYS = [
     'shake-fitness-heading',
     'FITNESS_RING_STEPS_ON',
@@ -109,6 +118,7 @@ function customClay() {
   clayCfg.on(clayCfg.EVENTS.AFTER_BUILD, function() {
     var colorModeItem = clayCfg.getItemByMessageKey('COLOR_MODE');
     var shakeItem = clayCfg.getItemByMessageKey('SHAKE_BEHAVIOR');
+    var pipColorSourceItem = clayCfg.getItemByMessageKey('FITNESS_PIP_COLOR_SOURCE');
 
     function syncColorMode() {
       var v = colorModeItem.get();
@@ -119,6 +129,14 @@ function customClay() {
         setGroupVisible(BW_ITEM_KEYS, true);
         setGroupVisible(COLOR_ITEM_KEYS, false);
       }
+      syncPipColorPickers();
+    }
+
+    function syncPipColorPickers() {
+      var globalIsColor = colorModeItem.get() === 'color';
+      var pipSource = pipColorSourceItem ? pipColorSourceItem.get() : 'theme';
+      var showPickers = (pipSource === 'color') || globalIsColor;
+      setGroupVisible(FITNESS_PIP_COLOR_PICKER_KEYS, showPickers);
     }
 
     function syncShake() {
@@ -134,8 +152,12 @@ function customClay() {
 
     colorModeItem.on('change', syncColorMode);
     shakeItem.on('change', syncShake);
+    if (pipColorSourceItem) {
+      pipColorSourceItem.on('change', syncPipColorPickers);
+    }
     syncColorMode();
     syncShake();
+    syncPipColorPickers();
   });
 }
 
@@ -202,6 +224,16 @@ var DEFAULT_SETTINGS = {
   FITNESS_COLOR_ACTIVE: 0x00AAFF,
   FITNESS_COLOR_CALORIES: 0xFF0000,
   FITNESS_OVERLAY_DURATION_S: '5',
+  FITNESS_PIP_ROW_ON: false,
+  FITNESS_PIP_DIRECTION: 'ltr',
+  FITNESS_PIP_STYLE: 'hollow',
+  FITNESS_PIP_COLOR_LOW: 0xFF0000,
+  FITNESS_PIP_COLOR_MID: 0xFFFF00,
+  FITNESS_PIP_COLOR_HIGH: 0x00FF00,
+  FITNESS_PIP_COLOR_DIST: 'asymptotic',
+  FITNESS_PIP_COLOR_SOURCE: 'theme',
+  FITNESS_PIP_SHAPE: 'circle',
+  FITNESS_PIP_SIZE: 'large',
   ALT_TZ_LABEL: 'LONDON',
   ALT_TZ_OFFSET_MIN: '0',
   YOUR_DAY_WINDOW_MODE: 'rolling',
@@ -294,6 +326,32 @@ function yourDayWindowModeId(value) {
   return value === 'fixed' ? 1 : 0;
 }
 
+function fitnessPipDirectionId(value) {
+  if (value === 'center') return 1;
+  if (value === 'rtl') return 2;
+  return 0; // 'ltr' default
+}
+
+function fitnessPipStyleId(value) {
+  return value === 'populate' ? 1 : 0;
+}
+
+function fitnessPipColorSourceId(value) {
+  return value === 'color' ? 1 : 0;
+}
+
+function fitnessPipShapeId(value) {
+  return value === 'rectangle' ? 1 : 0;  // 0=circle (default), 1=rectangle
+}
+
+function fitnessPipSizeId(value) {
+  return value === 'small' ? 0 : 1;  // 0=small, 1=large (default)
+}
+
+function fitnessPipColorDistId(value) {
+  return value === 'linear' ? 0 : 1;  // 0=linear, 1=asymptotic FuelBand (default)
+}
+
 function temperatureUnit(settings) {
   return settings.TEMPERATURE_UNIT === 'celsius' ? 'celsius' : 'fahrenheit';
 }
@@ -364,6 +422,16 @@ function sendLayoutSetting(settings) {
   dict[keys.INVERT_WEATHER] = settings.INVERT_WEATHER ? 1 : 0;
   dict[keys.INVERT_MEETING_BAR] = settings.INVERT_MEETING_BAR ? 1 : 0;
   dict[keys.TOP_STEPS] = settings.TOP_STEPS ? 1 : 0;
+  dict[keys.FITNESS_PIP_ROW_ON] = settings.FITNESS_PIP_ROW_ON ? 1 : 0;
+  dict[keys.FITNESS_PIP_DIRECTION] = fitnessPipDirectionId(settings.FITNESS_PIP_DIRECTION);
+  dict[keys.FITNESS_PIP_STYLE] = fitnessPipStyleId(settings.FITNESS_PIP_STYLE);
+  dict[keys.FITNESS_PIP_COLOR_LOW] = colorSetting(settings.FITNESS_PIP_COLOR_LOW, 0xFF0000);
+  dict[keys.FITNESS_PIP_COLOR_MID] = colorSetting(settings.FITNESS_PIP_COLOR_MID, 0xFFFF00);
+  dict[keys.FITNESS_PIP_COLOR_HIGH] = colorSetting(settings.FITNESS_PIP_COLOR_HIGH, 0x00FF00);
+  dict[keys.FITNESS_PIP_COLOR_DIST] = fitnessPipColorDistId(settings.FITNESS_PIP_COLOR_DIST);
+  dict[keys.FITNESS_PIP_COLOR_SOURCE] = fitnessPipColorSourceId(settings.FITNESS_PIP_COLOR_SOURCE);
+  dict[keys.FITNESS_PIP_SHAPE] = fitnessPipShapeId(settings.FITNESS_PIP_SHAPE);
+  dict[keys.FITNESS_PIP_SIZE] = fitnessPipSizeId(settings.FITNESS_PIP_SIZE);
   dict[keys.VIBRATE_ON_DISCONNECT] = settings.VIBRATE_ON_DISCONNECT ? 1 : 0;
   dict[keys.VERBOSE_WEATHER] = settings.VERBOSE_WEATHER ? 1 : 0;
   dict[keys.VERBOSE_WEATHER_STYLE] = settings.VERBOSE_WEATHER_STYLE === 'large' ? 1 : 0;

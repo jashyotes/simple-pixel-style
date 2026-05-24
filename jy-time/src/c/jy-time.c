@@ -28,6 +28,16 @@
 #define PERSIST_KEY_WEATHER_SUMMARY 116
 #define PERSIST_KEY_WEATHER_SUMMARY_COMPACT 238
 #define PERSIST_KEY_TIDE_VIEW_HOURS 239
+#define PERSIST_KEY_FITNESS_PIP_ROW_ON     240
+#define PERSIST_KEY_FITNESS_PIP_DIRECTION  241
+#define PERSIST_KEY_FITNESS_PIP_STYLE      242
+#define PERSIST_KEY_FITNESS_PIP_COLOR_LOW  243
+#define PERSIST_KEY_FITNESS_PIP_COLOR_HIGH 244
+#define PERSIST_KEY_FITNESS_PIP_COLOR_SOURCE 245
+#define PERSIST_KEY_FITNESS_PIP_SHAPE 246
+#define PERSIST_KEY_FITNESS_PIP_SIZE 247
+#define PERSIST_KEY_FITNESS_PIP_COLOR_MID 248
+#define PERSIST_KEY_FITNESS_PIP_COLOR_DIST 249
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -410,6 +420,24 @@ static int s_fitness_target_calories = FITNESS_DEFAULT_TARGET_CALORIES;
 static int s_fitness_color_steps_hex = FITNESS_DEFAULT_COLOR_STEPS;
 static int s_fitness_color_active_hex = FITNESS_DEFAULT_COLOR_ACTIVE;
 static int s_fitness_color_calories_hex = FITNESS_DEFAULT_COLOR_CALORIES;
+static bool s_fitness_pip_row_enabled = false;
+static uint8_t s_fitness_pip_direction = 0;  // 0=LTR, 1=center-out, 2=RTL
+static uint8_t s_fitness_pip_style = 0;      // 0=hollow-progressive, 1=populate
+static uint32_t s_fitness_pip_color_low_hex  = 0xFF0000;  // red default
+static uint32_t s_fitness_pip_color_mid_hex  = 0xFFFF00;  // yellow default
+static uint32_t s_fitness_pip_color_high_hex = 0x00FF00;  // green default
+// 0 = linear gradient across all pips. 1 = asymptotic FuelBand:
+// first half low, middle stretch mid, last 4 high (10/6/4 for 20 pips).
+// Default = asymptotic.
+static uint8_t  s_fitness_pip_color_dist     = 1;
+// 0 = match global theme (Tuxedo=BW, Poor&Irish=color). 1 = always color.
+static uint8_t  s_fitness_pip_color_source   = 0;
+// 0 = circle (default, Your Day style). 1 = rectangle. Lap 0 only;
+// lap 1 always pyramid, lap 2+ always square.
+static uint8_t  s_fitness_pip_shape          = 0;
+// 0 = small (5px tall, original). 1 = large (9px tall, default).
+// Affects every shape; pip row is centered in the y=27..35 gap regardless.
+static uint8_t  s_fitness_pip_size           = 1;
 static int s_fitness_overlay_duration_ms = 5000;
 static int s_calendar_shake_event_count = 3;
 static int s_day_event_hours_bitmap = 0;
@@ -1361,6 +1389,346 @@ static void draw_w800_steps_top_bar(GContext *ctx) {
   graphics_context_set_compositing_mode(ctx, GCompOpSet);
   graphics_draw_bitmap_in_rect(ctx, walking_bitmap, GRect(61, 8, 8, 13));
   draw_w800_steps_digits(ctx, GRect(73, 3, 64, 24), s_steps_count);
+}
+
+typedef enum {
+  PipShapeRectangle = 0,
+  PipShapePyramid   = 1,
+  PipShapeSquare    = 2,
+  PipShapeCircle    = 3,
+} PipShape;
+
+// Asymptotic FuelBand distribution: first half low, middle stretch mid,
+// last 4 high. For PIP_COUNT=20:
+//   pips 0..9   = low  (10 pips, first half)
+//   pips 10..15 = mid  (6 pips)
+//   pips 16..19 = high (last 4 pips)
+// Generalized: first_break = count/2, second_break = max(first_break, count-4).
+static GColor pip_band_color(uint32_t low_hex, uint32_t mid_hex,
+                             uint32_t high_hex, int i, int count) {
+  int first_break  = count / 2;
+  int second_break = count - 4;
+  if (second_break < first_break) second_break = first_break;
+  if (i < first_break)  return GColorFromHEX(low_hex);
+  if (i < second_break) return GColorFromHEX(mid_hex);
+  return GColorFromHEX(high_hex);
+}
+
+// Three-color gradient interpolation across `i` in 0..max inclusive.
+// Routes through `mid` at the midpoint so red->yellow->green stays on
+// the visible rainbow line. A two-color interp from red(0xFF0000) to
+// green(0x00FF00) misses pure yellow entirely — the mathematical
+// midpoint is (0x7F, 0x80, 0x00) which quantizes to dark olive on
+// Pebble's 64-color palette. Explicit midpoint keeps the gradient
+// readable on this hardware.
+static GColor pip_gradient_color(uint32_t low_hex, uint32_t mid_hex,
+                                 uint32_t high_hex, int i, int max) {
+  if (max <= 0)   return GColorFromHEX(high_hex);
+  if (i <= 0)     return GColorFromHEX(low_hex);
+  if (i >= max)   return GColorFromHEX(high_hex);
+  int half = max / 2;
+  if (i == half)  return GColorFromHEX(mid_hex);
+
+  uint32_t from_hex, to_hex;
+  int seg_start, seg_end;
+  if (i < half) {
+    from_hex  = low_hex;
+    to_hex    = mid_hex;
+    seg_start = 0;
+    seg_end   = half;
+  } else {
+    from_hex  = mid_hex;
+    to_hex    = high_hex;
+    seg_start = half;
+    seg_end   = max;
+  }
+  int span = seg_end - seg_start;
+  int t    = i - seg_start;
+  int fr = (from_hex >> 16) & 0xFF;
+  int fg = (from_hex >>  8) & 0xFF;
+  int fb = (from_hex)       & 0xFF;
+  int tr = (to_hex   >> 16) & 0xFF;
+  int tg = (to_hex   >>  8) & 0xFF;
+  int tb = (to_hex)         & 0xFF;
+  int r = fr + ((tr - fr) * t) / span;
+  int g = fg + ((tg - fg) * t) / span;
+  int b = fb + ((tb - fb) * t) / span;
+  uint32_t hex = ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+  return GColorFromHEX(hex);
+}
+
+// For 20-pip center-out fill: returns the order in which slot `i`
+// fills counting outward from the center pair. Center pair = slots 9,10
+// (ranks 0,1). Then 8,11 (ranks 2,3). Then 7,12 (ranks 4,5). And so on.
+static int center_out_rank_20(int i) {
+  static const uint8_t TABLE[20] = {
+    18, 16, 14, 12, 10,  8,  6,  4,  2,  0,
+     1,  3,  5,  7,  9, 11, 13, 15, 17, 19
+  };
+  if (i < 0 || i >= 20) return 0;
+  return TABLE[i];
+}
+
+// Draws an outlined pip in the named shape, centered horizontally on
+// slot_center_x. Vertical band is fixed at y=31..35 (the 5px gap below
+// the top bar). Stroke color is `color`, width 1.
+// Pip row vertical positioning. Shifted +2 from the geometric center of
+// the W800-to-date gap so pips sit closer to the date row:
+//   small (5px tall): y=31..35, vertical center y=33
+//   large (9px tall): y=29..37, vertical center y=33
+// Bottom edge for large (y=37) lands 1px into the date frame BG but well
+// above any rendered date glyphs. Both sizes share vertical center y=33.
+static void draw_pip_outline(GContext *ctx, int slot_center_x,
+                             PipShape shape, GColor color) {
+  graphics_context_set_stroke_color(ctx, color);
+  graphics_context_set_stroke_width(ctx, 1);
+  bool large = (s_fitness_pip_size == 1);
+  switch (shape) {
+    case PipShapeRectangle:
+      if (large) {
+        graphics_draw_rect(ctx, GRect(slot_center_x - 4, 29, 9, 9));
+      } else {
+        graphics_draw_rect(ctx, GRect(slot_center_x - 4, 31, 8, 5));
+      }
+      break;
+    case PipShapePyramid: {
+      int top_y    = large ? 29 : 31;
+      int bot_y    = large ? 37 : 35;
+      int half_w   = 4;  // base half-width stays 4 either way
+      graphics_draw_line(ctx, GPoint(slot_center_x - half_w, bot_y),
+                               GPoint(slot_center_x + half_w, bot_y));
+      graphics_draw_line(ctx, GPoint(slot_center_x - half_w, bot_y),
+                               GPoint(slot_center_x,         top_y));
+      graphics_draw_line(ctx, GPoint(slot_center_x + half_w, bot_y),
+                               GPoint(slot_center_x,         top_y));
+      break;
+    }
+    case PipShapeSquare:
+      if (large) {
+        // 7x7 large square, slightly smaller than the 9x9 rectangle so
+        // lap-0 rectangle and lap-2 square stay visually distinct.
+        graphics_draw_rect(ctx, GRect(slot_center_x - 3, 30, 7, 7));
+      } else {
+        graphics_draw_rect(ctx, GRect(slot_center_x - 2, 31, 5, 5));
+      }
+      break;
+    case PipShapeCircle:
+      graphics_draw_circle(ctx, GPoint(slot_center_x, 33),
+                           large ? 4 : 2);
+      break;
+  }
+}
+
+// Draws a filled pip in the named shape. If half_only is true, fills
+// only the left or right half (determined by half_is_left).
+static void draw_pip_filled(GContext *ctx, int slot_center_x,
+                            PipShape shape, GColor color,
+                            bool half_only, bool half_is_left) {
+  graphics_context_set_fill_color(ctx, color);
+  bool large = (s_fitness_pip_size == 1);
+  switch (shape) {
+    case PipShapeRectangle: {
+      int w     = large ? 9 : 8;
+      int top_y = large ? 29 : 31;
+      int h     = large ? 9 : 5;
+      int half_w = w / 2;  // 4 either way (9/2=4 with integer math)
+      GRect r = GRect(slot_center_x - 4, top_y, w, h);
+      if (half_only) {
+        r.size.w = large ? 5 : 4;  // include center column on large
+        if (!half_is_left) {
+          r.origin.x += half_w;  // jump right; right half starts at center
+        }
+      }
+      graphics_fill_rect(ctx, r, 0, GCornerNone);
+      break;
+    }
+    case PipShapePyramid: {
+      int top_y = large ? 29 : 31;
+      int bot_y = large ? 37 : 35;
+      int half_w = 4;
+      GPathInfo info_full = { .num_points = 3, .points = (GPoint[]){
+        {slot_center_x - half_w, bot_y},
+        {slot_center_x + half_w, bot_y},
+        {slot_center_x,          top_y},
+      }};
+      GPathInfo info_left = { .num_points = 3, .points = (GPoint[]){
+        {slot_center_x - half_w, bot_y},
+        {slot_center_x,          bot_y},
+        {slot_center_x,          top_y},
+      }};
+      GPathInfo info_right = { .num_points = 3, .points = (GPoint[]){
+        {slot_center_x,          bot_y},
+        {slot_center_x + half_w, bot_y},
+        {slot_center_x,          top_y},
+      }};
+      GPathInfo *which = half_only
+          ? (half_is_left ? &info_left : &info_right)
+          : &info_full;
+      GPath *path = gpath_create(which);
+      gpath_draw_filled(ctx, path);
+      gpath_destroy(path);
+      break;
+    }
+    case PipShapeSquare: {
+      int w     = large ? 7 : 5;
+      int top_y = large ? 30 : 31;
+      int left_x = slot_center_x - (large ? 3 : 2);
+      GRect r = GRect(left_x, top_y, w, w);
+      if (half_only) {
+        int half_w_px = w / 2 + (w % 2);  // 3 for w=5, 4 for w=7
+        r.size.w = half_w_px;
+        if (!half_is_left) {
+          r.origin.x += (w - half_w_px);
+        }
+      }
+      graphics_fill_rect(ctx, r, 0, GCornerNone);
+      break;
+    }
+    case PipShapeCircle: {
+      // graphics_fill_radial half-fill technique mirrors
+      // draw_your_day_hour_pips. Angles: 0=top, clockwise.
+      //   Left half:  180..360 (bottom -> left -> top).
+      //   Right half: 0..180   (top -> right -> bottom).
+      int radius = large ? 4 : 2;
+      int diameter = large ? 9 : 5;
+      GPoint center = GPoint(slot_center_x, 33);
+      if (!half_only) {
+        graphics_fill_circle(ctx, center, radius);
+      } else {
+        GRect pip_frame = GRect(slot_center_x - radius,
+                                33 - radius,
+                                diameter, diameter);
+        if (half_is_left) {
+          graphics_fill_radial(ctx, pip_frame, GOvalScaleModeFitCircle, diameter,
+                               DEG_TO_TRIGANGLE(180), DEG_TO_TRIGANGLE(360));
+        } else {
+          graphics_fill_radial(ctx, pip_frame, GOvalScaleModeFitCircle, diameter,
+                               DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE(180));
+        }
+      }
+      break;
+    }
+  }
+}
+
+static void draw_fitness_pip_row(GContext *ctx) {
+  if (!s_fitness_pip_row_enabled) return;
+
+  // The pip row sits in the date-bar's vertical band (y=31..35). Set the
+  // draw section so draw_fg_color() returns the right contrast color
+  // against whatever the date bar's actual rendered background is
+  // (which depends on light_mode + invert_date_bar). Using a raw
+  // theme_fg_color() here would render invisible against inverted bars.
+  set_draw_section(ColorSectionDateBar);
+
+  // Edge-to-edge: 20 pips, 10px slot each, x=0..199 with no margin.
+  const int PIP_COUNT = 20;
+  const int SLOT_W    = SCREEN_W / PIP_COUNT;  // 10
+
+  int target = s_fitness_target_steps > 0
+      ? s_fitness_target_steps
+      : FITNESS_DEFAULT_TARGET_STEPS;
+  if (target <= 0) return;  // defensive; target should always be > 0
+
+  // Live step count comes from s_steps_count (maintained by update_stats on
+  // every minute tick). s_fitness_steps_value is only set when the
+  // fitness-rings shake overlay opens, so reading it here would render zero
+  // pips on the main face — that was the original "no pips at all" bug.
+  int steps = s_steps_count;
+  if (steps < 0) steps = 0;
+
+  int lap = steps / target;
+  if (lap < 0) lap = 0;
+  if (lap > 2) lap = 2;  // cap at squares
+  int lap_steps = steps - (lap * target);
+  if (lap_steps < 0) lap_steps = 0;
+  if (lap == 2 && lap_steps > target) lap_steps = target;
+
+  // Lap 0 uses the user-chosen base shape (circle default, rectangle option).
+  // Lap 1 = pyramid, lap 2+ = square. Lap-progression shapes are not
+  // user-configurable; only the pre-goal base shape is.
+  PipShape shape;
+  if (lap == 0) {
+    shape = (s_fitness_pip_shape == 1) ? PipShapeRectangle : PipShapeCircle;
+  } else if (lap == 1) {
+    shape = PipShapePyramid;
+  } else {
+    shape = PipShapeSquare;
+  }
+
+  int steps_per_half = target / (PIP_COUNT * 2);  // e.g. 250 if target=10000
+  int filled_halves = steps_per_half > 0 ? (lap_steps / steps_per_half) : 0;
+  if (filled_halves > PIP_COUNT * 2) filled_halves = PIP_COUNT * 2;
+
+  for (int i = 0; i < PIP_COUNT; i++) {
+    int slot_center_x = i * SLOT_W + SLOT_W / 2;  // 5, 15, 25, ..., 195
+
+    int logical_idx;
+    switch (s_fitness_pip_direction) {
+      case 1:  logical_idx = center_out_rank_20(i);     break; // center-out
+      case 2:  logical_idx = (PIP_COUNT - 1) - i;        break; // RTL
+      default: logical_idx = i;                          break; // LTR
+    }
+
+    int half_a = logical_idx * 2;
+    int half_b = logical_idx * 2 + 1;
+    bool first_filled  = half_a < filled_halves;
+    bool second_filled = half_b < filled_halves;
+
+    bool half_is_left;
+    switch (s_fitness_pip_direction) {
+      case 1:  half_is_left = (i >= PIP_COUNT / 2);  break; // center-out
+      case 2:  half_is_left = false;                  break; // RTL: right half first
+      default: half_is_left = true;                   break; // LTR: left half first
+    }
+
+    // Color source resolution:
+    //   s_fitness_pip_color_source == 1  -> always color, use pickers
+    //   s_fitness_pip_color_source == 0  -> follow global theme
+    //                                       (Tuxedo=BW, Poor&Irish=color)
+    // Lap >= 1 (over goal): lock every pip to the high color. Visual
+    // says "you've passed the goal, every step is bonus". The gradient
+    // only renders for lap 0 (the current run toward the goal).
+    bool use_color = (s_fitness_pip_color_source == 1) ||
+                     (s_color_mode == ColorModeColor);
+    GColor pip_color;
+    if (!use_color) {
+      pip_color = draw_fg_color();
+    } else if (lap >= 1) {
+      pip_color = GColorFromHEX(s_fitness_pip_color_high_hex);
+    } else if (s_fitness_pip_color_dist == 1) {
+      pip_color = pip_band_color(
+          s_fitness_pip_color_low_hex,
+          s_fitness_pip_color_mid_hex,
+          s_fitness_pip_color_high_hex,
+          i, PIP_COUNT);
+    } else {
+      pip_color = pip_gradient_color(
+          s_fitness_pip_color_low_hex,
+          s_fitness_pip_color_mid_hex,
+          s_fitness_pip_color_high_hex,
+          i, PIP_COUNT - 1);
+    }
+
+    if (s_fitness_pip_style == 1) {
+      // Populate-as-you-walk: only earned material drawn
+      if (first_filled && second_filled) {
+        draw_pip_filled(ctx, slot_center_x, shape, pip_color, false, false);
+      } else if (first_filled) {
+        draw_pip_filled(ctx, slot_center_x, shape, pip_color, true, half_is_left);
+      }
+    } else {
+      // Hollow-progressive: outline track, fill earned, half-fill active
+      if (first_filled && second_filled) {
+        draw_pip_filled(ctx, slot_center_x, shape, pip_color, false, false);
+      } else if (first_filled) {
+        draw_pip_outline(ctx, slot_center_x, shape, pip_color);
+        draw_pip_filled(ctx, slot_center_x, shape, pip_color, true, half_is_left);
+      } else {
+        draw_pip_outline(ctx, slot_center_x, shape, pip_color);
+      }
+    }
+  }
 }
 
 static void draw_bt_icon(GContext *ctx, GPoint origin) {
@@ -3180,7 +3548,12 @@ static void step_history_draw_overlay(GContext *ctx) {
   const int chart_left = 8;
   const int chart_right = SCREEN_W - 8;
   const int chart_w = chart_right - chart_left;
-  const int chart_top = 108;
+  // Reserved label row sits at y=108..121 (14px tall). Bars start at y=122
+  // so per-bar values are always legible, even on half-goal or zero days
+  // where the bar is too short to hold text inside.
+  const int label_top = 108;
+  const int label_h = 14;
+  const int chart_top = label_top + label_h;
   const int chart_bottom = 195;
   const int chart_h = chart_bottom - chart_top;
   const int n_bars = 7;
@@ -3195,16 +3568,63 @@ static void step_history_draw_overlay(GContext *ctx) {
   }
   HealthValue target = s_fitness_target_steps > 0
       ? (HealthValue)s_fitness_target_steps : 10000;
+  // Always include the goal in the chart's range so the reference line
+  // sits inside the plot. Otherwise low-step weeks would scale to their
+  // own max and hide where the goal lives relative to actual performance.
+  HealthValue scale_max = max_steps > target ? max_steps : target;
+
+  // Goal reference line first, so bars overlay it where they reach above.
+  int goal_y = chart_bottom - (int)((target * chart_h) / scale_max);
+  if (goal_y < chart_top) goal_y = chart_top;
+  if (goal_y >= chart_top && goal_y <= chart_bottom) {
+    graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
+    graphics_context_set_stroke_width(ctx, 1);
+    graphics_draw_line(ctx, GPoint(chart_left, goal_y),
+                       GPoint(chart_right - 1, goal_y));
+  }
 
   graphics_context_set_stroke_color(ctx, theme_fg_color());
   graphics_context_set_fill_color(ctx, theme_fg_color());
   graphics_context_set_stroke_width(ctx, 1);
+
+  // GOTHIC_14 (non-bold) fits "X.Xk" inside the ~26px column. Labels live
+  // in the reserved label row above the bars; bar height carries any
+  // precision the rounded label loses.
+  GFont val_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
 
   for (int i = 0; i < n_bars; i++) {
     HealthValue v = totals[i];
     int bar_x = chart_left + (i * slot_w) + (slot_w - bar_w) / 2;
     bool is_today = (i == n_bars - 1);
     bool hit_goal = v >= target;
+
+    // Always draw the value label, even when v == 0, so every day's
+    // count is legible at a glance.
+    char val_buf[8];
+    if (v <= 0) {
+      snprintf(val_buf, sizeof(val_buf), "0");
+    } else if (v < 1000) {
+      // Sub-1k days round visually to 0 in the chart anyway; label as 0
+      // for a clean column. The bar's tiny baseline marker still shows
+      // the day had non-zero activity.
+      snprintf(val_buf, sizeof(val_buf), "0");
+    } else if (v < 10000) {
+      int whole = (int)(v / 1000);
+      int decimal = (int)((v % 1000) / 100);
+      if (decimal == 0) {
+        snprintf(val_buf, sizeof(val_buf), "%dk", whole);
+      } else {
+        snprintf(val_buf, sizeof(val_buf), "%d.%dk", whole, decimal);
+      }
+    } else {
+      int k = (int)(v / 1000);
+      if (k > 99) k = 99;  // cap so the label stays inside its column
+      snprintf(val_buf, sizeof(val_buf), "%dk", k);
+    }
+    draw_text(ctx, val_buf, val_font,
+              GRect(chart_left + (i * slot_w), label_top - 2,
+                    slot_w, label_h + 4),
+              theme_fg_color(), GTextAlignmentCenter);
 
     if (v <= 0) {
       // 1-pixel baseline marker for zero-step days.
@@ -3213,8 +3633,8 @@ static void step_history_draw_overlay(GContext *ctx) {
       continue;
     }
 
-    int bar_h = max_steps > 0
-        ? (int)((v * chart_h) / max_steps) : 0;
+    int bar_h = scale_max > 0
+        ? (int)((v * chart_h) / scale_max) : 0;
     if (bar_h < 2) {
       bar_h = 2;
     }
@@ -3494,6 +3914,10 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
 
   draw_text(ctx, event_display_text(s_event_buf), s_font_event,
             GRect(8, 203, 184, 25), draw_fg_color(), GTextAlignmentCenter);
+
+  // Drawn last so the date-bar background fill (y=31..time_frame_y) does
+  // not overwrite the pips. The pip row sits in y=31..35.
+  draw_fitness_pip_row(ctx);
 }
 
 static void update_time_date(struct tm *t) {
@@ -4100,6 +4524,84 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   if (t) {
     s_w800_steps_top_enabled = t->value->int32 != 0;
     persist_write_bool(PERSIST_KEY_TOP_STEPS, s_w800_steps_top_enabled);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_PIP_ROW_ON);
+  if (t) {
+    s_fitness_pip_row_enabled = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_FITNESS_PIP_ROW_ON, s_fitness_pip_row_enabled);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_PIP_DIRECTION);
+  if (t) {
+    int v = (int)t->value->int32;
+    if (v < 0) v = 0;
+    if (v > 2) v = 2;
+    s_fitness_pip_direction = (uint8_t)v;
+    persist_write_int(PERSIST_KEY_FITNESS_PIP_DIRECTION, v);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_PIP_STYLE);
+  if (t) {
+    int v = (int)t->value->int32;
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    s_fitness_pip_style = (uint8_t)v;
+    persist_write_int(PERSIST_KEY_FITNESS_PIP_STYLE, v);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_PIP_COLOR_LOW);
+  if (t) {
+    s_fitness_pip_color_low_hex = (uint32_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_FITNESS_PIP_COLOR_LOW, (int)s_fitness_pip_color_low_hex);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_PIP_COLOR_MID);
+  if (t) {
+    s_fitness_pip_color_mid_hex = (uint32_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_FITNESS_PIP_COLOR_MID, (int)s_fitness_pip_color_mid_hex);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_PIP_COLOR_HIGH);
+  if (t) {
+    s_fitness_pip_color_high_hex = (uint32_t)t->value->int32;
+    persist_write_int(PERSIST_KEY_FITNESS_PIP_COLOR_HIGH, (int)s_fitness_pip_color_high_hex);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_PIP_COLOR_DIST);
+  if (t) {
+    int v = (int)t->value->int32;
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    s_fitness_pip_color_dist = (uint8_t)v;
+    persist_write_int(PERSIST_KEY_FITNESS_PIP_COLOR_DIST, v);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_PIP_COLOR_SOURCE);
+  if (t) {
+    int v = (int)t->value->int32;
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    s_fitness_pip_color_source = (uint8_t)v;
+    persist_write_int(PERSIST_KEY_FITNESS_PIP_COLOR_SOURCE, v);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_PIP_SHAPE);
+  if (t) {
+    int v = (int)t->value->int32;
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    s_fitness_pip_shape = (uint8_t)v;
+    persist_write_int(PERSIST_KEY_FITNESS_PIP_SHAPE, v);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_PIP_SIZE);
+  if (t) {
+    int v = (int)t->value->int32;
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    s_fitness_pip_size = (uint8_t)v;
+    persist_write_int(PERSIST_KEY_FITNESS_PIP_SIZE, v);
   }
 
   t = dict_find(iter, MESSAGE_KEY_VIBRATE_ON_DISCONNECT);
@@ -4717,6 +5219,54 @@ static void load_persisted(void) {
       s_forecast_start_t > 0 && s_forecast_last_update_t > 0;
   if (persist_exists(PERSIST_KEY_TOP_STEPS)) {
     s_w800_steps_top_enabled = persist_read_bool(PERSIST_KEY_TOP_STEPS);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_PIP_ROW_ON)) {
+    s_fitness_pip_row_enabled = persist_read_bool(PERSIST_KEY_FITNESS_PIP_ROW_ON);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_PIP_DIRECTION)) {
+    int v = persist_read_int(PERSIST_KEY_FITNESS_PIP_DIRECTION);
+    if (v < 0) v = 0;
+    if (v > 2) v = 2;
+    s_fitness_pip_direction = (uint8_t)v;
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_PIP_STYLE)) {
+    int v = persist_read_int(PERSIST_KEY_FITNESS_PIP_STYLE);
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    s_fitness_pip_style = (uint8_t)v;
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_PIP_COLOR_LOW)) {
+    s_fitness_pip_color_low_hex = (uint32_t)persist_read_int(PERSIST_KEY_FITNESS_PIP_COLOR_LOW);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_PIP_COLOR_MID)) {
+    s_fitness_pip_color_mid_hex = (uint32_t)persist_read_int(PERSIST_KEY_FITNESS_PIP_COLOR_MID);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_PIP_COLOR_HIGH)) {
+    s_fitness_pip_color_high_hex = (uint32_t)persist_read_int(PERSIST_KEY_FITNESS_PIP_COLOR_HIGH);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_PIP_COLOR_DIST)) {
+    int v = persist_read_int(PERSIST_KEY_FITNESS_PIP_COLOR_DIST);
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    s_fitness_pip_color_dist = (uint8_t)v;
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_PIP_COLOR_SOURCE)) {
+    int v = persist_read_int(PERSIST_KEY_FITNESS_PIP_COLOR_SOURCE);
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    s_fitness_pip_color_source = (uint8_t)v;
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_PIP_SHAPE)) {
+    int v = persist_read_int(PERSIST_KEY_FITNESS_PIP_SHAPE);
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    s_fitness_pip_shape = (uint8_t)v;
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_PIP_SIZE)) {
+    int v = persist_read_int(PERSIST_KEY_FITNESS_PIP_SIZE);
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    s_fitness_pip_size = (uint8_t)v;
   }
   if (persist_exists(PERSIST_KEY_VIBRATE_ON_DISCONNECT)) {
     s_vibrate_on_disconnect = persist_read_bool(PERSIST_KEY_VIBRATE_ON_DISCONNECT);
