@@ -576,3 +576,27 @@ No more provider-asymmetric verbose-summary behavior. Switching WEATHER_PROVIDER
 
 - `pebble build` succeeds. No new warnings.
 - Manual emulator verification was attempted but the emulator install hung repeatedly (the documented `pkill + pebble wipe` fix didn't resolve cleanly in this session). Skipped emulator verification. Code-path verification only: tracing through `fetchWeatherForCoordinates` and `nwsSendData` confirms each provider's override pattern writes the new keys, and the v2 helpers were validated against live NWS data for ZIP 36542 during the 1.01 development cycle. Visual verification on actual watch is the final step.
+
+## 1.03 shipped — 2026-05-24
+
+Artifact: `release-assets/simple-pixel-style-1.03.0-emery.pbw`.
+
+Tufte-aligned cleanups on the tide chart shake overlay. Three small changes inside `tide_chart_draw_overlay` and `format_time_short`:
+
+- **Colon alignment in stacked time rows.** `format_time_short` previously stripped the leading "0" from single-digit hours via `memmove`, producing variable-width times ("5:30PM" vs "11:45AM") whose colons landed at different X positions when rendered in stacked footer rows. Replaced the strip with `tmp[0] = ' '` so single-digit hours pad to ` 5:30PM` and align with `11:45AM`. The minute digits now line up vertically across the High / Low rows on the tide overlay.
+
+- **"Now" indicator drawn behind the data lines.** The dotted vertical reference at the current-hour column used to draw after the past/future tide curve, putting it on top of the data line at that column. Moved the dotted-line block to draw before the tide curve so the data dominates visually (Tufte layering: secondary annotations recede behind primary data).
+
+- **Dropped colon from "Now %s" footer row** for consistency with the unprefixed "High" / "Low " rows.
+
+Bundled in the same release: the equivalent changes on the standalone US Tidemaps app (see that repo for the parallel diff — colon alignment in its `format_time_short`, chart frame border deleted, past/future stroke encoding ported, "now" indicator moved behind data lines, "Now" colon dropped).
+
+### Files changed
+
+- `jy-time/src/c/jy-time.c` — `format_time_short`, `tide_chart_draw_overlay` only.
+- `jy-time/package.json` — version bumped to 1.03.0.
+
+### Verification
+
+- `pebble build` succeeds with no new warnings.
+- Codex implemented the Pebble watchface side; Claude reviewed the diff for spec correctness and scope before commit. No deviations.

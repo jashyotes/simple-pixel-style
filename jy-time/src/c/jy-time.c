@@ -1822,7 +1822,7 @@ static void format_time_short(char *buf, size_t len, time_t timestamp, bool know
     char tmp[12];
     strftime(tmp, sizeof(tmp), "%I:%M%p", time_info);
     if (tmp[0] == '0') {
-      memmove(tmp, tmp + 1, strlen(tmp));
+      tmp[0] = ' ';
     }
     snprintf(buf, len, "%s", tmp);
   }
@@ -2749,18 +2749,6 @@ static void tide_chart_draw_overlay(GContext *ctx) {
     points[i] = GPoint(x, y);
   }
 
-  // Past hours (indices < TIDE_NOW_INDEX) draw in muted color; future hours
-  // draw in the strong theme foreground so "what's coming" reads as primary.
-  graphics_context_set_stroke_width(ctx, 2);
-  for (int i = 0; i < TIDE_WINDOW_HOURS - 1; i++) {
-    if (points[i].x < 0 || points[i + 1].x < 0) {
-      continue;
-    }
-    GColor stroke = (i < TIDE_NOW_INDEX) ? fitness_muted_text_color() : theme_fg_color();
-    graphics_context_set_stroke_color(ctx, stroke);
-    graphics_draw_line(ctx, points[i], points[i + 1]);
-  }
-
   // Dotted vertical "now" indicator at the TIDE_NOW_INDEX column. Show it
   // whether or not that exact sample has data. The user still wants to see
   // where "now" is on the timeline.
@@ -2778,13 +2766,25 @@ static void tide_chart_draw_overlay(GContext *ctx) {
     graphics_draw_pixel(ctx, GPoint(now_x, y + 1));
   }
 
+  // Past hours (indices < TIDE_NOW_INDEX) draw in muted color; future hours
+  // draw in the strong theme foreground so "what's coming" reads as primary.
+  graphics_context_set_stroke_width(ctx, 2);
+  for (int i = 0; i < TIDE_WINDOW_HOURS - 1; i++) {
+    if (points[i].x < 0 || points[i + 1].x < 0) {
+      continue;
+    }
+    GColor stroke = (i < TIDE_NOW_INDEX) ? fitness_muted_text_color() : theme_fg_color();
+    graphics_context_set_stroke_color(ctx, stroke);
+    graphics_draw_line(ctx, points[i], points[i + 1]);
+  }
+
   char level_buf[12];
   char now_line[24];
   char high_line[32];
   char low_line[32];
   tide_format_level(s_tide_hourly_levels[TIDE_NOW_INDEX], level_buf,
                     sizeof(level_buf));
-  snprintf(now_line, sizeof(now_line), "Now: %s", level_buf);
+  snprintf(now_line, sizeof(now_line), "Now %s", level_buf);
   tide_format_event_line(high_line, sizeof(high_line), "High",
                          s_tide_next_high_t, s_tide_next_high_level);
   tide_format_event_line(low_line, sizeof(low_line), "Low ",
