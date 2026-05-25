@@ -1656,6 +1656,17 @@ static void draw_fitness_pip_row(GContext *ctx) {
     shape = PipShapeSquare;
   }
 
+  // Slots not yet earned in the current lap carry over the previous lap's
+  // fully-filled shape, so passing the goal doesn't visually wipe the row
+  // back to outlines. The active and earned slots get the current-lap shape;
+  // the previous-lap shape only shows under pre-earned slots.
+  PipShape prev_shape = shape;
+  if (lap == 1) {
+    prev_shape = (s_fitness_pip_shape == 1) ? PipShapeRectangle : PipShapeCircle;
+  } else if (lap >= 2) {
+    prev_shape = PipShapePyramid;
+  }
+
   int steps_per_half = target / (PIP_COUNT * 2);  // e.g. 250 if target=10000
   int filled_halves = steps_per_half > 0 ? (lap_steps / steps_per_half) : 0;
   if (filled_halves > PIP_COUNT * 2) filled_halves = PIP_COUNT * 2;
@@ -1711,19 +1722,27 @@ static void draw_fitness_pip_row(GContext *ctx) {
     }
 
     if (s_fitness_pip_style == 1) {
-      // Populate-as-you-walk: only earned material drawn
-      if (first_filled && second_filled) {
-        draw_pip_filled(ctx, slot_center_x, shape, pip_color, false, false);
-      } else if (first_filled) {
-        draw_pip_filled(ctx, slot_center_x, shape, pip_color, true, half_is_left);
-      }
-    } else {
-      // Hollow-progressive: outline track, fill earned, half-fill active
+      // Populate-as-you-walk: only earned material drawn.
+      // Lap > 0: pre-earned slots show the previous lap's filled shape.
       if (first_filled && second_filled) {
         draw_pip_filled(ctx, slot_center_x, shape, pip_color, false, false);
       } else if (first_filled) {
         draw_pip_outline(ctx, slot_center_x, shape, pip_color);
         draw_pip_filled(ctx, slot_center_x, shape, pip_color, true, half_is_left);
+      } else if (lap > 0) {
+        draw_pip_filled(ctx, slot_center_x, prev_shape, pip_color, false, false);
+      }
+    } else {
+      // Hollow-progressive: outline track, fill earned, half-fill active.
+      // Lap > 0: pre-earned slots show the previous lap's filled shape
+      // instead of an outline of the current-lap shape.
+      if (first_filled && second_filled) {
+        draw_pip_filled(ctx, slot_center_x, shape, pip_color, false, false);
+      } else if (first_filled) {
+        draw_pip_outline(ctx, slot_center_x, shape, pip_color);
+        draw_pip_filled(ctx, slot_center_x, shape, pip_color, true, half_is_left);
+      } else if (lap > 0) {
+        draw_pip_filled(ctx, slot_center_x, prev_shape, pip_color, false, false);
       } else {
         draw_pip_outline(ctx, slot_center_x, shape, pip_color);
       }
