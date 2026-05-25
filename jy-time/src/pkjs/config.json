@@ -847,7 +847,23 @@
         "messageKey": "FITNESS_VIBRATE_ON_GOAL",
         "label": "Vibrate when daily step goal is reached",
         "defaultValue": false,
-        "description": "Fires a single short pulse the first time your step count crosses your daily target. Only triggers once per calendar day."
+        "description": "Fires the chosen vibe pattern the first time your step count crosses your daily target. Only triggers once per calendar day."
+      },
+      {
+        "type": "select",
+        "messageKey": "FITNESS_GOAL_VIBE_PATTERN",
+        "label": "Goal vibe pattern",
+        "defaultValue": "short",
+        "options": [
+          { "label": "Short pulse",      "value": "short" },
+          { "label": "Long pulse",       "value": "long" },
+          { "label": "Double pulse",     "value": "double" },
+          { "label": "Heartbeat",        "value": "heartbeat" },
+          { "label": "Mario 1-up",       "value": "mario" },
+          { "label": "SOS (Morse)",      "value": "sos" },
+          { "label": "Rising",           "value": "rising" }
+        ],
+        "description": "Custom patterns built from one-motor vibe sequences (Pebble only ships short/long/double natively). Mario, heartbeat, SOS and rising are rhythmic approximations."
       },
       {
         "type": "color",

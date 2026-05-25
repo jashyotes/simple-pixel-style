@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "1.17",
+  "version": "1.18",
   "keywords": [
     "pebble-app"
   ],
@@ -59,6 +59,7 @@
       "FITNESS_TARGET_ACTIVE_MIN",
       "FITNESS_TARGET_CALORIES",
       "FITNESS_VIBRATE_ON_GOAL",
+      "FITNESS_GOAL_VIBE_PATTERN",
       "FITNESS_COLOR_STEPS",
       "FITNESS_COLOR_ACTIVE",
       "FITNESS_COLOR_CALORIES",

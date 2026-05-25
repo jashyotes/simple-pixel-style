@@ -40,6 +40,7 @@
 #define PERSIST_KEY_FITNESS_PIP_COLOR_DIST 249
 #define PERSIST_KEY_FITNESS_VIBRATE_ON_GOAL 250
 #define PERSIST_KEY_FITNESS_GOAL_VIBE_YDAY  251
+#define PERSIST_KEY_FITNESS_GOAL_VIBE_PATTERN 252
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -420,8 +421,11 @@ static int s_fitness_target_steps = FITNESS_DEFAULT_TARGET_STEPS;
 // Vibrate once per day when daily step goal is first reached.
 // s_fitness_goal_vibe_yday holds the tm_yday on which we last fired
 // (persisted so an app restart on the same day doesn't refire). -1 = never.
-static bool s_fitness_vibrate_on_goal = false;
-static int  s_fitness_goal_vibe_yday  = -1;
+static bool    s_fitness_vibrate_on_goal     = false;
+static int     s_fitness_goal_vibe_yday      = -1;
+// Vibe pattern selector. 0=short, 1=long, 2=double, 3=heartbeat,
+// 4=mario-1up, 5=sos, 6=rising. See fire_goal_vibe().
+static uint8_t s_fitness_goal_vibe_pattern   = 0;
 static int s_fitness_target_active_min = FITNESS_DEFAULT_TARGET_ACTIVE_MIN;
 static int s_fitness_target_calories = FITNESS_DEFAULT_TARGET_CALORIES;
 static int s_fitness_color_steps_hex = FITNESS_DEFAULT_COLOR_STEPS;
@@ -4033,6 +4037,65 @@ static void store_overlay_string(char *dest, size_t dest_len, uint32_t persist_k
   persist_write_string(persist_key, dest);
 }
 
+// Fires the user-selected goal-reached vibe pattern. Custom patterns use
+// vibes_enqueue_custom_pattern with alternating on/off durations in ms.
+// Patterns are rough musical/rhythmic transcriptions; the watch only has
+// one motor, so pitch is faked entirely with pulse length and spacing.
+static void fire_goal_vibe(void) {
+  switch (s_fitness_goal_vibe_pattern) {
+    case 0:
+      vibes_short_pulse();
+      return;
+    case 1:
+      vibes_long_pulse();
+      return;
+    case 2:
+      vibes_double_pulse();
+      return;
+    case 3: {
+      // Heartbeat: thump-thump, rest, thump-thump.
+      static const uint32_t pat[] = { 90, 110, 90, 420, 90, 110, 90 };
+      VibePattern v = { .durations = pat,
+                        .num_segments = ARRAY_LENGTH(pat) };
+      vibes_enqueue_custom_pattern(v);
+      return;
+    }
+    case 4: {
+      // Mario 1-up jingle: six rising "do" beats, last two emphasized.
+      static const uint32_t pat[] = {
+        60, 70, 60, 70, 60, 70, 60, 70, 140, 70, 200
+      };
+      VibePattern v = { .durations = pat,
+                        .num_segments = ARRAY_LENGTH(pat) };
+      vibes_enqueue_custom_pattern(v);
+      return;
+    }
+    case 5: {
+      // SOS in Morse: . . . - - - . . .
+      static const uint32_t pat[] = {
+        110, 90, 110, 90, 110, 220,
+        320, 90, 320, 90, 320, 220,
+        110, 90, 110, 90, 110
+      };
+      VibePattern v = { .durations = pat,
+                        .num_segments = ARRAY_LENGTH(pat) };
+      vibes_enqueue_custom_pattern(v);
+      return;
+    }
+    case 6: {
+      // Rising: three pulses of escalating length, building anticipation.
+      static const uint32_t pat[] = { 80, 90, 160, 90, 320 };
+      VibePattern v = { .durations = pat,
+                        .num_segments = ARRAY_LENGTH(pat) };
+      vibes_enqueue_custom_pattern(v);
+      return;
+    }
+    default:
+      vibes_short_pulse();
+      return;
+  }
+}
+
 static void update_stats(void) {
 #if defined(PBL_HEALTH)
   int steps = (int) health_service_sum_today(HealthMetricStepCount);
@@ -4050,7 +4113,7 @@ static void update_stats(void) {
     struct tm *now_tm = localtime(&now_t);
     int today_yday = now_tm ? now_tm->tm_yday : -1;
     if (today_yday >= 0 && today_yday != s_fitness_goal_vibe_yday) {
-      vibes_short_pulse();
+      fire_goal_vibe();
       s_fitness_goal_vibe_yday = today_yday;
       persist_write_int(PERSIST_KEY_FITNESS_GOAL_VIBE_YDAY, today_yday);
     }
@@ -4651,6 +4714,15 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     s_fitness_vibrate_on_goal = t->value->int32 != 0;
     persist_write_bool(PERSIST_KEY_FITNESS_VIBRATE_ON_GOAL,
                        s_fitness_vibrate_on_goal);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_GOAL_VIBE_PATTERN);
+  if (t) {
+    int v = (int)t->value->int32;
+    if (v < 0) v = 0;
+    if (v > 6) v = 6;
+    s_fitness_goal_vibe_pattern = (uint8_t)v;
+    persist_write_int(PERSIST_KEY_FITNESS_GOAL_VIBE_PATTERN, v);
   }
 
   t = dict_find(iter, MESSAGE_KEY_VIBRATE_ON_DISCONNECT);
@@ -5324,6 +5396,12 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_FITNESS_GOAL_VIBE_YDAY)) {
     s_fitness_goal_vibe_yday =
         persist_read_int(PERSIST_KEY_FITNESS_GOAL_VIBE_YDAY);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_GOAL_VIBE_PATTERN)) {
+    int v = persist_read_int(PERSIST_KEY_FITNESS_GOAL_VIBE_PATTERN);
+    if (v < 0) v = 0;
+    if (v > 6) v = 6;
+    s_fitness_goal_vibe_pattern = (uint8_t)v;
   }
   if (persist_exists(PERSIST_KEY_VIBRATE_ON_DISCONNECT)) {
     s_vibrate_on_disconnect = persist_read_bool(PERSIST_KEY_VIBRATE_ON_DISCONNECT);

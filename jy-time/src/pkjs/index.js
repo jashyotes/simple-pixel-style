@@ -221,6 +221,7 @@ var DEFAULT_SETTINGS = {
   FITNESS_TARGET_ACTIVE_MIN: '30',
   FITNESS_TARGET_CALORIES: '500',
   FITNESS_VIBRATE_ON_GOAL: false,
+  FITNESS_GOAL_VIBE_PATTERN: 'short',
   FITNESS_COLOR_STEPS: 0x00FF00,
   FITNESS_COLOR_ACTIVE: 0x00AAFF,
   FITNESS_COLOR_CALORIES: 0xFF0000,
@@ -353,6 +354,19 @@ function fitnessPipColorDistId(value) {
   return value === 'linear' ? 0 : 1;  // 0=linear, 1=asymptotic FuelBand (default)
 }
 
+function fitnessGoalVibePatternId(value) {
+  switch (value) {
+    case 'long':      return 1;
+    case 'double':    return 2;
+    case 'heartbeat': return 3;
+    case 'mario':     return 4;
+    case 'sos':       return 5;
+    case 'rising':    return 6;
+    case 'short':
+    default:          return 0;
+  }
+}
+
 function temperatureUnit(settings) {
   return settings.TEMPERATURE_UNIT === 'celsius' ? 'celsius' : 'fahrenheit';
 }
@@ -477,6 +491,7 @@ function sendShakeSetting(settings) {
   dict[keys.FITNESS_TARGET_ACTIVE_MIN] = numberSetting(settings.FITNESS_TARGET_ACTIVE_MIN, 30, 1, 9999);
   dict[keys.FITNESS_TARGET_CALORIES] = numberSetting(settings.FITNESS_TARGET_CALORIES, 500, 1, 999999);
   dict[keys.FITNESS_VIBRATE_ON_GOAL] = settings.FITNESS_VIBRATE_ON_GOAL ? 1 : 0;
+  dict[keys.FITNESS_GOAL_VIBE_PATTERN] = fitnessGoalVibePatternId(settings.FITNESS_GOAL_VIBE_PATTERN);
   dict[keys.FITNESS_COLOR_STEPS] = numberSetting(settings.FITNESS_COLOR_STEPS, 0x00FF00, 0, 0xFFFFFF);
   dict[keys.FITNESS_COLOR_ACTIVE] = numberSetting(settings.FITNESS_COLOR_ACTIVE, 0x00AAFF, 0, 0xFFFFFF);
   dict[keys.FITNESS_COLOR_CALORIES] = numberSetting(settings.FITNESS_COLOR_CALORIES, 0xFF0000, 0, 0xFFFFFF);
