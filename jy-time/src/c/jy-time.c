@@ -1486,14 +1486,14 @@ static void draw_pip_outline(GContext *ctx, int slot_center_x,
   switch (shape) {
     case PipShapeRectangle:
       if (large) {
-        graphics_draw_rect(ctx, GRect(slot_center_x - 4, 29, 9, 9));
+        graphics_draw_rect(ctx, GRect(slot_center_x - 4, 31, 9, 9));
       } else {
-        graphics_draw_rect(ctx, GRect(slot_center_x - 4, 31, 8, 5));
+        graphics_draw_rect(ctx, GRect(slot_center_x - 4, 33, 8, 5));
       }
       break;
     case PipShapePyramid: {
-      int top_y    = large ? 29 : 31;
-      int bot_y    = large ? 37 : 35;
+      int top_y    = large ? 31 : 33;
+      int bot_y    = large ? 39 : 37;
       int half_w   = 4;  // base half-width stays 4 either way
       graphics_draw_line(ctx, GPoint(slot_center_x - half_w, bot_y),
                                GPoint(slot_center_x + half_w, bot_y));
@@ -1507,13 +1507,13 @@ static void draw_pip_outline(GContext *ctx, int slot_center_x,
       if (large) {
         // 7x7 large square, slightly smaller than the 9x9 rectangle so
         // lap-0 rectangle and lap-2 square stay visually distinct.
-        graphics_draw_rect(ctx, GRect(slot_center_x - 3, 30, 7, 7));
+        graphics_draw_rect(ctx, GRect(slot_center_x - 3, 32, 7, 7));
       } else {
-        graphics_draw_rect(ctx, GRect(slot_center_x - 2, 31, 5, 5));
+        graphics_draw_rect(ctx, GRect(slot_center_x - 2, 33, 5, 5));
       }
       break;
     case PipShapeCircle:
-      graphics_draw_circle(ctx, GPoint(slot_center_x, 33),
+      graphics_draw_circle(ctx, GPoint(slot_center_x, 35),
                            large ? 4 : 2);
       break;
   }
@@ -1529,7 +1529,7 @@ static void draw_pip_filled(GContext *ctx, int slot_center_x,
   switch (shape) {
     case PipShapeRectangle: {
       int w     = large ? 9 : 8;
-      int top_y = large ? 29 : 31;
+      int top_y = large ? 31 : 33;
       int h     = large ? 9 : 5;
       int half_w = w / 2;  // 4 either way (9/2=4 with integer math)
       GRect r = GRect(slot_center_x - 4, top_y, w, h);
@@ -1543,8 +1543,8 @@ static void draw_pip_filled(GContext *ctx, int slot_center_x,
       break;
     }
     case PipShapePyramid: {
-      int top_y = large ? 29 : 31;
-      int bot_y = large ? 37 : 35;
+      int top_y = large ? 31 : 33;
+      int bot_y = large ? 39 : 37;
       int half_w = 4;
       GPathInfo info_full = { .num_points = 3, .points = (GPoint[]){
         {slot_center_x - half_w, bot_y},
@@ -1571,7 +1571,7 @@ static void draw_pip_filled(GContext *ctx, int slot_center_x,
     }
     case PipShapeSquare: {
       int w     = large ? 7 : 5;
-      int top_y = large ? 30 : 31;
+      int top_y = large ? 32 : 33;
       int left_x = slot_center_x - (large ? 3 : 2);
       GRect r = GRect(left_x, top_y, w, w);
       if (half_only) {
@@ -1591,12 +1591,12 @@ static void draw_pip_filled(GContext *ctx, int slot_center_x,
       //   Right half: 0..180   (top -> right -> bottom).
       int radius = large ? 4 : 2;
       int diameter = large ? 9 : 5;
-      GPoint center = GPoint(slot_center_x, 33);
+      GPoint center = GPoint(slot_center_x, 35);
       if (!half_only) {
         graphics_fill_circle(ctx, center, radius);
       } else {
         GRect pip_frame = GRect(slot_center_x - radius,
-                                33 - radius,
+                                35 - radius,
                                 diameter, diameter);
         if (half_is_left) {
           graphics_fill_radial(ctx, pip_frame, GOvalScaleModeFitCircle, diameter,
