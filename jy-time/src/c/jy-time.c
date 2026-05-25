@@ -38,6 +38,8 @@
 #define PERSIST_KEY_FITNESS_PIP_SIZE 247
 #define PERSIST_KEY_FITNESS_PIP_COLOR_MID 248
 #define PERSIST_KEY_FITNESS_PIP_COLOR_DIST 249
+#define PERSIST_KEY_FITNESS_VIBRATE_ON_GOAL 250
+#define PERSIST_KEY_FITNESS_GOAL_VIBE_YDAY  251
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -415,6 +417,11 @@ static int s_fitness_active_minutes_value = 0;
 static int s_fitness_active_calories_value = 0;
 static int s_fitness_distance_meters_value = 0;
 static int s_fitness_target_steps = FITNESS_DEFAULT_TARGET_STEPS;
+// Vibrate once per day when daily step goal is first reached.
+// s_fitness_goal_vibe_yday holds the tm_yday on which we last fired
+// (persisted so an app restart on the same day doesn't refire). -1 = never.
+static bool s_fitness_vibrate_on_goal = false;
+static int  s_fitness_goal_vibe_yday  = -1;
 static int s_fitness_target_active_min = FITNESS_DEFAULT_TARGET_ACTIVE_MIN;
 static int s_fitness_target_calories = FITNESS_DEFAULT_TARGET_CALORIES;
 static int s_fitness_color_steps_hex = FITNESS_DEFAULT_COLOR_STEPS;
@@ -4033,6 +4040,22 @@ static void update_stats(void) {
 
   if (steps < 0) steps = 0;
   s_steps_count = steps;
+
+  // Goal-reached vibe: fires once per calendar day when steps first cross
+  // the target. yday persistence keeps app restarts from re-firing the
+  // same day.
+  if (s_fitness_vibrate_on_goal && s_fitness_target_steps > 0 &&
+      steps >= s_fitness_target_steps) {
+    time_t now_t = time(NULL);
+    struct tm *now_tm = localtime(&now_t);
+    int today_yday = now_tm ? now_tm->tm_yday : -1;
+    if (today_yday >= 0 && today_yday != s_fitness_goal_vibe_yday) {
+      vibes_short_pulse();
+      s_fitness_goal_vibe_yday = today_yday;
+      persist_write_int(PERSIST_KEY_FITNESS_GOAL_VIBE_YDAY, today_yday);
+    }
+  }
+
   if (steps < 1000) {
     snprintf(s_steps_buf, sizeof(s_steps_buf), "%d", steps);
   } else if (steps < 100000) {
@@ -4621,6 +4644,13 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     if (v > 1) v = 1;
     s_fitness_pip_size = (uint8_t)v;
     persist_write_int(PERSIST_KEY_FITNESS_PIP_SIZE, v);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_VIBRATE_ON_GOAL);
+  if (t) {
+    s_fitness_vibrate_on_goal = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_FITNESS_VIBRATE_ON_GOAL,
+                       s_fitness_vibrate_on_goal);
   }
 
   t = dict_find(iter, MESSAGE_KEY_VIBRATE_ON_DISCONNECT);
@@ -5286,6 +5316,14 @@ static void load_persisted(void) {
     if (v < 0) v = 0;
     if (v > 1) v = 1;
     s_fitness_pip_size = (uint8_t)v;
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_VIBRATE_ON_GOAL)) {
+    s_fitness_vibrate_on_goal =
+        persist_read_bool(PERSIST_KEY_FITNESS_VIBRATE_ON_GOAL);
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_GOAL_VIBE_YDAY)) {
+    s_fitness_goal_vibe_yday =
+        persist_read_int(PERSIST_KEY_FITNESS_GOAL_VIBE_YDAY);
   }
   if (persist_exists(PERSIST_KEY_VIBRATE_ON_DISCONNECT)) {
     s_vibrate_on_disconnect = persist_read_bool(PERSIST_KEY_VIBRATE_ON_DISCONNECT);

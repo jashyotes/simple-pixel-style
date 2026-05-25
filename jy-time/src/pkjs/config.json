@@ -843,6 +843,13 @@
         }
       },
       {
+        "type": "toggle",
+        "messageKey": "FITNESS_VIBRATE_ON_GOAL",
+        "label": "Vibrate when daily step goal is reached",
+        "defaultValue": false,
+        "description": "Fires a single short pulse the first time your step count crosses your daily target. Only triggers once per calendar day."
+      },
+      {
         "type": "color",
         "messageKey": "FITNESS_COLOR_STEPS",
         "label": "Steps ring color",
