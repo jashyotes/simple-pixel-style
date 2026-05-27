@@ -356,14 +356,15 @@ function fitnessPipColorDistId(value) {
 
 function fitnessGoalVibePatternId(value) {
   switch (value) {
-    case 'long':      return 1;
-    case 'double':    return 2;
-    case 'heartbeat': return 3;
-    case 'mario':     return 4;
-    case 'sos':       return 5;
-    case 'rising':    return 6;
+    case 'long':       return 1;
+    case 'double':     return 2;
+    case 'heartbeat':  return 3;
+    case 'mario':      return 4;
+    case 'sos':        return 5;
+    case 'rising':     return 6;
+    case 'ff_victory': return 7;
     case 'short':
-    default:          return 0;
+    default:           return 0;
   }
 }
 

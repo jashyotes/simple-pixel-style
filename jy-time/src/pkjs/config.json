@@ -861,9 +861,10 @@
           { "label": "Heartbeat",        "value": "heartbeat" },
           { "label": "Mario 1-up",       "value": "mario" },
           { "label": "SOS (Morse)",      "value": "sos" },
-          { "label": "Rising",           "value": "rising" }
+          { "label": "Rising",           "value": "rising" },
+          { "label": "FF Victory Fanfare", "value": "ff_victory" }
         ],
-        "description": "Custom patterns built from one-motor vibe sequences (Pebble only ships short/long/double natively). Mario, heartbeat, SOS and rising are rhythmic approximations."
+        "description": "Custom patterns built from one-motor vibe sequences (Pebble only ships short/long/double natively). Mario, heartbeat, SOS, rising, and FF Victory are rhythmic approximations."
       },
       {
         "type": "color",

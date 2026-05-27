@@ -424,7 +424,7 @@ static int s_fitness_target_steps = FITNESS_DEFAULT_TARGET_STEPS;
 static bool    s_fitness_vibrate_on_goal     = false;
 static int     s_fitness_goal_vibe_yday      = -1;
 // Vibe pattern selector. 0=short, 1=long, 2=double, 3=heartbeat,
-// 4=mario-1up, 5=sos, 6=rising. See fire_goal_vibe().
+// 4=mario-1up, 5=sos, 6=rising, 7=ff-victory. See fire_goal_vibe().
 static uint8_t s_fitness_goal_vibe_pattern   = 0;
 static int s_fitness_target_active_min = FITNESS_DEFAULT_TARGET_ACTIVE_MIN;
 static int s_fitness_target_calories = FITNESS_DEFAULT_TARGET_CALORIES;
@@ -4090,6 +4090,20 @@ static void fire_goal_vibe(void) {
       vibes_enqueue_custom_pattern(v);
       return;
     }
+    case 7: {
+      // Final Fantasy Victory Fanfare. Community-tested timings from an
+      // XDA Android haptic-pattern thread, converted to Pebble's
+      // on/off/on/off... form (Android's leading 0 delay dropped).
+      // Cadence: triplet ta-ta-ta + four held tones + flourish + finale.
+      static const uint32_t pat[] = {
+        50, 100, 50, 100, 50, 100, 400, 100,
+        300, 100, 350, 50, 200, 100, 100, 50, 600
+      };
+      VibePattern v = { .durations = pat,
+                        .num_segments = ARRAY_LENGTH(pat) };
+      vibes_enqueue_custom_pattern(v);
+      return;
+    }
     default:
       vibes_short_pulse();
       return;
@@ -4720,7 +4734,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   if (t) {
     int v = (int)t->value->int32;
     if (v < 0) v = 0;
-    if (v > 6) v = 6;
+    if (v > 7) v = 7;
     s_fitness_goal_vibe_pattern = (uint8_t)v;
     persist_write_int(PERSIST_KEY_FITNESS_GOAL_VIBE_PATTERN, v);
   }
