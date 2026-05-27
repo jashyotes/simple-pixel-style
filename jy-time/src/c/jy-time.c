@@ -930,6 +930,7 @@ static void fitness_draw_ring(GContext *ctx, GPoint center, int radius, int stro
   if (value < target) {
     end_angle = (int32_t)(((int64_t)TRIG_MAX_ANGLE * value) / target);
   }
+  graphics_context_set_stroke_width(ctx, stroke_width);
   graphics_context_set_stroke_color(ctx, color);
   graphics_draw_arc(ctx, frame, GOvalScaleModeFitCircle, 0, end_angle);
 }

@@ -2447,6 +2447,26 @@ function isSydneyDst(components) {
   return current >= Date.UTC(year, 9, startDay, 2, 0, 0);
 }
 
+function lastSundayOfMonth(year, monthIndex) {
+  var lastDay = new Date(Date.UTC(year, monthIndex + 1, 0));
+  return lastDay.getUTCDate() - lastDay.getUTCDay();
+}
+
+function isEuropeanDst(components) {
+  // EU summer time: last Sunday of March 01:00 UTC -> last Sunday of October 01:00 UTC.
+  var year = components.year;
+  var month = components.month;
+  if (month >= 4 && month <= 9) return true;
+  if (month <= 2 || month >= 11) return false;
+  var current = localComponentTime(components);
+  if (month === 3) {
+    var marStart = lastSundayOfMonth(year, 2);
+    return current >= Date.UTC(year, 2, marStart, 1, 0, 0);
+  }
+  var octEnd = lastSundayOfMonth(year, 9);
+  return current < Date.UTC(year, 9, octEnd, 1, 0, 0);
+}
+
 function normalizeTzid(tzid) {
   return (tzid || '').replace(/^"|"$/g, '');
 }
@@ -2459,7 +2479,9 @@ function timezoneOffsetMinutes(tzid, components) {
   if (tzid === 'UTC' || tzid === 'Etc/UTC' || tzid === 'GMT' || tzid === 'Z') {
     return 0;
   }
-  if (tzid === 'America/New_York') {
+  if (tzid === 'America/New_York'
+      || tzid === 'America/Detroit'
+      || tzid === 'America/Toronto') {
     return isUsDst(components) ? -240 : -300;
   }
   if (tzid === 'America/Chicago') {
@@ -2476,6 +2498,12 @@ function timezoneOffsetMinutes(tzid, components) {
   }
   if (tzid === 'Australia/Sydney') {
     return isSydneyDst(components) ? 660 : 600;
+  }
+  if (tzid === 'Europe/London') {
+    return isEuropeanDst(components) ? 60 : 0;
+  }
+  if (tzid === 'Europe/Paris') {
+    return isEuropeanDst(components) ? 120 : 60;
   }
   return null;
 }
