@@ -1656,16 +1656,16 @@ static void draw_fitness_pip_row(GContext *ctx) {
   if (lap_steps < 0) lap_steps = 0;
   if (lap == 2 && lap_steps > target) lap_steps = target;
 
-  // Lap 0 uses the user-chosen base shape (circle default, rectangle option).
-  // Lap 1 = pyramid, lap 2+ = square. Lap-progression shapes are not
-  // user-configurable; only the pre-goal base shape is.
+  // Lap 0 uses the user-chosen base shape. Progression depends on the base:
+  //   Rectangle base: Rectangle -> Pyramid -> Square
+  //   Circle base:    Circle    -> Rectangle -> Pyramid
   PipShape shape;
   if (lap == 0) {
     shape = (s_fitness_pip_shape == 1) ? PipShapeRectangle : PipShapeCircle;
   } else if (lap == 1) {
-    shape = PipShapePyramid;
+    shape = (s_fitness_pip_shape == 1) ? PipShapePyramid : PipShapeRectangle;
   } else {
-    shape = PipShapeSquare;
+    shape = (s_fitness_pip_shape == 1) ? PipShapeSquare : PipShapePyramid;
   }
 
   // Slots not yet earned in the current lap carry over the previous lap's
@@ -1676,7 +1676,7 @@ static void draw_fitness_pip_row(GContext *ctx) {
   if (lap == 1) {
     prev_shape = (s_fitness_pip_shape == 1) ? PipShapeRectangle : PipShapeCircle;
   } else if (lap >= 2) {
-    prev_shape = PipShapePyramid;
+    prev_shape = (s_fitness_pip_shape == 1) ? PipShapePyramid : PipShapeRectangle;
   }
 
   int steps_per_half = target / (PIP_COUNT * 2);  // e.g. 250 if target=10000
