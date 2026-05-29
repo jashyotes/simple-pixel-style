@@ -49,21 +49,21 @@
         "type": "toggle",
         "messageKey": "INVERT_TOP_BAR",
         "label": "Invert top bar",
-        "defaultValue": false,
+        "defaultValue": true,
         "description": "Swaps the battery, step, and Bluetooth bar colors."
       },
       {
         "type": "toggle",
         "messageKey": "INVERT_DATE_BAR",
         "label": "Invert date bar",
-        "defaultValue": false,
+        "defaultValue": true,
         "description": "Swaps the date bar colors."
       },
       {
         "type": "toggle",
         "messageKey": "INVERT_TIME",
         "label": "Invert time",
-        "defaultValue": false,
+        "defaultValue": true,
         "description": "Swaps the time row colors."
       },
       {
@@ -163,7 +163,7 @@
         "type": "select",
         "messageKey": "TIME_FONT",
         "label": "Time font",
-        "defaultValue": "0",
+        "defaultValue": "1",
         "options": [
           {
             "label": "Default",
@@ -202,7 +202,7 @@
         "type": "toggle",
         "messageKey": "FITNESS_PIP_ROW_ON",
         "label": "FuelBand-style pip row",
-        "defaultValue": false,
+        "defaultValue": true,
         "description": "Horizontal 20-pip step-progress strip below the top bar. Pips fill in halves; each completed goal swaps pip shape (rectangles, then triangles, then squares). Off by default."
       },
       {
@@ -252,7 +252,7 @@
         "type": "select",
         "messageKey": "FITNESS_PIP_COLOR_SOURCE",
         "label": "Pip color source",
-        "defaultValue": "theme",
+        "defaultValue": "color",
         "options": [
           { "label": "Match watch theme (B&W in Tuxedo)", "value": "theme" },
           { "label": "Always color (use pickers below)",  "value": "color" }
@@ -282,23 +282,23 @@
         "type": "color",
         "messageKey": "FITNESS_PIP_COLOR_MID",
         "label": "Pip color (middle)",
-        "defaultValue": 16776960,
+        "defaultValue": 16755200,
         "sunlight": false,
-        "description": "Color at the midpoint pip. Pebble's 64-color palette can't reach pure yellow on a straight red->green interpolation, so the explicit midpoint keeps the rainbow visible. Defaults to yellow."
+        "description": "Color at the midpoint pip. Pebble's 64-color palette can't reach pure yellow on a straight red->green interpolation, so the explicit midpoint keeps the rainbow visible. Defaults to a mustardy orange."
       },
       {
         "type": "color",
         "messageKey": "FITNESS_PIP_COLOR_HIGH",
         "label": "Pip color (high end)",
-        "defaultValue": 65280,
+        "defaultValue": 21760,
         "sunlight": false,
-        "description": "Color of the rightmost pip and the color every pip locks to after you pass your step goal. Defaults to green (FuelBand green)."
+        "description": "Color of the rightmost pip and the color every pip locks to after you pass your step goal. Defaults to a dark green."
       },
       {
         "type": "toggle",
         "messageKey": "VIBRATE_ON_DISCONNECT",
         "label": "Vibrate on disconnect",
-        "defaultValue": false,
+        "defaultValue": true,
         "description": "Buzzes the watch when the phone app connection drops."
       },
       {
@@ -708,7 +708,7 @@
         "messageKey": "SHAKE_BEHAVIOR",
         "id": "shake-behavior-select",
         "label": "Shake behavior",
-        "defaultValue": "off",
+        "defaultValue": "fitness_rings",
         "options": [
           {
             "label": "Off",

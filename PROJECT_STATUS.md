@@ -632,3 +632,109 @@ Default is 24, so existing users see no change unless they opt in. The setting p
 
 - `pebble build` succeeds with no new warnings.
 - Data layout migration is handled by the existing TIDE_DATA_VERSION mismatch path (wipes stale 24-byte data on first boot of 1.04 so the renderer doesn't draw a misleading partial chart while waiting for the fresh 48-byte fetch).
+
+## 1.05–1.13 shipped — May 2026
+
+Range covers the FuelBand pip row feature build-out and early tuning. Status entries for these individual releases were not added at the time; the current state of the feature is captured in 1.14–1.16 below.
+
+## 1.14 shipped — 2026-05-26
+
+Renamed "Banded FuelBand" color distribution to "Asymptotic FuelBand" and reshaped the band breakpoints to first 10 pips red, middle 6 yellow, last 4 green (was 5/7/8). The asymptotic shape loads the bar toward red so the green payoff at the right edge feels earned. Helper rewritten:
+
+```c
+int first_break  = count / 2;
+int second_break = count - 4;
+```
+
+`FITNESS_PIP_COLOR_DIST` default flipped from linear to asymptotic in both the C side and Clay default. Linear gradient still available as an option.
+
+## 1.15 shipped — 2026-05-26
+
+Lap carryover: when the pip row enters lap 1+ (past the first daily step goal), pre-earned slots in the new lap now show the previous lap's filled shape underneath the current lap's outline. Passing the goal no longer visually wipes the row back to empty outlines.
+
+`prev_shape` state added to `draw_fitness_pip_row`. Each slot's render path checks whether the current lap has earned that slot yet; if not, draws `prev_shape` filled. The active mid-fill slot still draws the current-lap outline with a left/right half-fill.
+
+## 1.16 shipped — 2026-05-26
+
+Pip row geometry moved down 2px across all four shapes (Rectangle, Pyramid, Square, Circle) and both pip sizes (Large, Small). Pure y-coordinate adjustment, no logic change.
+
+## 1.17 shipped — 2026-05-26
+
+Vibrate-on-goal: new Clay toggle under Fitness rings settings that fires a vibration the first time the daily step goal is crossed. Once-per-calendar-day enforcement via persisted `tm_yday`. Defaults to off.
+
+New keys: `FITNESS_VIBRATE_ON_GOAL`, persist key 250 (toggle), persist key 251 (last-fired yday).
+
+## 1.18 shipped — 2026-05-26
+
+Goal vibe pattern selector: companion Clay select to the goal-vibrate toggle. Seven pattern options:
+
+| ID | Label | API |
+|----|-------|-----|
+| 0 | Short pulse | `vibes_short_pulse()` |
+| 1 | Long pulse | `vibes_long_pulse()` |
+| 2 | Double pulse | `vibes_double_pulse()` |
+| 3 | Heartbeat | custom pattern |
+| 4 | Mario 1-up | custom pattern |
+| 5 | SOS (Morse) | custom pattern |
+| 6 | Rising | custom pattern |
+
+Custom patterns use `vibes_enqueue_custom_pattern` with alternating on/off durations in ms. Pebble's native API ships only short/long/double pulses; everything else is a single-motor rhythmic approximation (no pitch).
+
+New keys: `FITNESS_GOAL_VIBE_PATTERN`, persist key 252.
+
+## 1.19 shipped — 2026-05-27
+
+Added an 8th goal vibe pattern: **FF Victory Fanfare**. Cadence sourced from an XDA Android haptic-pattern thread, converted to Pebble's on/off form:
+
+```c
+{ 50, 100, 50, 100, 50, 100, 400, 100,
+  300, 100, 350, 50, 200, 100, 100, 50, 600 }
+```
+
+Nine pulses (triplet + four sustained tones + flourish + finale). Around 2.7 seconds end to end.
+
+## 1.20 shipped — 2026-05-27
+
+Two unrelated bug fixes bundled in a single release.
+
+**Fitness Rings stroke width regression.** `fitness_draw_ring` was drawing the 11px empty track, then setting stroke width to 2 for the 12-o'clock notch tick, then drawing the progress arc without resetting. Progress inherited the 2px stroke and rendered as a thin sliver inside the wider track. Fixed by resetting stroke width to `stroke_width` before the progress arc draw. (jy-time.c:935.)
+
+**Calendar TZIDs Detroit / Toronto / London / Paris.** PebbleKit JS `timezoneOffsetMinutes` only recognized New York / Chicago / Denver / Phoenix / Los Angeles / Sydney. Other TZIDs fell through to local-floating interpretation, so a Detroit 4pm Nikki invite shown to a Central-timezone phone displayed as 4pm Central instead of 3pm Central. Added Detroit and Toronto as Eastern Time aliases, plus a shared `isEuropeanDst` helper for London (UTC+0/+1) and Paris (UTC+1/+2). EU DST transition rule is last Sunday of March 01:00 UTC through last Sunday of October 01:00 UTC.
+
+The private ICS feeds for `joshtyates@gmail.com` and `josh@uniqueand.com` were pulled to `/home/jates/calendar-debug/` (outside any git repo) to confirm the diagnosis against real data. They are not tracked or pushed.
+
+## 1.21 shipped — 2026-05-28
+
+FuelBand pip lap progression rework, pass one. Circle base now goes Circle → Rectangle → Pyramid instead of Circle → Pyramid → Square. Rectangle base still Rectangle → Pyramid → Square at this point.
+
+## 1.22 shipped — 2026-05-28
+
+FuelBand pip lap progression rework, pass two. Rectangle base now also routes through Circle before Pyramid. Both bases converge at Pyramid for lap 2+:
+
+| Base | Lap 0 | Lap 1 | Lap 2+ |
+|------|-------|-------|--------|
+| Rectangle | Rectangle | Circle | Pyramid |
+| Circle | Circle | Rectangle | Pyramid |
+
+Carry-over (pre-earned slots in higher lap showing previous-lap shape) updated to follow the new order. Square shape is no longer used in the default lap progression but the rendering code is still present (could be reused later).
+
+## 1.23 shipped — 2026-05-29
+
+New out-of-the-box defaults for fresh installs. A brand-new install now lands on an inverted black-and-white CASIO FuelBand layout instead of the previous plain dark default, so it looks finished without opening Clay.
+
+Defaults were changed in **both** places that govern first-run appearance: the C static initializers in `jy-time.c` (what renders on a fresh install before any Clay Save, since `load_persisted()` only overrides a value when its persist key exists) and the matching `config.json` `defaultValue`s (what the Clay page pre-selects and writes on first Save). Keeping them in sync means the watch and the settings page agree before the user ever opens Clay.
+
+| Setting | Old default | New default |
+|---|---|---|
+| Invert top bar / date bar / time | off | on |
+| Time font | Default (Bitham) | CASIO style |
+| FuelBand-style pip row | off | on |
+| Pip color source | Match watch theme | Always color |
+| Pip color (middle) | yellow `0xFFFF00` | mustardy orange `0xFFAA00` |
+| Pip color (high end) | green `0x00FF00` | dark green `0x005500` |
+| Vibrate on disconnect | off | on |
+| Shake behavior | Off | Fitness rings |
+
+Left unchanged because they were already the requested default: Light mode off, Color mode B&W Tuxedo, CASIO phantom 88:88 backdrop on, top W800 step counter on, pip shape Circle, pip size Large, pip fill Left-to-right, pip style Hollow track, pip color distribution Asymptotic FuelBand, pip low-end color red, military time off, remove-leading-zero off, verbose-weather/centered-time off, and all Weather-section defaults.
+
+Pure default-value change, no logic touched; builds clean for emery (45 KB RAM footprint, 86 KB free heap). Emulator screenshot was skipped because `qemu-pebble` can't load `libsndio.so.7` in this environment; verified instead by clean compile and a config.json default audit. Artifact: `release-assets/simple-pixel-style-1.23.0-emery.pbw`.

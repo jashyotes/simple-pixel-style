@@ -384,9 +384,9 @@ static bool s_temperature_unit_celsius = false;
 static bool s_verbose_weather_enabled = false;
 static bool s_verbose_weather_large = false;
 static bool s_light_mode_enabled = false;
-static bool s_invert_top_bar = false;
-static bool s_invert_date_bar = false;
-static bool s_invert_time = false;
+static bool s_invert_top_bar = true;
+static bool s_invert_date_bar = true;
+static bool s_invert_time = true;
 static bool s_military_time_enabled = false;
 static bool s_remove_leading_zero = false;
 
@@ -397,15 +397,15 @@ typedef enum {
   TIME_FONT_LECO = 3,
 } TimeFont;
 
-static TimeFont s_time_font = TIME_FONT_DEFAULT;
+static TimeFont s_time_font = TIME_FONT_CASIO;
 static bool s_casio_phantom = true;
 static GFont s_font_roboto;
 static GFont s_font_leco;
 static bool s_invert_weather = false;
 static bool s_invert_meeting_bar = false;
-static bool s_vibrate_on_disconnect = false;
+static bool s_vibrate_on_disconnect = true;
 static ColorMode s_color_mode = ColorModeBW;
-static ShakeBehavior s_shake_behavior = ShakeBehaviorOff;
+static ShakeBehavior s_shake_behavior = ShakeBehaviorFitnessRings;
 static bool s_shake_tap_subscribed = false;
 static bool s_shake_overlay_visible = false;
 static bool s_fitness_ring_steps_on = true;
@@ -431,18 +431,18 @@ static int s_fitness_target_calories = FITNESS_DEFAULT_TARGET_CALORIES;
 static int s_fitness_color_steps_hex = FITNESS_DEFAULT_COLOR_STEPS;
 static int s_fitness_color_active_hex = FITNESS_DEFAULT_COLOR_ACTIVE;
 static int s_fitness_color_calories_hex = FITNESS_DEFAULT_COLOR_CALORIES;
-static bool s_fitness_pip_row_enabled = false;
+static bool s_fitness_pip_row_enabled = true;
 static uint8_t s_fitness_pip_direction = 0;  // 0=LTR, 1=center-out, 2=RTL
 static uint8_t s_fitness_pip_style = 0;      // 0=hollow-progressive, 1=populate
 static uint32_t s_fitness_pip_color_low_hex  = 0xFF0000;  // red default
-static uint32_t s_fitness_pip_color_mid_hex  = 0xFFFF00;  // yellow default
-static uint32_t s_fitness_pip_color_high_hex = 0x00FF00;  // green default
+static uint32_t s_fitness_pip_color_mid_hex  = 0xFFAA00;  // mustardy orange default
+static uint32_t s_fitness_pip_color_high_hex = 0x005500;  // dark green default
 // 0 = linear gradient across all pips. 1 = asymptotic FuelBand:
 // first half low, middle stretch mid, last 4 high (10/6/4 for 20 pips).
 // Default = asymptotic.
 static uint8_t  s_fitness_pip_color_dist     = 1;
 // 0 = match global theme (Tuxedo=BW, Poor&Irish=color). 1 = always color.
-static uint8_t  s_fitness_pip_color_source   = 0;
+static uint8_t  s_fitness_pip_color_source   = 1;
 // 0 = circle (default, Your Day style). 1 = rectangle. Lap 0 only;
 // lap 1 always pyramid, lap 2+ always square.
 static uint8_t  s_fitness_pip_shape          = 0;
