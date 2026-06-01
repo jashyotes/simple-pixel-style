@@ -360,6 +360,7 @@ function fitnessGoalVibePatternId(value) {
     case 'double':     return 2;
     case 'heartbeat':  return 3;
     case 'mario':      return 4;
+    case 'mario_theme': return 8;
     case 'sos':        return 5;
     case 'rising':     return 6;
     case 'ff_victory': return 7;
@@ -3145,6 +3146,31 @@ function optionalEventDelta(event) {
   return event ? formatEventDelta(event) : '';
 }
 
+function rawEventTitle(event) {
+  if (!event || !event.summary) {
+    return '';
+  }
+  return String(event.summary).slice(0, 60);
+}
+
+function eventStartEpoch(event) {
+  return event && event.start ? Math.floor(event.start.getTime() / 1000) : 0;
+}
+
+function eventEndEpoch(event) {
+  return event ? Math.floor(eventEndTime(event) / 1000) : 0;
+}
+
+// Bottom meeting bar: send raw title + start/end epoch (seconds) so the watch
+// can re-pick current-vs-next on its own minute tick instead of displaying a
+// frozen, phone-formatted string between calendar refreshes. Missing slots are
+// sent as ''/0 so the watch clears them when the day's event count shrinks.
+function setMeetingSlot(dict, index, event) {
+  dict[keys['MEETING_TITLE_' + index]] = rawEventTitle(event);
+  dict[keys['MEETING_START_' + index]] = eventStartEpoch(event);
+  dict[keys['MEETING_END_' + index]] = eventEndEpoch(event);
+}
+
 function sendCalendarEvents(events, settings) {
   settings = settings || readSettings();
   var sorted = (events || []).slice().sort(function(a, b) {
@@ -3162,6 +3188,7 @@ function sendCalendarEvents(events, settings) {
   var tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
   summaryDict[keys.NEXT_EVENT] = formatEvent(displayEvents[0]);
   summaryDict[keys.NEXT_EVENT_DELTA] = formatEventDelta(displayEvents[0]);
+  setMeetingSlot(summaryDict, 1, displayEvents[0]);
   summaryDict[keys.DAY_EVENT_HOURS_BITMAP_YESTERDAY] = dayBusyHoursBitmap(sorted, yesterday);
   summaryDict[keys.DAY_EVENT_HOURS_BITMAP] = dayBusyHoursBitmap(sorted, today);
   summaryDict[keys.DAY_EVENT_HOURS_BITMAP_TOMORROW] = dayBusyHoursBitmap(sorted, tomorrow);
@@ -3179,6 +3206,8 @@ function sendCalendarEvents(events, settings) {
   middleDict[keys.CALENDAR_EVENT_DELTA_2] = optionalEventDelta(displayEvents[1]);
   middleDict[keys.CALENDAR_EVENT_TITLE_3] = optionalEventTitle(displayEvents[2]);
   middleDict[keys.CALENDAR_EVENT_DELTA_3] = optionalEventDelta(displayEvents[2]);
+  setMeetingSlot(middleDict, 2, displayEvents[1]);
+  setMeetingSlot(middleDict, 3, displayEvents[2]);
   sendToWatch(middleDict, 'Calendar events 2-3');
 
   var endDict = {};
@@ -3186,6 +3215,8 @@ function sendCalendarEvents(events, settings) {
   endDict[keys.CALENDAR_EVENT_DELTA_4] = optionalEventDelta(displayEvents[3]);
   endDict[keys.CALENDAR_EVENT_TITLE_5] = optionalEventTitle(displayEvents[4]);
   endDict[keys.CALENDAR_EVENT_DELTA_5] = optionalEventDelta(displayEvents[4]);
+  setMeetingSlot(endDict, 4, displayEvents[3]);
+  setMeetingSlot(endDict, 5, displayEvents[4]);
   sendToWatch(endDict, 'Calendar events 4-5');
 }
 

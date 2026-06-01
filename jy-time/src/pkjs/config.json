@@ -860,11 +860,12 @@
           { "label": "Double pulse",     "value": "double" },
           { "label": "Heartbeat",        "value": "heartbeat" },
           { "label": "Mario 1-up",       "value": "mario" },
+          { "label": "Mario Theme",      "value": "mario_theme" },
           { "label": "SOS (Morse)",      "value": "sos" },
           { "label": "Rising",           "value": "rising" },
           { "label": "FF Victory Fanfare", "value": "ff_victory" }
         ],
-        "description": "Custom patterns built from one-motor vibe sequences (Pebble only ships short/long/double natively). Mario, heartbeat, SOS, rising, and FF Victory are rhythmic approximations."
+        "description": "Custom patterns built from one-motor vibe sequences (Pebble only ships short/long/double natively). Mario 1-up, Mario Theme, heartbeat, SOS, rising, and FF Victory are rhythmic approximations. Changing this and saving plays the selected pattern once on the watch so you can feel it."
       },
       {
         "type": "color",

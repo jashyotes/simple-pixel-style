@@ -41,6 +41,14 @@
 #define PERSIST_KEY_FITNESS_VIBRATE_ON_GOAL 250
 #define PERSIST_KEY_FITNESS_GOAL_VIBE_YDAY  251
 #define PERSIST_KEY_FITNESS_GOAL_VIBE_PATTERN 252
+
+// Bottom meeting bar: phone-supplied event list (raw title + start/end epoch)
+// that the watch re-evaluates on its own clock. Slots persist so the bar is
+// correct the instant the watchface loads, before the phone sends anything.
+#define MEETING_SLOT_COUNT 5
+#define PERSIST_KEY_MEETING_TITLE_BASE 253
+#define PERSIST_KEY_MEETING_START_BASE 258
+#define PERSIST_KEY_MEETING_END_BASE   263
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -347,6 +355,10 @@ static char s_weather_summary_buf[32] = "CLOUDY";
 static char s_weather_summary_compact_buf[32] = "";
 static char s_calendar_event_titles[4][80];
 static char s_calendar_event_deltas[4][16];
+static char s_meeting_title[MEETING_SLOT_COUNT][64];
+static int32_t s_meeting_start[MEETING_SLOT_COUNT];
+static int32_t s_meeting_end[MEETING_SLOT_COUNT];
+static bool s_meeting_feed_active = false;
 static char s_alt_tz_label[24] = "LONDON";
 
 static uint8_t s_phone_battery_pct = 0;
@@ -424,7 +436,8 @@ static int s_fitness_target_steps = FITNESS_DEFAULT_TARGET_STEPS;
 static bool    s_fitness_vibrate_on_goal     = false;
 static int     s_fitness_goal_vibe_yday      = -1;
 // Vibe pattern selector. 0=short, 1=long, 2=double, 3=heartbeat,
-// 4=mario-1up, 5=sos, 6=rising, 7=ff-victory. See fire_goal_vibe().
+// 4=mario-1up, 5=sos, 6=rising, 7=ff-victory, 8=mario-theme.
+// See fire_goal_vibe().
 static uint8_t s_fitness_goal_vibe_pattern   = 0;
 static int s_fitness_target_active_min = FITNESS_DEFAULT_TARGET_ACTIVE_MIN;
 static int s_fitness_target_calories = FITNESS_DEFAULT_TARGET_CALORIES;
@@ -4029,6 +4042,102 @@ static void update_event_delta(const char *delta) {
   mark_face_dirty();
 }
 
+// Compose the "H:MMA" / "H:MMP" start-time prefix, matching the phone's
+// formatHour() so the bar looks identical to what the companion used to send.
+static void format_meeting_prefix(int32_t epoch, char *buf, size_t len) {
+  time_t tt = (time_t)epoch;
+  struct tm *lt = localtime(&tt);
+  if (!lt) {
+    buf[0] = '\0';
+    return;
+  }
+  int hour12 = lt->tm_hour % 12;
+  if (hour12 == 0) {
+    hour12 = 12;
+  }
+  char suffix = (lt->tm_hour >= 12) ? 'P' : 'A';
+  snprintf(buf, len, "%d:%02d%c", hour12, lt->tm_min, suffix);
+}
+
+// Re-pick the bottom meeting bar from the phone-supplied event list using the
+// watch's own clock. Runs on every minute tick and on each calendar message, so
+// a finished meeting rolls to the next one without waiting on a phone push. A
+// no-op until the phone has sent the structured feed at least once, which keeps
+// the legacy NEXT_EVENT string behavior intact for older companion builds.
+static void recompute_meeting_bar(void) {
+  if (!s_meeting_feed_active) {
+    return;
+  }
+
+  time_t now = time(NULL);
+  int chosen = -1;
+  bool is_now = false;
+
+  // Current meeting: started and not yet ended. On overlap, the one ending soonest.
+  for (int i = 0; i < MEETING_SLOT_COUNT; i++) {
+    if (s_meeting_start[i] <= 0) {
+      continue;
+    }
+    if (s_meeting_start[i] <= now && now < s_meeting_end[i]) {
+      if (chosen < 0 || s_meeting_end[i] < s_meeting_end[chosen]) {
+        chosen = i;
+      }
+    }
+  }
+
+  if (chosen >= 0) {
+    is_now = true;
+  } else {
+    // Next meeting: soonest start in the future.
+    for (int i = 0; i < MEETING_SLOT_COUNT; i++) {
+      if (s_meeting_start[i] <= 0) {
+        continue;
+      }
+      if (s_meeting_start[i] > now) {
+        if (chosen < 0 || s_meeting_start[i] < s_meeting_start[chosen]) {
+          chosen = i;
+        }
+      }
+    }
+  }
+
+  if (chosen < 0 || s_meeting_title[chosen][0] == '\0') {
+    update_event("");
+    update_event_delta("");
+    return;
+  }
+
+  char line[80];
+  if (is_now) {
+    snprintf(line, sizeof(line), "NOW | %s", s_meeting_title[chosen]);
+    update_event(line);
+    update_event_delta("NOW");
+    return;
+  }
+
+  char prefix[10];
+  format_meeting_prefix(s_meeting_start[chosen], prefix, sizeof(prefix));
+  snprintf(line, sizeof(line), "%s | %s", prefix, s_meeting_title[chosen]);
+  update_event(line);
+
+  char delta[8];
+  long mins = (long)((s_meeting_start[chosen] - now + 59) / 60);
+  if (mins < 0) {
+    mins = 0;
+  }
+  if (mins < 100) {
+    snprintf(delta, sizeof(delta), "%ldm", mins);
+  } else {
+    long hrs = (mins + 59) / 60;
+    if (hrs < 100) {
+      snprintf(delta, sizeof(delta), "%ldh", hrs);
+    } else {
+      snprintf(delta, sizeof(delta), "99+");
+    }
+  }
+  update_event_delta(delta);
+}
+
 static void store_overlay_string(char *dest, size_t dest_len, uint32_t persist_key,
                                  const char *value) {
   if (!value) {
@@ -4106,6 +4215,20 @@ static void fire_goal_vibe(void) {
       vibes_enqueue_custom_pattern(v);
       return;
     }
+    case 8: {
+      // Super Mario Bros. overworld theme, opening phrase (E E E, C E,
+      // G, low G). Note sequence + durations transcribed from
+      // robsoncouto/arduino-songs (tempo 200: eighth = 150 ms, quarter =
+      // 300 ms), converted to the one-motor on/off form with
+      // motor-perceptible gaps so the back-to-back notes read as taps.
+      static const uint32_t pat[] = {
+        100, 50, 100, 200, 100, 200, 100, 50, 100, 50, 250, 350, 100
+      };
+      VibePattern v = { .durations = pat,
+                        .num_segments = ARRAY_LENGTH(pat) };
+      vibes_enqueue_custom_pattern(v);
+      return;
+    }
     default:
       vibes_short_pulse();
       return;
@@ -4161,6 +4284,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   (void)units_changed;
   update_time_date(tick_time);
   update_stats();
+  recompute_meeting_bar();
 }
 
 static void battery_handler(BatteryChargeState charge) {
@@ -4197,6 +4321,51 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   if (t && t->type == TUPLE_CSTRING) {
     persist_write_string(PERSIST_KEY_EVENT, t->value->cstring);
     update_event(t->value->cstring);
+  }
+
+  {
+    const uint32_t meeting_title_keys[MEETING_SLOT_COUNT] = {
+      MESSAGE_KEY_MEETING_TITLE_1, MESSAGE_KEY_MEETING_TITLE_2,
+      MESSAGE_KEY_MEETING_TITLE_3, MESSAGE_KEY_MEETING_TITLE_4,
+      MESSAGE_KEY_MEETING_TITLE_5
+    };
+    const uint32_t meeting_start_keys[MEETING_SLOT_COUNT] = {
+      MESSAGE_KEY_MEETING_START_1, MESSAGE_KEY_MEETING_START_2,
+      MESSAGE_KEY_MEETING_START_3, MESSAGE_KEY_MEETING_START_4,
+      MESSAGE_KEY_MEETING_START_5
+    };
+    const uint32_t meeting_end_keys[MEETING_SLOT_COUNT] = {
+      MESSAGE_KEY_MEETING_END_1, MESSAGE_KEY_MEETING_END_2,
+      MESSAGE_KEY_MEETING_END_3, MESSAGE_KEY_MEETING_END_4,
+      MESSAGE_KEY_MEETING_END_5
+    };
+    bool meeting_updated = false;
+    for (int i = 0; i < MEETING_SLOT_COUNT; i++) {
+      Tuple *mt = dict_find(iter, meeting_title_keys[i]);
+      Tuple *ms = dict_find(iter, meeting_start_keys[i]);
+      Tuple *me = dict_find(iter, meeting_end_keys[i]);
+      if (!mt && !ms && !me) {
+        continue;
+      }
+      if (mt && mt->type == TUPLE_CSTRING) {
+        strncpy(s_meeting_title[i], mt->value->cstring, sizeof(s_meeting_title[i]) - 1);
+        s_meeting_title[i][sizeof(s_meeting_title[i]) - 1] = '\0';
+        persist_write_string(PERSIST_KEY_MEETING_TITLE_BASE + i, s_meeting_title[i]);
+      }
+      if (ms) {
+        s_meeting_start[i] = ms->value->int32;
+        persist_write_int(PERSIST_KEY_MEETING_START_BASE + i, s_meeting_start[i]);
+      }
+      if (me) {
+        s_meeting_end[i] = me->value->int32;
+        persist_write_int(PERSIST_KEY_MEETING_END_BASE + i, s_meeting_end[i]);
+      }
+      meeting_updated = true;
+    }
+    if (meeting_updated) {
+      s_meeting_feed_active = true;
+      recompute_meeting_bar();
+    }
   }
 
   t = dict_find(iter, MESSAGE_KEY_PHONE_BATTERY);
@@ -4736,9 +4905,17 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   if (t) {
     int v = (int)t->value->int32;
     if (v < 0) v = 0;
-    if (v > 7) v = 7;
+    if (v > 8) v = 8;
+    bool pattern_changed = ((uint8_t)v != s_fitness_goal_vibe_pattern);
     s_fitness_goal_vibe_pattern = (uint8_t)v;
     persist_write_int(PERSIST_KEY_FITNESS_GOAL_VIBE_PATTERN, v);
+    // Preview: when the pattern is changed in the config and saved, fire it
+    // once so it can be felt. Settings load from persist at boot before any
+    // AppMessage arrives, so an unchanged value (every launch/sync) stays
+    // silent; only an actual change buzzes.
+    if (pattern_changed) {
+      fire_goal_vibe();
+    }
   }
 
   t = dict_find(iter, MESSAGE_KEY_VIBRATE_ON_DISCONNECT);
@@ -5416,7 +5593,7 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_FITNESS_GOAL_VIBE_PATTERN)) {
     int v = persist_read_int(PERSIST_KEY_FITNESS_GOAL_VIBE_PATTERN);
     if (v < 0) v = 0;
-    if (v > 6) v = 6;
+    if (v > 8) v = 8;
     s_fitness_goal_vibe_pattern = (uint8_t)v;
   }
   if (persist_exists(PERSIST_KEY_VIBRATE_ON_DISCONNECT)) {
@@ -5513,6 +5690,20 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_EVENT_DELTA)) {
     persist_read_string(PERSIST_KEY_EVENT_DELTA, s_event_delta_buf, sizeof(s_event_delta_buf));
     s_event_delta_buf[sizeof(s_event_delta_buf) - 1] = '\0';
+  }
+  for (int i = 0; i < MEETING_SLOT_COUNT; i++) {
+    if (persist_exists(PERSIST_KEY_MEETING_TITLE_BASE + i)) {
+      persist_read_string(PERSIST_KEY_MEETING_TITLE_BASE + i, s_meeting_title[i],
+                          sizeof(s_meeting_title[i]));
+      s_meeting_title[i][sizeof(s_meeting_title[i]) - 1] = '\0';
+    }
+    if (persist_exists(PERSIST_KEY_MEETING_START_BASE + i)) {
+      s_meeting_start[i] = persist_read_int(PERSIST_KEY_MEETING_START_BASE + i);
+      s_meeting_feed_active = true;
+    }
+    if (persist_exists(PERSIST_KEY_MEETING_END_BASE + i)) {
+      s_meeting_end[i] = persist_read_int(PERSIST_KEY_MEETING_END_BASE + i);
+    }
   }
   if (persist_exists(PERSIST_KEY_CALENDAR_EVENT_TITLE_2)) {
     persist_read_string(PERSIST_KEY_CALENDAR_EVENT_TITLE_2, s_calendar_event_titles[0],
@@ -6135,6 +6326,7 @@ static void window_load(Window *window) {
   update_weather_widget();
   update_event(s_event_buf[0] ? s_event_buf : NULL);
   update_event_delta(s_event_delta_buf[0] ? s_event_delta_buf : NULL);
+  recompute_meeting_bar();
   update_stats();
 }
 
