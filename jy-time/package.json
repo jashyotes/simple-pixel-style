@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "1.25",
+  "version": "1.27",
   "keywords": [
     "pebble-app"
   ],
@@ -78,6 +78,10 @@
       "SUNRISE_T",
       "SUNSET_T",
       "CALENDAR_SHAKE_EVENT_COUNT",
+      "CAL_EVENT_DATES_ON",
+      "CAL_EVENT_DATE_POSITION",
+      "CAL_EVENT_DATE_ORDER",
+      "CAL_EVENT_DATE_NO_ZERO",
       "CALENDAR_EVENT_TITLE_2",
       "CALENDAR_EVENT_DELTA_2",
       "CALENDAR_EVENT_TITLE_3",
@@ -184,7 +188,15 @@
       "NWS_ALERT_TITLE",
       "NWS_LOCATION_LABEL",
       "NWS_LAST_UPDATE_T",
-      "NWS_FORECAST_STYLE"
+      "NWS_FORECAST_STYLE",
+      "MULTI_TZ_ENABLED",
+      "MULTI_TZ_1",
+      "MULTI_TZ_2",
+      "MULTI_TZ_STYLE",
+      "MULTI_TZ_1_LABEL",
+      "MULTI_TZ_1_OFFSET_MIN",
+      "MULTI_TZ_2_LABEL",
+      "MULTI_TZ_2_OFFSET_MIN"
     ],
     "resources": {
       "media": [

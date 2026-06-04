@@ -39,6 +39,17 @@ function customClay() {
     'FITNESS_PIP_COLOR_HIGH'
   ];
 
+  // Pip row sub-settings hidden entirely when the FuelBand pip row is off.
+  // (The three color pickers above are gated separately by syncPipColorPickers.)
+  var FITNESS_PIP_BASE_KEYS = [
+    'FITNESS_PIP_SHAPE',
+    'FITNESS_PIP_SIZE',
+    'FITNESS_PIP_DIRECTION',
+    'FITNESS_PIP_STYLE',
+    'FITNESS_PIP_COLOR_SOURCE',
+    'FITNESS_PIP_COLOR_DIST'
+  ];
+
   var SHAKE_FITNESS_ITEM_KEYS = [
     'shake-fitness-heading',
     'FITNESS_RING_STEPS_ON',
@@ -99,6 +110,18 @@ function customClay() {
     'PRICES_NEGATIVE_COLOR_DARK'
   ];
 
+  var MULTI_TZ_DEPENDENT_KEYS = [
+    'multi-tz-1',
+    'multi-tz-2',
+    'multi-tz-style'
+  ];
+
+  var CAL_EVENT_DATE_DEPENDENT_KEYS = [
+    'CAL_EVENT_DATE_ORDER',
+    'CAL_EVENT_DATE_POSITION',
+    'CAL_EVENT_DATE_NO_ZERO'
+  ];
+
   function getItem(key) {
     return clayCfg.getItemById(key) || clayCfg.getItemByMessageKey(key);
   }
@@ -119,6 +142,9 @@ function customClay() {
     var colorModeItem = clayCfg.getItemByMessageKey('COLOR_MODE');
     var shakeItem = clayCfg.getItemByMessageKey('SHAKE_BEHAVIOR');
     var pipColorSourceItem = clayCfg.getItemByMessageKey('FITNESS_PIP_COLOR_SOURCE');
+    var multiTzEnabledItem = clayCfg.getItemByMessageKey('MULTI_TZ_ENABLED');
+    var calEventDatesItem = clayCfg.getItemByMessageKey('CAL_EVENT_DATES_ON');
+    var pipRowItem = clayCfg.getItemByMessageKey('FITNESS_PIP_ROW_ON');
 
     function syncColorMode() {
       var v = colorModeItem.get();
@@ -133,10 +159,21 @@ function customClay() {
     }
 
     function syncPipColorPickers() {
+      // No pickers when the pip row itself is off.
+      if (pipRowItem && !pipRowItem.get()) {
+        setGroupVisible(FITNESS_PIP_COLOR_PICKER_KEYS, false);
+        return;
+      }
       var globalIsColor = colorModeItem.get() === 'color';
       var pipSource = pipColorSourceItem ? pipColorSourceItem.get() : 'theme';
       var showPickers = (pipSource === 'color') || globalIsColor;
       setGroupVisible(FITNESS_PIP_COLOR_PICKER_KEYS, showPickers);
+    }
+
+    function syncPipRow() {
+      var on = pipRowItem ? !!pipRowItem.get() : true;
+      setGroupVisible(FITNESS_PIP_BASE_KEYS, on);
+      syncPipColorPickers();
     }
 
     function syncShake() {
@@ -150,14 +187,35 @@ function customClay() {
       setGroupVisible(SHAKE_NWS_ITEM_KEYS, v === 'nws_forecast');
     }
 
+    function syncMultiTz() {
+      if (!multiTzEnabledItem) return;
+      setGroupVisible(MULTI_TZ_DEPENDENT_KEYS, !!multiTzEnabledItem.get());
+    }
+
+    function syncCalEventDates() {
+      if (!calEventDatesItem) return;
+      setGroupVisible(CAL_EVENT_DATE_DEPENDENT_KEYS, !!calEventDatesItem.get());
+    }
+
     colorModeItem.on('change', syncColorMode);
     shakeItem.on('change', syncShake);
     if (pipColorSourceItem) {
       pipColorSourceItem.on('change', syncPipColorPickers);
     }
+    if (pipRowItem) {
+      pipRowItem.on('change', syncPipRow);
+    }
+    if (multiTzEnabledItem) {
+      multiTzEnabledItem.on('change', syncMultiTz);
+    }
+    if (calEventDatesItem) {
+      calEventDatesItem.on('change', syncCalEventDates);
+    }
     syncColorMode();
     syncShake();
-    syncPipColorPickers();
+    syncPipRow();
+    syncMultiTz();
+    syncCalEventDates();
   });
 }
 
@@ -165,6 +223,7 @@ var clay = new Clay(clayConfig, customClay, { autoHandleEvents: false });
 var weatherTimer = null;
 var calendarTimer = null;
 var pricesTimer = null;
+var multiTzTimer = null;
 var CURRENT_EVENT_DISPLAY_MINUTES = 15;
 var messageQueue = [];
 var messageInFlight = false;
@@ -182,17 +241,17 @@ var DEFAULT_SETTINGS = {
   COLOR_SECTION_BG_MEETING_BAR: 0,
   COLOR_SECTION_FG_MEETING_BAR: 16777215,
   LIGHT_MODE: false,
-  INVERT_TOP_BAR: false,
-  INVERT_DATE_BAR: false,
-  INVERT_TIME: false,
+  INVERT_TOP_BAR: true,
+  INVERT_DATE_BAR: true,
+  INVERT_TIME: true,
   MILITARY_TIME: false,
   REMOVE_LEADING_ZERO: false,
-  TIME_FONT: '0',
+  TIME_FONT: '1',
   CASIO_PHANTOM: true,
   INVERT_WEATHER: false,
   INVERT_MEETING_BAR: false,
   TOP_STEPS: true,
-  VIBRATE_ON_DISCONNECT: false,
+  VIBRATE_ON_DISCONNECT: true,
   VERBOSE_WEATHER: false,
   VERBOSE_WEATHER_STYLE: 'one_line',
   COMPLICATION_1: 'weather',
@@ -212,7 +271,11 @@ var DEFAULT_SETTINGS = {
   CALENDAR_ICS_URL_2: '',
   CALENDAR_LOOKAHEAD_HOURS: '48',
   EMPTY_EVENT_LABEL: '[None]',
-  SHAKE_BEHAVIOR: 'off',
+  CAL_EVENT_DATES_ON: false,
+  CAL_EVENT_DATE_ORDER: 'month_day',
+  CAL_EVENT_DATE_POSITION: 'before',
+  CAL_EVENT_DATE_NO_ZERO: false,
+  SHAKE_BEHAVIOR: 'fitness_rings',
   CALENDAR_SHAKE_EVENT_COUNT: '3',
   FITNESS_RING_STEPS_ON: true,
   FITNESS_RING_ACTIVE_ON: true,
@@ -226,14 +289,14 @@ var DEFAULT_SETTINGS = {
   FITNESS_COLOR_ACTIVE: 0x00AAFF,
   FITNESS_COLOR_CALORIES: 0xFF0000,
   FITNESS_OVERLAY_DURATION_S: '5',
-  FITNESS_PIP_ROW_ON: false,
+  FITNESS_PIP_ROW_ON: true,
   FITNESS_PIP_DIRECTION: 'ltr',
   FITNESS_PIP_STYLE: 'hollow',
   FITNESS_PIP_COLOR_LOW: 0xFF0000,
-  FITNESS_PIP_COLOR_MID: 0xFFFF00,
-  FITNESS_PIP_COLOR_HIGH: 0x00FF00,
+  FITNESS_PIP_COLOR_MID: 0xFFAA00,
+  FITNESS_PIP_COLOR_HIGH: 0x005500,
   FITNESS_PIP_COLOR_DIST: 'asymptotic',
-  FITNESS_PIP_COLOR_SOURCE: 'theme',
+  FITNESS_PIP_COLOR_SOURCE: 'color',
   FITNESS_PIP_SHAPE: 'circle',
   FITNESS_PIP_SIZE: 'large',
   ALT_TZ_LABEL: 'LONDON',
@@ -256,7 +319,11 @@ var DEFAULT_SETTINGS = {
   PRICES_NEGATIVE_COLOR_DARK: 0xFFFFFF,
   PRICES_SHOW_STOCK_1: true,
   PRICES_SHOW_STOCK_2: true,
-  PRICES_SHOW_CRYPTO: true
+  PRICES_SHOW_CRYPTO: true,
+  MULTI_TZ_ENABLED: false,
+  MULTI_TZ_1: 'none',
+  MULTI_TZ_2: 'none',
+  MULTI_TZ_STYLE: 'text'
 };
 
 var COMPLICATION_IDS = {
@@ -462,6 +529,11 @@ function sendLayoutSetting(settings) {
   var emptyLabel = String(settings.EMPTY_EVENT_LABEL || '').trim();
   if (!emptyLabel) emptyLabel = '[None]';
   dict[keys.EMPTY_EVENT_LABEL] = emptyLabel.slice(0, 24);
+  // Calendar event dates. POSITION: 0 = before time, 1 = after. ORDER: 0 = month-first, 1 = day-first.
+  dict[keys.CAL_EVENT_DATES_ON] = settings.CAL_EVENT_DATES_ON ? 1 : 0;
+  dict[keys.CAL_EVENT_DATE_POSITION] = settings.CAL_EVENT_DATE_POSITION === 'after' ? 1 : 0;
+  dict[keys.CAL_EVENT_DATE_ORDER] = settings.CAL_EVENT_DATE_ORDER === 'day_month' ? 1 : 0;
+  dict[keys.CAL_EVENT_DATE_NO_ZERO] = settings.CAL_EVENT_DATE_NO_ZERO ? 1 : 0;
   sendToWatch(dict, 'Layout setting');
 }
 
@@ -507,6 +579,37 @@ function sendShakeSetting(settings) {
   dict[keys.YOUR_DAY_END_HOUR] = numberSetting(settings.YOUR_DAY_END_HOUR, 17, 0, 23);
   dict[keys.YOUR_DAY_HALF_HOUR_PIPS] = settings.YOUR_DAY_HALF_HOUR_PIPS ? 1 : 0;
   sendToWatch(dict, 'Shake setting');
+}
+
+// The watch has no timezone database, so the phone resolves each selected zone
+// to a DST-correct offset + abbreviation and sends those. An unset/unknown zone
+// is sent as an empty label, which the watch treats as inactive.
+function multiTzZoneToDict(tzid, components, labelKey, offsetKey, dict) {
+  var id = normalizeTzid(tzid);
+  if (!id || id === 'none') {
+    dict[labelKey] = '';
+    dict[offsetKey] = 0;
+    return;
+  }
+  var offset = timezoneOffsetMinutes(id, components);
+  var label = timezoneLabel(id, components);
+  if (offset === null || !label) {
+    dict[labelKey] = '';
+    dict[offsetKey] = 0;
+    return;
+  }
+  dict[labelKey] = label.slice(0, 7);
+  dict[offsetKey] = offset;
+}
+
+function sendMultiTzSetting(settings) {
+  var dict = {};
+  var now = utcComponentsNow();
+  dict[keys.MULTI_TZ_ENABLED] = settings.MULTI_TZ_ENABLED ? 1 : 0;
+  dict[keys.MULTI_TZ_STYLE] = settings.MULTI_TZ_STYLE === 'circle' ? 1 : 0;
+  multiTzZoneToDict(settings.MULTI_TZ_1, now, keys.MULTI_TZ_1_LABEL, keys.MULTI_TZ_1_OFFSET_MIN, dict);
+  multiTzZoneToDict(settings.MULTI_TZ_2, now, keys.MULTI_TZ_2_LABEL, keys.MULTI_TZ_2_OFFSET_MIN, dict);
+  sendToWatch(dict, 'Multi-timezone setting');
 }
 
 function tideStationId(settings) {
@@ -2506,7 +2609,60 @@ function timezoneOffsetMinutes(tzid, components) {
   if (tzid === 'Europe/Paris') {
     return isEuropeanDst(components) ? 120 : 60;
   }
+  if (tzid === 'Asia/Dubai') {
+    return 240;
+  }
+  if (tzid === 'Asia/Kolkata') {
+    return 330;
+  }
+  if (tzid === 'Asia/Singapore' || tzid === 'Asia/Hong_Kong') {
+    return 480;
+  }
+  if (tzid === 'Asia/Tokyo') {
+    return 540;
+  }
+  if (tzid === 'Australia/Perth') {
+    return 480;
+  }
   return null;
+}
+
+// Returns the DST-correct short abbreviation for a supported zone, or '' if the
+// zone is unknown. Mirrors timezoneOffsetMinutes so the label and offset always
+// agree (e.g. London is GMT in winter, BST in summer; Sydney is AEST/AEDT).
+function timezoneLabel(tzid, components) {
+  tzid = normalizeTzid(tzid);
+  if (tzid === 'UTC' || tzid === 'Etc/UTC' || tzid === 'GMT' || tzid === 'Z') return 'UTC';
+  if (tzid === 'America/New_York' || tzid === 'America/Detroit' || tzid === 'America/Toronto')
+    return isUsDst(components) ? 'EDT' : 'EST';
+  if (tzid === 'America/Chicago') return isUsDst(components) ? 'CDT' : 'CST';
+  if (tzid === 'America/Denver') return isUsDst(components) ? 'MDT' : 'MST';
+  if (tzid === 'America/Phoenix') return 'MST';
+  if (tzid === 'America/Los_Angeles') return isUsDst(components) ? 'PDT' : 'PST';
+  if (tzid === 'Europe/London') return isEuropeanDst(components) ? 'BST' : 'GMT';
+  if (tzid === 'Europe/Paris') return isEuropeanDst(components) ? 'CEST' : 'CET';
+  if (tzid === 'Australia/Sydney') return isSydneyDst(components) ? 'AEDT' : 'AEST';
+  if (tzid === 'Australia/Perth') return 'AWST';
+  if (tzid === 'Asia/Tokyo') return 'JST';
+  if (tzid === 'Asia/Singapore') return 'SGT';
+  if (tzid === 'Asia/Hong_Kong') return 'HKT';
+  if (tzid === 'Asia/Kolkata') return 'IST';
+  if (tzid === 'Asia/Dubai') return 'GST';
+  return '';
+}
+
+// Current UTC time in the {year, month, day, ...} component shape the DST
+// helpers expect (month is 1-based, matching the timezoneOffsetMinutes callers).
+function utcComponentsNow() {
+  var d = new Date();
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+    hour: d.getUTCHours(),
+    minute: d.getUTCMinutes(),
+    second: d.getUTCSeconds()
+  };
 }
 
 function dateFromIcsComponents(components, tzid) {
@@ -3289,9 +3445,17 @@ function scheduleRefreshes() {
   if (calendarTimer) {
     clearInterval(calendarTimer);
   }
+  if (multiTzTimer) {
+    clearInterval(multiTzTimer);
+  }
 
   weatherTimer = setInterval(refreshWeather, weatherMinutes * 60 * 1000);
   calendarTimer = setInterval(refreshCalendar, 10 * 60 * 1000);
+  // Re-resolve secondary-timezone offsets periodically so a DST transition is
+  // picked up within the interval without needing the config page reopened.
+  multiTzTimer = setInterval(function() {
+    sendMultiTzSetting(readSettings());
+  }, 30 * 60 * 1000);
 }
 
 Pebble.addEventListener('ready', function() {
@@ -3301,6 +3465,7 @@ Pebble.addEventListener('ready', function() {
   sendShakeSetting(settings);
   sendTideSetting(settings);
   sendPricesSetting(settings);
+  sendMultiTzSetting(settings);
   refreshWeather(true);
   refreshCalendar();
   scheduleRefreshes();
@@ -3322,6 +3487,7 @@ Pebble.addEventListener('webviewclosed', function(event) {
   sendShakeSetting(settings);
   sendTideSetting(settings);
   sendPricesSetting(settings);
+  sendMultiTzSetting(settings);
   refreshWeather(true);
   refreshCalendar();
   scheduleRefreshes();

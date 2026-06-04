@@ -49,6 +49,18 @@
 #define PERSIST_KEY_MEETING_TITLE_BASE 253
 #define PERSIST_KEY_MEETING_START_BASE 258
 #define PERSIST_KEY_MEETING_END_BASE   263
+// Multi-timezone display (268-273; meeting bases above reserve 253-267).
+#define PERSIST_KEY_MULTI_TZ_ENABLED 268
+#define PERSIST_KEY_MULTI_TZ_STYLE 269
+#define PERSIST_KEY_MULTI_TZ1_LABEL 270
+#define PERSIST_KEY_MULTI_TZ1_OFFSET_MIN 271
+#define PERSIST_KEY_MULTI_TZ2_LABEL 272
+#define PERSIST_KEY_MULTI_TZ2_OFFSET_MIN 273
+// Calendar event dates: meeting bar + Upcoming shake overlay (off by default).
+#define PERSIST_KEY_CAL_EVENT_DATES_ON 274
+#define PERSIST_KEY_CAL_EVENT_DATE_POSITION 275
+#define PERSIST_KEY_CAL_EVENT_DATE_ORDER 276
+#define PERSIST_KEY_CAL_EVENT_DATE_NO_ZERO 277
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -337,7 +349,7 @@ static char s_date_buf[32];
 static char s_time_buf[8];
 static char s_time_buf_casio[8];
 static char s_ampm_buf[3];
-static char s_event_buf[80];
+static char s_event_buf[96];  // room for an optional date prefix/suffix when dates are on
 static char s_watch_buf[8];
 static char s_watch_battery_buf[8];
 static char s_phone_battery_buf[8];
@@ -401,6 +413,21 @@ static bool s_invert_date_bar = true;
 static bool s_invert_time = true;
 static bool s_military_time_enabled = false;
 static bool s_remove_leading_zero = false;
+// Calendar event dates (meeting bar + Upcoming shake overlay). All gated on
+// s_cal_event_dates_on; when off, event rendering is byte-identical to before.
+static bool s_cal_event_dates_on = false;
+static bool s_cal_event_date_after_time = false;  // false = before time, true = after
+static bool s_cal_event_date_month_first = true;  // true = MM/DD, false = DD/MM
+static bool s_cal_event_date_no_zero = false;     // strip leading zeros (date only)
+// Multi-timezone display. Inactive zones carry an empty label. Offsets and
+// labels are resolved on the phone (the watch has no timezone database) and
+// pushed via AppMessage; the watch only applies the integer offset.
+static bool s_multi_tz_enabled = false;
+static int s_multi_tz_style = 0; // 0 = text line, 1 = circle complications
+static char s_multi_tz1_label[8] = "";
+static int s_multi_tz1_offset_min = 0;
+static char s_multi_tz2_label[8] = "";
+static int s_multi_tz2_offset_min = 0;
 
 typedef enum {
   TIME_FONT_DEFAULT = 0,
@@ -555,6 +582,7 @@ static ComplicationType s_complication_slots[COMPLICATION_COUNT] = {
 static void apply_light_mode(bool enabled);
 static void update_stats(void);
 static void format_temp_with_degree(char *buf, size_t len, bool known, int value);
+static void format_event_date(int32_t epoch, char *buf, size_t len);
 
 static void mark_face_dirty(void) {
   if (s_face_layer) {
@@ -2427,7 +2455,19 @@ static void calendar_draw_overlay(GContext *ctx) {
 
     draw_text(ctx, title, s_font_event, GRect(8, y, SCREEN_W - 16, 22),
               theme_fg_color(), GTextAlignmentLeft);
-    draw_text(ctx, delta && delta[0] ? delta : "--",
+    // Countdown line. When event dates are on, prefix this row's date (from the
+    // matching meeting slot epoch); otherwise it's the original delta string.
+    const char *delta_text = delta && delta[0] ? delta : "--";
+    char line2[24];
+    if (s_cal_event_dates_on) {
+      char datestr[8];
+      format_event_date(s_meeting_start[i], datestr, sizeof(datestr));
+      if (datestr[0]) {
+        snprintf(line2, sizeof(line2), "%s  %s", datestr, delta_text);
+        delta_text = line2;
+      }
+    }
+    draw_text(ctx, delta_text,
               fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
               GRect(8, y + 19, SCREEN_W - 16, 18),
               fitness_muted_text_color(), GTextAlignmentLeft);
@@ -3009,6 +3049,84 @@ static void alt_timezone_draw_overlay(GContext *ctx) {
             theme_fg_color(), GTextAlignmentCenter);
   draw_text(ctx, offset_buf, s_font_complication, GRect(8, 172, SCREEN_W - 16, 24),
             fitness_muted_text_color(), GTextAlignmentCenter);
+}
+
+// Formats the wall-clock time for a fixed UTC offset (minutes) into out,
+// honoring the global 12/24h (military) setting. Same math as the alt-timezone
+// shake overlay above; 12h uses no space before the meridiem to match "5:24PM".
+static void format_tz_time(int offset_min, char *out, size_t out_len) {
+  time_t adjusted = time(NULL) + (offset_min * 60);
+  struct tm *tz_tm = gmtime(&adjusted);
+  if (!tz_tm) {
+    snprintf(out, out_len, "--:--");
+    return;
+  }
+  if (s_military_time_enabled) {
+    strftime(out, out_len, "%H:%M", tz_tm);
+  } else {
+    strftime(out, out_len, "%I:%M%p", tz_tm);
+    if (out[0] == '0') {
+      memmove(out, out + 1, strlen(out));
+    }
+  }
+}
+
+// A secondary zone is active only when its label is non-empty (the phone sends
+// an empty label for an unset or unknown zone).
+static int multi_tz_active_count(void) {
+  int n = 0;
+  if (s_multi_tz1_label[0] != '\0') n++;
+  if (s_multi_tz2_label[0] != '\0') n++;
+  return n;
+}
+
+// Compact secondary timezone row, drawn in the time section.
+static void draw_multi_tz_line(GContext *ctx, int y) {
+  char line[40] = "";
+  if (s_multi_tz1_label[0] != '\0') {
+    char t1[12];
+    format_tz_time(s_multi_tz1_offset_min, t1, sizeof(t1));
+    snprintf(line, sizeof(line), "%s:%s", s_multi_tz1_label, t1);
+  }
+  if (s_multi_tz2_label[0] != '\0') {
+    char t2[12];
+    char seg2[20];
+    format_tz_time(s_multi_tz2_offset_min, t2, sizeof(t2));
+    snprintf(seg2, sizeof(seg2), "%s:%s", s_multi_tz2_label, t2);
+    if (line[0] != '\0') {
+      strncat(line, "|", sizeof(line) - strlen(line) - 1);
+      strncat(line, seg2, sizeof(line) - strlen(line) - 1);
+    } else {
+      snprintf(line, sizeof(line), "%s", seg2);
+    }
+  }
+  if (line[0] == '\0') return;
+  draw_text(ctx, line, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+            GRect(0, y, SCREEN_W, 16), draw_fg_color(), GTextAlignmentCenter);
+}
+
+// Secondary timezone complication. zone_index is 1 or 2.
+static void draw_complication_timezone(GContext *ctx, GPoint center, int zone_index) {
+  const char *label = (zone_index == 2) ? s_multi_tz2_label : s_multi_tz1_label;
+  int offset = (zone_index == 2) ? s_multi_tz2_offset_min : s_multi_tz1_offset_min;
+  if (label[0] == '\0') return;
+  char t[12];
+  format_tz_time(offset, t, sizeof(t));
+  size_t t_len = strlen(t);
+  if (t_len > 2 && t[t_len - 1] == 'M' &&
+      (t[t_len - 2] == 'A' || t[t_len - 2] == 'P')) {
+    t[t_len - 2] = '\0';
+  }
+
+  graphics_context_set_stroke_color(ctx, draw_fg_color());
+  graphics_context_set_stroke_width(ctx, 2);
+  graphics_draw_circle(ctx, center, COMPLICATION_RADIUS);
+  draw_text(ctx, label, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(center.x - 22, center.y - 17, 44, 16),
+            draw_fg_color(), GTextAlignmentCenter);
+  draw_text(ctx, t, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+            GRect(center.x - 22, center.y + 1, 44, 18),
+            draw_fg_color(), GTextAlignmentCenter);
 }
 
 static void draw_large_heart(GContext *ctx, GPoint origin, GColor color) {
@@ -3872,6 +3990,19 @@ static void draw_verbose_weather_row(GContext *ctx) {
 static void face_update_proc(Layer *layer, GContext *ctx) {
   (void)layer;
 
+  const bool multi_tz_active =
+      s_multi_tz_enabled && multi_tz_active_count() > 0;
+  const bool multi_tz_text_mode = multi_tz_active && s_multi_tz_style == 0;
+  const bool multi_tz_circle_mode = multi_tz_active && s_multi_tz_style == 1;
+  const bool saved_verbose_weather_large = s_verbose_weather_large;
+  bool restore_verbose_weather_large = false;
+  if (multi_tz_text_mode && s_verbose_weather_enabled && s_verbose_weather_large) {
+    s_verbose_weather_large = false;
+    restore_verbose_weather_large = true;
+  }
+  const bool draw_verbose_weather =
+      s_verbose_weather_enabled && !multi_tz_circle_mode;
+
   set_draw_section(ColorSectionBase);
   graphics_context_set_fill_color(ctx, theme_bg_color());
   graphics_fill_rect(ctx, GRect(0, 0, SCREEN_W, SCREEN_H), 0, GCornerNone);
@@ -3885,18 +4016,23 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   draw_bt_icon(ctx, GPoint(181, 7));
 
   const int content_offset_y =
-      (s_verbose_weather_enabled && s_time_font != TIME_FONT_CASIO) ? VERBOSE_WEATHER_OFFSET_Y : 0;
+      (draw_verbose_weather && s_time_font != TIME_FONT_CASIO) ? VERBOSE_WEATHER_OFFSET_Y : 0;
   const int time_frame_y = TIME_FRAME_Y + content_offset_y;
-  const int weather_y = weather_band_y();
+  const int weather_y = draw_verbose_weather
+      ? weather_band_y()
+      : COMPLICATION_CENTER_Y - COMPLICATION_RADIUS - 1;
+  const int weather_h = draw_verbose_weather
+      ? weather_band_h()
+      : (COMPLICATION_RADIUS * 2) + 4;
   const GRect date_frame = GRect(0, DATE_FRAME_Y + content_offset_y, SCREEN_W, 29);
   const bool verbose_weather_meeting_color_break =
-      s_verbose_weather_enabled &&
+      draw_verbose_weather &&
       section_backgrounds_differ(ColorSectionWeather, ColorSectionMeetingBar);
   const bool large_weather_meeting_color_break =
       verbose_weather_layout_is_large() && verbose_weather_meeting_color_break;
-  const bool large_weather_layout = s_verbose_weather_enabled && verbose_weather_layout_is_large();
+  const bool large_weather_layout = draw_verbose_weather && verbose_weather_layout_is_large();
   const bool compact_weather_meeting_inverted =
-      !s_verbose_weather_enabled &&
+      !draw_verbose_weather &&
       section_inverted(ColorSectionWeather) &&
       section_inverted(ColorSectionMeetingBar);
   const int meeting_bar_y = large_weather_layout
@@ -3918,7 +4054,7 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
       ctx, ColorSectionTime,
       GRect(0, time_frame_y, SCREEN_W, weather_y - time_frame_y));
 
-  if (s_verbose_weather_enabled) {
+  if (draw_verbose_weather) {
     draw_time_row_at(ctx, time_frame_y,
                      s_time_font == TIME_FONT_CASIO
                          ? weather_y
@@ -3934,13 +4070,22 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
     set_draw_section(ColorSectionWeather);
     const int compact_weather_bottom = compact_weather_meeting_inverted
         ? meeting_bar_y
-        : weather_y + weather_band_h();
+        : weather_y + weather_h;
     fill_inverted_section_background(
         ctx, ColorSectionWeather,
         GRect(0, weather_y, SCREEN_W, compact_weather_bottom - weather_y));
     const int complication_center_y = COMPLICATION_CENTER_Y + 3;
-    draw_complication(ctx, GPoint(40, complication_center_y), s_complication_slots[0]);
-    draw_complication(ctx, GPoint(100, complication_center_y), s_complication_slots[1]);
+    if (multi_tz_circle_mode) {
+      draw_complication_timezone(ctx, GPoint(40, complication_center_y), 1);
+      if (s_multi_tz2_label[0] != '\0') {
+        draw_complication_timezone(ctx, GPoint(100, complication_center_y), 2);
+      } else {
+        draw_complication(ctx, GPoint(100, complication_center_y), s_complication_slots[1]);
+      }
+    } else {
+      draw_complication(ctx, GPoint(40, complication_center_y), s_complication_slots[0]);
+      draw_complication(ctx, GPoint(100, complication_center_y), s_complication_slots[1]);
+    }
     draw_complication(ctx, GPoint(160, complication_center_y), s_complication_slots[2]);
   }
 
@@ -3948,7 +4093,7 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   fill_inverted_section_background(
       ctx, ColorSectionMeetingBar,
       GRect(0, meeting_bar_y, SCREEN_W, SCREEN_H - meeting_bar_y));
-  const bool draw_meeting_separator = s_verbose_weather_enabled
+  const bool draw_meeting_separator = draw_verbose_weather
       ? !verbose_weather_meeting_color_break
       : (!section_inverted(ColorSectionMeetingBar) || compact_weather_meeting_inverted);
   if (draw_meeting_separator) {
@@ -3963,6 +4108,26 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   // Drawn last so the date-bar background fill (y=31..time_frame_y) does
   // not overwrite the pips. The pip row sits in y=31..35.
   draw_fitness_pip_row(ctx);
+
+  // --- Multi-timezone (gated). Text mode is drawn last in the time section.
+  // Circle mode renders in the complication row above.
+  if (multi_tz_active) {
+    if (s_multi_tz_style == 0) {
+      int line_anchor_bottom = TIME_VISUAL_BOTTOM + content_offset_y;
+      if (s_time_font == TIME_FONT_CASIO) {
+        line_anchor_bottom = time_frame_y + TIME_FRAME_H - 4;
+        if (line_anchor_bottom > weather_y - 20) {
+          line_anchor_bottom = weather_y - 20;
+        }
+      }
+      set_draw_section(ColorSectionTime);
+      draw_multi_tz_line(ctx, line_anchor_bottom + 4);
+    }
+  }
+
+  if (restore_verbose_weather_large) {
+    s_verbose_weather_large = saved_verbose_weather_large;
+  }
 }
 
 static void update_time_date(struct tm *t) {
@@ -4059,6 +4224,26 @@ static void format_meeting_prefix(int32_t epoch, char *buf, size_t len) {
   snprintf(buf, len, "%d:%02d%c", hour12, lt->tm_min, suffix);
 }
 
+// Compose a "MM/DD" / "DD/MM" date for an event, honoring the order and
+// leading-zero settings. Writes "" when the epoch is missing/invalid. Shared by
+// the meeting bar and the Upcoming shake overlay; only called when
+// s_cal_event_dates_on is true.
+static void format_event_date(int32_t epoch, char *buf, size_t len) {
+  if (epoch <= 0) {
+    buf[0] = '\0';
+    return;
+  }
+  time_t tt = (time_t)epoch;
+  struct tm *lt = localtime(&tt);
+  if (!lt) {
+    buf[0] = '\0';
+    return;
+  }
+  int first = s_cal_event_date_month_first ? (lt->tm_mon + 1) : lt->tm_mday;
+  int second = s_cal_event_date_month_first ? lt->tm_mday : (lt->tm_mon + 1);
+  snprintf(buf, len, s_cal_event_date_no_zero ? "%d/%d" : "%02d/%02d", first, second);
+}
+
 // Re-pick the bottom meeting bar from the phone-supplied event list using the
 // watch's own clock. Runs on every minute tick and on each calendar message, so
 // a finished meeting rolls to the next one without waiting on a phone push. A
@@ -4107,9 +4292,24 @@ static void recompute_meeting_bar(void) {
     return;
   }
 
-  char line[80];
+  char line[96];
+  // Optional event date (e.g. "06/04"); empty string when the feature is off,
+  // which keeps the snprintf paths below identical to the original behavior.
+  char datestr[8] = "";
+  if (s_cal_event_dates_on) {
+    format_event_date(s_meeting_start[chosen], datestr, sizeof(datestr));
+  }
+
   if (is_now) {
-    snprintf(line, sizeof(line), "NOW | %s", s_meeting_title[chosen]);
+    if (datestr[0]) {
+      if (s_cal_event_date_after_time) {
+        snprintf(line, sizeof(line), "NOW %s | %s", datestr, s_meeting_title[chosen]);
+      } else {
+        snprintf(line, sizeof(line), "%s NOW | %s", datestr, s_meeting_title[chosen]);
+      }
+    } else {
+      snprintf(line, sizeof(line), "NOW | %s", s_meeting_title[chosen]);
+    }
     update_event(line);
     update_event_delta("NOW");
     return;
@@ -4117,7 +4317,15 @@ static void recompute_meeting_bar(void) {
 
   char prefix[10];
   format_meeting_prefix(s_meeting_start[chosen], prefix, sizeof(prefix));
-  snprintf(line, sizeof(line), "%s | %s", prefix, s_meeting_title[chosen]);
+  if (datestr[0]) {
+    if (s_cal_event_date_after_time) {
+      snprintf(line, sizeof(line), "%s %s | %s", prefix, datestr, s_meeting_title[chosen]);
+    } else {
+      snprintf(line, sizeof(line), "%s %s | %s", datestr, prefix, s_meeting_title[chosen]);
+    }
+  } else {
+    snprintf(line, sizeof(line), "%s | %s", prefix, s_meeting_title[chosen]);
+  }
   update_event(line);
 
   char delta[8];
@@ -4733,6 +4941,39 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_bool(PERSIST_KEY_INVERT_MEETING_BAR, s_invert_meeting_bar);
   }
 
+  // Calendar event dates. ORDER arrives as 0 = month-first, 1 = day-first.
+  t = dict_find(iter, MESSAGE_KEY_CAL_EVENT_DATES_ON);
+  if (t) {
+    s_cal_event_dates_on = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_CAL_EVENT_DATES_ON, s_cal_event_dates_on);
+    recompute_meeting_bar();
+    mark_face_dirty();
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_CAL_EVENT_DATE_POSITION);
+  if (t) {
+    s_cal_event_date_after_time = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_CAL_EVENT_DATE_POSITION, s_cal_event_date_after_time);
+    recompute_meeting_bar();
+    mark_face_dirty();
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_CAL_EVENT_DATE_ORDER);
+  if (t) {
+    s_cal_event_date_month_first = t->value->int32 == 0;
+    persist_write_bool(PERSIST_KEY_CAL_EVENT_DATE_ORDER, s_cal_event_date_month_first);
+    recompute_meeting_bar();
+    mark_face_dirty();
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_CAL_EVENT_DATE_NO_ZERO);
+  if (t) {
+    s_cal_event_date_no_zero = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_CAL_EVENT_DATE_NO_ZERO, s_cal_event_date_no_zero);
+    recompute_meeting_bar();
+    mark_face_dirty();
+  }
+
   t = dict_find(iter, MESSAGE_KEY_COLOR_MODE);
   if (t) {
     s_color_mode = t->value->int32 == 1 ? ColorModeColor : ColorModeBW;
@@ -5229,6 +5470,58 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     fitness_settings_changed = true;
   }
 
+  t = dict_find(iter, MESSAGE_KEY_MULTI_TZ_ENABLED);
+  if (t) {
+    s_multi_tz_enabled = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_MULTI_TZ_ENABLED, s_multi_tz_enabled);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_MULTI_TZ_STYLE);
+  if (t) {
+    s_multi_tz_style = t->value->int32 != 0 ? 1 : 0;
+    persist_write_int(PERSIST_KEY_MULTI_TZ_STYLE, s_multi_tz_style);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_MULTI_TZ_1_LABEL);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_multi_tz1_label, sizeof(s_multi_tz1_label),
+                         PERSIST_KEY_MULTI_TZ1_LABEL, t->value->cstring);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_MULTI_TZ_1_OFFSET_MIN);
+  if (t) {
+    s_multi_tz1_offset_min = (int)t->value->int32;
+    if (s_multi_tz1_offset_min < -720) {
+      s_multi_tz1_offset_min = -720;
+    } else if (s_multi_tz1_offset_min > 840) {
+      s_multi_tz1_offset_min = 840;
+    }
+    persist_write_int(PERSIST_KEY_MULTI_TZ1_OFFSET_MIN, s_multi_tz1_offset_min);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_MULTI_TZ_2_LABEL);
+  if (t && t->type == TUPLE_CSTRING) {
+    store_overlay_string(s_multi_tz2_label, sizeof(s_multi_tz2_label),
+                         PERSIST_KEY_MULTI_TZ2_LABEL, t->value->cstring);
+    fitness_settings_changed = true;
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_MULTI_TZ_2_OFFSET_MIN);
+  if (t) {
+    s_multi_tz2_offset_min = (int)t->value->int32;
+    if (s_multi_tz2_offset_min < -720) {
+      s_multi_tz2_offset_min = -720;
+    } else if (s_multi_tz2_offset_min > 840) {
+      s_multi_tz2_offset_min = 840;
+    }
+    persist_write_int(PERSIST_KEY_MULTI_TZ2_OFFSET_MIN, s_multi_tz2_offset_min);
+    fitness_settings_changed = true;
+  }
+
   t = dict_find(iter, MESSAGE_KEY_TIDE_HOURLY_LEVELS);
   if (t && t->type == TUPLE_BYTE_ARRAY) {
     size_t n = t->length;
@@ -5626,6 +5919,18 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_REMOVE_LEADING_ZERO)) {
     s_remove_leading_zero = persist_read_bool(PERSIST_KEY_REMOVE_LEADING_ZERO);
   }
+  if (persist_exists(PERSIST_KEY_CAL_EVENT_DATES_ON)) {
+    s_cal_event_dates_on = persist_read_bool(PERSIST_KEY_CAL_EVENT_DATES_ON);
+  }
+  if (persist_exists(PERSIST_KEY_CAL_EVENT_DATE_POSITION)) {
+    s_cal_event_date_after_time = persist_read_bool(PERSIST_KEY_CAL_EVENT_DATE_POSITION);
+  }
+  if (persist_exists(PERSIST_KEY_CAL_EVENT_DATE_ORDER)) {
+    s_cal_event_date_month_first = persist_read_bool(PERSIST_KEY_CAL_EVENT_DATE_ORDER);
+  }
+  if (persist_exists(PERSIST_KEY_CAL_EVENT_DATE_NO_ZERO)) {
+    s_cal_event_date_no_zero = persist_read_bool(PERSIST_KEY_CAL_EVENT_DATE_NO_ZERO);
+  }
   if (persist_exists(PERSIST_KEY_TIME_FONT)) {
     int v = persist_read_int(PERSIST_KEY_TIME_FONT);
     if (v == TIME_FONT_CASIO) {
@@ -5933,6 +6238,36 @@ static void load_persisted(void) {
       s_alt_tz_offset_min = -720;
     } else if (s_alt_tz_offset_min > 840) {
       s_alt_tz_offset_min = 840;
+    }
+  }
+  if (persist_exists(PERSIST_KEY_MULTI_TZ_ENABLED)) {
+    s_multi_tz_enabled = persist_read_bool(PERSIST_KEY_MULTI_TZ_ENABLED);
+  }
+  if (persist_exists(PERSIST_KEY_MULTI_TZ_STYLE)) {
+    s_multi_tz_style = persist_read_int(PERSIST_KEY_MULTI_TZ_STYLE) != 0 ? 1 : 0;
+  }
+  if (persist_exists(PERSIST_KEY_MULTI_TZ1_LABEL)) {
+    persist_read_string(PERSIST_KEY_MULTI_TZ1_LABEL, s_multi_tz1_label, sizeof(s_multi_tz1_label));
+    s_multi_tz1_label[sizeof(s_multi_tz1_label) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_MULTI_TZ1_OFFSET_MIN)) {
+    s_multi_tz1_offset_min = persist_read_int(PERSIST_KEY_MULTI_TZ1_OFFSET_MIN);
+    if (s_multi_tz1_offset_min < -720) {
+      s_multi_tz1_offset_min = -720;
+    } else if (s_multi_tz1_offset_min > 840) {
+      s_multi_tz1_offset_min = 840;
+    }
+  }
+  if (persist_exists(PERSIST_KEY_MULTI_TZ2_LABEL)) {
+    persist_read_string(PERSIST_KEY_MULTI_TZ2_LABEL, s_multi_tz2_label, sizeof(s_multi_tz2_label));
+    s_multi_tz2_label[sizeof(s_multi_tz2_label) - 1] = '\0';
+  }
+  if (persist_exists(PERSIST_KEY_MULTI_TZ2_OFFSET_MIN)) {
+    s_multi_tz2_offset_min = persist_read_int(PERSIST_KEY_MULTI_TZ2_OFFSET_MIN);
+    if (s_multi_tz2_offset_min < -720) {
+      s_multi_tz2_offset_min = -720;
+    } else if (s_multi_tz2_offset_min > 840) {
+      s_multi_tz2_offset_min = 840;
     }
   }
   if (persist_exists(PERSIST_KEY_PRICES_STOCK_1_SYMBOL)) {

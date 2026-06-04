@@ -157,7 +157,7 @@
     "items": [
       {
         "type": "heading",
-        "defaultValue": "Layout"
+        "defaultValue": "Time"
       },
       {
         "type": "select",
@@ -193,116 +193,6 @@
       },
       {
         "type": "toggle",
-        "messageKey": "TOP_STEPS",
-        "label": "Top W800 step counter",
-        "defaultValue": true,
-        "description": "Shows the walking-man step counter above the date."
-      },
-      {
-        "type": "toggle",
-        "messageKey": "FITNESS_PIP_ROW_ON",
-        "label": "FuelBand-style pip row",
-        "defaultValue": true,
-        "description": "Horizontal 20-pip step-progress strip below the top bar. Pips fill in halves; each completed goal swaps pip shape (rectangles, then triangles, then squares). Off by default."
-      },
-      {
-        "type": "select",
-        "messageKey": "FITNESS_PIP_SHAPE",
-        "label": "Pip shape",
-        "defaultValue": "circle",
-        "options": [
-          { "label": "Circle (Your Day style)", "value": "circle" },
-          { "label": "Rectangle",               "value": "rectangle" }
-        ],
-        "description": "Shape used for pips below your step goal. After hitting your goal once, pips become triangles; after hitting it twice, squares."
-      },
-      {
-        "type": "select",
-        "messageKey": "FITNESS_PIP_SIZE",
-        "label": "Pip size",
-        "defaultValue": "large",
-        "options": [
-          { "label": "Large (default)", "value": "large" },
-          { "label": "Small",            "value": "small" }
-        ],
-        "description": "Large pips fill the full 9px gap between the step counter and the date. Small pips are the original 5px version, centered in the same gap."
-      },
-      {
-        "type": "select",
-        "messageKey": "FITNESS_PIP_DIRECTION",
-        "label": "Pip fill direction",
-        "defaultValue": "ltr",
-        "options": [
-          { "label": "Left to right", "value": "ltr" },
-          { "label": "Center out",    "value": "center" },
-          { "label": "Right to left", "value": "rtl" }
-        ]
-      },
-      {
-        "type": "select",
-        "messageKey": "FITNESS_PIP_STYLE",
-        "label": "Pip style",
-        "defaultValue": "hollow",
-        "options": [
-          { "label": "Hollow track (active pip fills)", "value": "hollow" },
-          { "label": "Populate as you walk",            "value": "populate" }
-        ]
-      },
-      {
-        "type": "select",
-        "messageKey": "FITNESS_PIP_COLOR_SOURCE",
-        "label": "Pip color source",
-        "defaultValue": "color",
-        "options": [
-          { "label": "Match watch theme (B&W in Tuxedo)", "value": "theme" },
-          { "label": "Always color (use pickers below)",  "value": "color" }
-        ],
-        "description": "When set to 'Match watch theme', pips render in B&W under Tuxedo and use the color pickers under Poor & Irish. Set to 'Always color' to keep colored pips even with the global Tuxedo theme."
-      },
-      {
-        "type": "select",
-        "messageKey": "FITNESS_PIP_COLOR_DIST",
-        "label": "Pip color distribution",
-        "defaultValue": "asymptotic",
-        "options": [
-          { "label": "Asymptotic FuelBand (10 / 6 / 4)", "value": "asymptotic" },
-          { "label": "Linear gradient",                  "value": "linear" }
-        ],
-        "description": "Asymptotic FuelBand: the first 10 pips show the low color, the middle 6 show the mid color, only the last 4 show the high color (loaded toward red so the green payoff feels earned). Linear smoothly interpolates across all 20 pips. Past your goal (lap 1+) every pip locks to the high color regardless of this setting."
-      },
-      {
-        "type": "color",
-        "messageKey": "FITNESS_PIP_COLOR_LOW",
-        "label": "Pip color (low end)",
-        "defaultValue": 16711680,
-        "sunlight": false,
-        "description": "Color of the leftmost pip. Defaults to red (FuelBand red)."
-      },
-      {
-        "type": "color",
-        "messageKey": "FITNESS_PIP_COLOR_MID",
-        "label": "Pip color (middle)",
-        "defaultValue": 16755200,
-        "sunlight": false,
-        "description": "Color at the midpoint pip. Pebble's 64-color palette can't reach pure yellow on a straight red->green interpolation, so the explicit midpoint keeps the rainbow visible. Defaults to a mustardy orange."
-      },
-      {
-        "type": "color",
-        "messageKey": "FITNESS_PIP_COLOR_HIGH",
-        "label": "Pip color (high end)",
-        "defaultValue": 21760,
-        "sunlight": false,
-        "description": "Color of the rightmost pip and the color every pip locks to after you pass your step goal. Defaults to a dark green."
-      },
-      {
-        "type": "toggle",
-        "messageKey": "VIBRATE_ON_DISCONNECT",
-        "label": "Vibrate on disconnect",
-        "defaultValue": true,
-        "description": "Buzzes the watch when the phone app connection drops."
-      },
-      {
-        "type": "toggle",
         "messageKey": "MILITARY_TIME",
         "label": "Use military time",
         "defaultValue": false,
@@ -314,29 +204,101 @@
         "label": "Remove leading zero",
         "defaultValue": false,
         "description": "Shows 9:05 instead of 09:05 on the main time."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "id": "multi-tz-heading",
+        "defaultValue": "Multi-timezone"
       },
       {
         "type": "toggle",
-        "messageKey": "VERBOSE_WEATHER",
-        "label": "Verbose weather, centered time",
+        "messageKey": "MULTI_TZ_ENABLED",
+        "label": "Show timezones under the clock",
         "defaultValue": false,
-        "description": "Replaces the complication circles with one centered weather line."
+        "description": "Off by default. When off the watchface is unchanged. When on, up to two secondary timezones appear beneath the main time, and verbose weather collapses to one line to make room. The label and daylight saving offset are derived automatically from the zone you pick, so they stay correct year round."
       },
       {
         "type": "select",
-        "messageKey": "VERBOSE_WEATHER_STYLE",
-        "label": "Verbose weather style",
-        "defaultValue": "one_line",
+        "messageKey": "MULTI_TZ_1",
+        "id": "multi-tz-1",
+        "label": "First timezone",
+        "defaultValue": "none",
         "options": [
-          {
-            "label": "One-line",
-            "value": "one_line"
-          },
-          {
-            "label": "Large",
-            "value": "large"
-          }
+          { "label": "None", "value": "none" },
+          { "label": "UTC", "value": "UTC" },
+          { "label": "London (GMT/BST)", "value": "Europe/London" },
+          { "label": "Paris, Berlin (CET/CEST)", "value": "Europe/Paris" },
+          { "label": "New York (EST/EDT)", "value": "America/New_York" },
+          { "label": "Chicago (CST/CDT)", "value": "America/Chicago" },
+          { "label": "Denver (MST/MDT)", "value": "America/Denver" },
+          { "label": "Phoenix (MST)", "value": "America/Phoenix" },
+          { "label": "Los Angeles (PST/PDT)", "value": "America/Los_Angeles" },
+          { "label": "Dubai (GST)", "value": "Asia/Dubai" },
+          { "label": "India (IST)", "value": "Asia/Kolkata" },
+          { "label": "Singapore (SGT)", "value": "Asia/Singapore" },
+          { "label": "Hong Kong (HKT)", "value": "Asia/Hong_Kong" },
+          { "label": "Tokyo (JST)", "value": "Asia/Tokyo" },
+          { "label": "Perth (AWST)", "value": "Australia/Perth" },
+          { "label": "Sydney (AEST/AEDT)", "value": "Australia/Sydney" }
         ]
+      },
+      {
+        "type": "select",
+        "messageKey": "MULTI_TZ_2",
+        "id": "multi-tz-2",
+        "label": "Second timezone (optional)",
+        "defaultValue": "none",
+        "options": [
+          { "label": "None", "value": "none" },
+          { "label": "UTC", "value": "UTC" },
+          { "label": "London (GMT/BST)", "value": "Europe/London" },
+          { "label": "Paris, Berlin (CET/CEST)", "value": "Europe/Paris" },
+          { "label": "New York (EST/EDT)", "value": "America/New_York" },
+          { "label": "Chicago (CST/CDT)", "value": "America/Chicago" },
+          { "label": "Denver (MST/MDT)", "value": "America/Denver" },
+          { "label": "Phoenix (MST)", "value": "America/Phoenix" },
+          { "label": "Los Angeles (PST/PDT)", "value": "America/Los_Angeles" },
+          { "label": "Dubai (GST)", "value": "Asia/Dubai" },
+          { "label": "India (IST)", "value": "Asia/Kolkata" },
+          { "label": "Singapore (SGT)", "value": "Asia/Singapore" },
+          { "label": "Hong Kong (HKT)", "value": "Asia/Hong_Kong" },
+          { "label": "Tokyo (JST)", "value": "Asia/Tokyo" },
+          { "label": "Perth (AWST)", "value": "Australia/Perth" },
+          { "label": "Sydney (AEST/AEDT)", "value": "Australia/Sydney" }
+        ]
+      },
+      {
+        "type": "select",
+        "messageKey": "MULTI_TZ_STYLE",
+        "id": "multi-tz-style",
+        "label": "Display style",
+        "defaultValue": "text",
+        "options": [
+          { "label": "Text line", "value": "text" },
+          { "label": "Circle complications", "value": "circle" }
+        ],
+        "description": "Text line shows ABBR:time joined by a divider. Circle complications show each zone as a small dial in the complication row. Times follow the Military time setting in the Time section."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Layout"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "TOP_STEPS",
+        "label": "Top W800 step counter",
+        "defaultValue": true,
+        "description": "Shows the walking-man step counter above the date."
       },
       {
         "type": "select",
@@ -520,6 +482,36 @@
             ]
           }
         ]
+      },
+      {
+        "type": "toggle",
+        "messageKey": "VERBOSE_WEATHER",
+        "label": "Verbose weather, centered time",
+        "defaultValue": false,
+        "description": "Replaces the complication circles with one centered weather line."
+      },
+      {
+        "type": "select",
+        "messageKey": "VERBOSE_WEATHER_STYLE",
+        "label": "Verbose weather style",
+        "defaultValue": "one_line",
+        "options": [
+          {
+            "label": "One-line",
+            "value": "one_line"
+          },
+          {
+            "label": "Large",
+            "value": "large"
+          }
+        ]
+      },
+      {
+        "type": "toggle",
+        "messageKey": "VIBRATE_ON_DISCONNECT",
+        "label": "Vibrate on disconnect",
+        "defaultValue": true,
+        "description": "Buzzes the watch when the phone app connection drops."
       }
     ]
   },
@@ -693,6 +685,159 @@
           "placeholder": "[None]"
         },
         "description": "Shown on the meeting bar, the Your Day 'Next:' line, and the Upcoming shake overlay when there's nothing scheduled."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "CAL_EVENT_DATES_ON",
+        "label": "Show event dates",
+        "defaultValue": false,
+        "description": "Adds each event's date (e.g. 06/04) to the bottom event line and the Upcoming shake list. Off by default; nothing else changes."
+      },
+      {
+        "type": "select",
+        "messageKey": "CAL_EVENT_DATE_ORDER",
+        "label": "Date order",
+        "defaultValue": "month_day",
+        "options": [
+          {
+            "label": "Month first (06/04)",
+            "value": "month_day"
+          },
+          {
+            "label": "Day first (04/06)",
+            "value": "day_month"
+          }
+        ],
+        "description": "Applies to the event line and the Upcoming shake list."
+      },
+      {
+        "type": "select",
+        "messageKey": "CAL_EVENT_DATE_POSITION",
+        "label": "Date position",
+        "defaultValue": "before",
+        "options": [
+          {
+            "label": "Before the time (6/4 2:30P)",
+            "value": "before"
+          },
+          {
+            "label": "After the time (2:30P 6/4)",
+            "value": "after"
+          }
+        ],
+        "description": "Bottom event line only. The Upcoming shake list shows the date on each event's countdown line."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "CAL_EVENT_DATE_NO_ZERO",
+        "label": "Remove leading zeros from dates",
+        "defaultValue": false,
+        "description": "Shows 6/4 instead of 06/04. Separate from the main time's leading-zero setting."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Fitness pip row"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "FITNESS_PIP_ROW_ON",
+        "label": "FuelBand-style pip row",
+        "defaultValue": true,
+        "description": "Horizontal 20-pip step-progress strip below the top bar. Pips fill in halves; each completed goal swaps pip shape (rectangles, then triangles, then squares). Off by default."
+      },
+      {
+        "type": "select",
+        "messageKey": "FITNESS_PIP_SHAPE",
+        "label": "Pip shape",
+        "defaultValue": "circle",
+        "options": [
+          { "label": "Circle (Your Day style)", "value": "circle" },
+          { "label": "Rectangle",               "value": "rectangle" }
+        ],
+        "description": "Shape used for pips below your step goal. After hitting your goal once, pips become triangles; after hitting it twice, squares."
+      },
+      {
+        "type": "select",
+        "messageKey": "FITNESS_PIP_SIZE",
+        "label": "Pip size",
+        "defaultValue": "large",
+        "options": [
+          { "label": "Large (default)", "value": "large" },
+          { "label": "Small",            "value": "small" }
+        ],
+        "description": "Large pips fill the full 9px gap between the step counter and the date. Small pips are the original 5px version, centered in the same gap."
+      },
+      {
+        "type": "select",
+        "messageKey": "FITNESS_PIP_DIRECTION",
+        "label": "Pip fill direction",
+        "defaultValue": "ltr",
+        "options": [
+          { "label": "Left to right", "value": "ltr" },
+          { "label": "Center out",    "value": "center" },
+          { "label": "Right to left", "value": "rtl" }
+        ]
+      },
+      {
+        "type": "select",
+        "messageKey": "FITNESS_PIP_STYLE",
+        "label": "Pip style",
+        "defaultValue": "hollow",
+        "options": [
+          { "label": "Hollow track (active pip fills)", "value": "hollow" },
+          { "label": "Populate as you walk",            "value": "populate" }
+        ]
+      },
+      {
+        "type": "select",
+        "messageKey": "FITNESS_PIP_COLOR_SOURCE",
+        "label": "Pip color source",
+        "defaultValue": "color",
+        "options": [
+          { "label": "Match watch theme (B&W in Tuxedo)", "value": "theme" },
+          { "label": "Always color (use pickers below)",  "value": "color" }
+        ],
+        "description": "When set to 'Match watch theme', pips render in B&W under Tuxedo and use the color pickers under Poor & Irish. Set to 'Always color' to keep colored pips even with the global Tuxedo theme."
+      },
+      {
+        "type": "select",
+        "messageKey": "FITNESS_PIP_COLOR_DIST",
+        "label": "Pip color distribution",
+        "defaultValue": "asymptotic",
+        "options": [
+          { "label": "Asymptotic FuelBand (10 / 6 / 4)", "value": "asymptotic" },
+          { "label": "Linear gradient",                  "value": "linear" }
+        ],
+        "description": "Asymptotic FuelBand: the first 10 pips show the low color, the middle 6 show the mid color, only the last 4 show the high color (loaded toward red so the green payoff feels earned). Linear smoothly interpolates across all 20 pips. Past your goal (lap 1+) every pip locks to the high color regardless of this setting."
+      },
+      {
+        "type": "color",
+        "messageKey": "FITNESS_PIP_COLOR_LOW",
+        "label": "Pip color (low end)",
+        "defaultValue": 16711680,
+        "sunlight": false,
+        "description": "Color of the leftmost pip. Defaults to red (FuelBand red)."
+      },
+      {
+        "type": "color",
+        "messageKey": "FITNESS_PIP_COLOR_MID",
+        "label": "Pip color (middle)",
+        "defaultValue": 16755200,
+        "sunlight": false,
+        "description": "Color at the midpoint pip. Pebble's 64-color palette can't reach pure yellow on a straight red->green interpolation, so the explicit midpoint keeps the rainbow visible. Defaults to a mustardy orange."
+      },
+      {
+        "type": "color",
+        "messageKey": "FITNESS_PIP_COLOR_HIGH",
+        "label": "Pip color (high end)",
+        "defaultValue": 21760,
+        "sunlight": false,
+        "description": "Color of the rightmost pip and the color every pip locks to after you pass your step goal. Defaults to a dark green."
       }
     ]
   },
