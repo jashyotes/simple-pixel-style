@@ -61,6 +61,7 @@
 #define PERSIST_KEY_CAL_EVENT_DATE_POSITION 275
 #define PERSIST_KEY_CAL_EVENT_DATE_ORDER 276
 #define PERSIST_KEY_CAL_EVENT_DATE_NO_ZERO 277
+#define PERSIST_KEY_DATE_LANGUAGE 278
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -419,6 +420,10 @@ static bool s_cal_event_dates_on = false;
 static bool s_cal_event_date_after_time = false;  // false = before time, true = after
 static bool s_cal_event_date_month_first = true;  // true = MM/DD, false = DD/MM
 static bool s_cal_event_date_no_zero = false;     // strip leading zeros (date only)
+// Date bar language: 0 = English (default, unchanged), 1 = Japanese full
+// (6月2日 火曜日), 2 = Japanese compact (6月2日（火）). Kanji render via the
+// firmware CJK fallback (same as event titles).
+static uint8_t s_date_language = 0;
 // Multi-timezone display. Inactive zones carry an empty label. Offsets and
 // labels are resolved on the phone (the watch has no timezone database) and
 // pushed via AppMessage; the watch only applies the integer offset.
@@ -4146,15 +4151,35 @@ static void update_time_date(struct tm *t) {
     memmove(s_time_buf, s_time_buf + 1, strlen(s_time_buf));
   }
 
-  static const char *days[] = {
-    "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
-  };
-  static const char *months[] = {
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"
-  };
-  snprintf(s_date_buf, sizeof(s_date_buf), "%s, %s %d",
-           days[t->tm_wday], months[t->tm_mon], t->tm_mday);
+  if (s_date_language == 1 || s_date_language == 2) {
+    // Japanese date. Months/days are just numbers + 月/日, weekday is a 7-kanji
+    // lookup. Kanji render through the firmware's CJK fallback font (the same
+    // fallback already drawing Japanese calendar event titles on the event
+    // bar), so no bundled font is required. Two formats:
+    //   1 = full     "6月2日 火曜日"
+    //   2 = compact  "6月2日（火）"
+    // Only this branch differs; the English output below is byte-for-byte unchanged.
+    static const char *jp_wday[] = {
+      "日", "月", "火", "水", "木", "金", "土"
+    };
+    if (s_date_language == 2) {
+      snprintf(s_date_buf, sizeof(s_date_buf), "%d月%d日（%s）",
+               t->tm_mon + 1, t->tm_mday, jp_wday[t->tm_wday]);
+    } else {
+      snprintf(s_date_buf, sizeof(s_date_buf), "%d月%d日 %s曜日",
+               t->tm_mon + 1, t->tm_mday, jp_wday[t->tm_wday]);
+    }
+  } else {
+    static const char *days[] = {
+      "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
+    };
+    static const char *months[] = {
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    };
+    snprintf(s_date_buf, sizeof(s_date_buf), "%s, %s %d",
+             days[t->tm_wday], months[t->tm_mon], t->tm_mday);
+  }
   mark_face_dirty();
 }
 
@@ -4972,6 +4997,18 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_bool(PERSIST_KEY_CAL_EVENT_DATE_NO_ZERO, s_cal_event_date_no_zero);
     recompute_meeting_bar();
     mark_face_dirty();
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_DATE_LANGUAGE);
+  if (t) {
+    int dl = (int)t->value->int32;
+    s_date_language = (uint8_t)((dl >= 0 && dl <= 2) ? dl : 0);
+    persist_write_int(PERSIST_KEY_DATE_LANGUAGE, s_date_language);
+    time_t now = time(NULL);
+    struct tm *lt = localtime(&now);
+    if (lt) {
+      update_time_date(lt);
+    }
   }
 
   t = dict_find(iter, MESSAGE_KEY_COLOR_MODE);
@@ -5930,6 +5967,9 @@ static void load_persisted(void) {
   }
   if (persist_exists(PERSIST_KEY_CAL_EVENT_DATE_NO_ZERO)) {
     s_cal_event_date_no_zero = persist_read_bool(PERSIST_KEY_CAL_EVENT_DATE_NO_ZERO);
+  }
+  if (persist_exists(PERSIST_KEY_DATE_LANGUAGE)) {
+    s_date_language = (uint8_t)persist_read_int(PERSIST_KEY_DATE_LANGUAGE);
   }
   if (persist_exists(PERSIST_KEY_TIME_FONT)) {
     int v = persist_read_int(PERSIST_KEY_TIME_FONT);

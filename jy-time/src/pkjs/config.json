@@ -204,6 +204,27 @@
         "label": "Remove leading zero",
         "defaultValue": false,
         "description": "Shows 9:05 instead of 09:05 on the main time."
+      },
+      {
+        "type": "select",
+        "messageKey": "DATE_LANGUAGE",
+        "label": "Date language",
+        "defaultValue": "en",
+        "options": [
+          {
+            "label": "English",
+            "value": "en"
+          },
+          {
+            "label": "日本語 (6月2日 火曜日)",
+            "value": "ja"
+          },
+          {
+            "label": "日本語 compact (6月2日（火）)",
+            "value": "ja_compact"
+          }
+        ],
+        "description": "Language for the date line only. Japanese shows the date as 6月2日 火曜日 (full) or 6月2日（火） (compact). Everything else is unchanged."
       }
     ]
   },

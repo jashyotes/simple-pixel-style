@@ -246,6 +246,7 @@ var DEFAULT_SETTINGS = {
   INVERT_TIME: true,
   MILITARY_TIME: false,
   REMOVE_LEADING_ZERO: false,
+  DATE_LANGUAGE: 'en',
   TIME_FONT: '1',
   CASIO_PHANTOM: true,
   INVERT_WEATHER: false,
@@ -501,6 +502,8 @@ function sendLayoutSetting(settings) {
   dict[keys.INVERT_TIME] = settings.INVERT_TIME ? 1 : 0;
   dict[keys.MILITARY_TIME] = settings.MILITARY_TIME ? 1 : 0;
   dict[keys.REMOVE_LEADING_ZERO] = settings.REMOVE_LEADING_ZERO ? 1 : 0;
+  dict[keys.DATE_LANGUAGE] = settings.DATE_LANGUAGE === 'ja' ? 1
+      : (settings.DATE_LANGUAGE === 'ja_compact' ? 2 : 0);
   dict[keys.TIME_FONT] = numberSetting(settings.TIME_FONT, 0, 0, 3);
   dict[keys.CASIO_PHANTOM] = settings.CASIO_PHANTOM ? 1 : 0;
   dict[keys.INVERT_WEATHER] = settings.INVERT_WEATHER ? 1 : 0;
