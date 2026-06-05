@@ -813,3 +813,11 @@ Key realization from a user-supplied on-watch screenshot: this PebbleOS build al
 English is byte-identical (the original formatter just moved into the `else`); only the date string changes, and only when a Japanese option is selected. Plumbing: `DATE_LANGUAGE` message key, the Clay select, `DEFAULT_SETTINGS: 'en'`, C `s_date_language` (0=EN / 1=JP full / 2=JP compact), persist key 278, an inbox handler that re-renders the date immediately, and boot-load. Three-way default audit still clean (96 keys).
 
 Shipped without local on-device verification, by the user's call ("let er rip") — the emulator can't run here and kanji rendering depends on the device firmware fallback, so the Japanese user confirms or reports. If the full form clips at the widest dates (e.g. 12月31日 水曜日), the compact option is already there. Artifact: `release-assets/simple-pixel-style-1.28.0-emery.pbw` (also in `jy-time/release-assets/`).
+
+## Outstanding / parked (as of 1.28 — 2026-06-05)
+
+Current live to-dos. (The "Next actions you take" section higher up is historical 0.1.0-era and no longer current; this is the up-to-date list.)
+
+- **Japanese date — on-device confirmation pending.** 1.28 shipped without local verification (emulator can't run here; kanji rely on the device firmware CJK fallback). The Japanese user is to confirm the date line renders and that the full form doesn't clip at the widest dates (e.g. `12月31日 水曜日`); the compact `日本語 compact` option is the built-in fallback if it does.
+- **Clay menu declutters (5, deferred).** Same `customClay` show/hide pattern as the pip-row collapse — hide controls that have no effect in the current state: (1) CASIO phantom backdrop → only when Time font = CASIO; (2) collapse the Calendar section (ICS URLs, look-ahead, no-events label, event-date options) when "Enable bottom event" is off; (3) manual latitude/longitude → only when Location = Manual; (4) Verbose weather style → only when Verbose weather is on; (5) Your Day → rolling-window hours in Rolling mode, fixed start/end in Fixed mode.
+- **Shake "Upcoming" list time in Japanese (optional).** Each row's time (e.g. `8:30am`) is phone-formatted in `formatEvent()` (`src/pkjs/index.js`); the 1.28 date-language feature covers the main date line only. Extending Japanese to the shake list's per-event time would be a phone-side formatter change.
