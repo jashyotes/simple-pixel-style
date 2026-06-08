@@ -1128,6 +1128,10 @@ function formatWeatherHourFromEpoch(epochSeconds, utcOffsetSeconds) {
   return hour + suffix;
 }
 
+// Full condition label incl. precipitation. Use this only for the current
+// observation (the no-hourly fallback in omBuildSummaryCandidates), where the
+// precip word IS the answer. For the base sky condition of a chance/clear-tier
+// summary use omBaseSkyLabel instead, which never returns a precip word.
 function weatherBaseLabel(code) {
   if (code === 0) return 'CLEAR';
   if (code === 1) return 'MOSTLY CLR';
@@ -1142,6 +1146,21 @@ function weatherBaseLabel(code) {
   if (code >= 80 && code <= 82) return 'SHWRS';
   if (code >= 95 && code <= 99) return 'STORMS';
   return 'CLOUDY';
+}
+
+// Sky-only base condition for a WMO code. Precip codes resolve to the sky that
+// accompanies them (CLOUDY) rather than the precip word, because this label is
+// the base of the summary and the precip itself is carried in the qualifier
+// (e.g. "CLOUDY, 30% RAIN PM"). Returning "RAIN"/"SHWRS" here let a sub-10%-
+// chance hour whose WMO code still read as rain print "RAIN" as the actual
+// condition. Mirrors the NWS path, whose base label (nwsBaseLabelCompact) is
+// sky-only and never a precip word.
+function omBaseSkyLabel(code) {
+  if (code === 0) return 'CLEAR';
+  if (code === 1) return 'MOSTLY CLR';
+  if (code === 2) return 'PARTLY CLDY';
+  if (code === 45 || code === 48) return 'FOG';
+  return 'CLOUDY'; // code 3 (overcast) and every precip code are a cloudy sky
 }
 
 function weatherEventLabel(code) {
@@ -1219,14 +1238,14 @@ function omDominantBase(hourly, currentCode, utcOffsetSeconds) {
         var pop = hourlyRainChance(hourly, i);
         var code = hourlyWeatherCode(hourly, i);
         if (omClassifyHourState(code, pop) === 'CLEAR' && code !== null) {
-          return weatherBaseLabel(code);
+          return omBaseSkyLabel(code);
         }
       }
     }
   }
   var currCode = Number(currentCode);
   if (isFinite(currCode) && currCode >= 0 && currCode <= 48) {
-    return weatherBaseLabel(currCode);
+    return omBaseSkyLabel(currCode);
   }
   return 'CLOUDY';
 }
@@ -1376,7 +1395,7 @@ function omBuildSummaryCandidates(hourly, currentCode, utcOffsetSeconds) {
   // Tier 5: nothing precip in 18h.
   var currentHourCode = hourlyWeatherCode(hourly, startIdx);
   var fallbackBase = currentHourCode !== null
-      ? weatherBaseLabel(currentHourCode)
+      ? omBaseSkyLabel(currentHourCode)
       : (omDominantBase(hourly, currentCode, utcOffsetSeconds) || 'CLEAR');
   return [fallbackBase, omBaseLabelSimple(fallbackBase) || fallbackBase];
 }
