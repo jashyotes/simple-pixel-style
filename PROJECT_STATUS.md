@@ -832,6 +832,12 @@ Rendering: the swapped band now extends 2px below the pips — small `y=33..39` 
 
 Artifact: `release-assets/simple-pixel-style-1.32.0-emery.pbw`.
 
+## 1.33: Date line nudged down 4px under Casio (2026-06-08)
+
+When the time font is Casio (the default), the weekday + month/date line shifts down 4px so it reads a touch closer to the time row. One offset in the main render: `date_frame` Y gets `+4` when `s_time_font == TIME_FONT_CASIO` (non-Casio fonts unchanged). Only the date text frame moves; the date-bar background band (`y=31..time_frame_y`) is unchanged, so inversions and the pip strip are unaffected.
+
+Artifact: `release-assets/simple-pixel-style-1.33.0-emery.pbw`.
+
 ## Outstanding / parked (as of 1.28 — 2026-06-05)
 
 Current live to-dos. (The "Next actions you take" section higher up is historical 0.1.0-era and no longer current; this is the up-to-date list.)

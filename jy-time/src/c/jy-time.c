@@ -4048,7 +4048,12 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   const int weather_h = draw_verbose_weather
       ? weather_band_h()
       : (COMPLICATION_RADIUS * 2) + 4;
-  const GRect date_frame = GRect(0, DATE_FRAME_Y + content_offset_y, SCREEN_W, 29);
+  // Casio time font: nudge the weekday + month/date line down 4px so it reads
+  // a touch closer to the time row. The date-bar background band (filled below)
+  // is unchanged; only the text frame shifts.
+  const int date_casio_offset = (s_time_font == TIME_FONT_CASIO) ? 4 : 0;
+  const GRect date_frame =
+      GRect(0, DATE_FRAME_Y + content_offset_y + date_casio_offset, SCREEN_W, 29);
   const bool verbose_weather_meeting_color_break =
       draw_verbose_weather &&
       section_backgrounds_differ(ColorSectionWeather, ColorSectionMeetingBar);
