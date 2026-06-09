@@ -495,11 +495,11 @@ static uint8_t  s_fitness_pip_shape          = 0;
 // 0 = small (5px tall, original). 1 = large (9px tall, default).
 // Affects every shape; pip row is centered in the y=27..35 gap regardless.
 static uint8_t  s_fitness_pip_size           = 1;
-// Tuxedo (B&W) only: invert the pip-row band. When on, the pip bounding box
-// is filled with the date-bar fg color and the pips flip to the date-bar bg
-// color, so the strip reads as an inverted stripe. No effect in color mode.
-// Off by default. Read by draw_fitness_pip_row (rendering owned by Codex).
-static bool     s_fitness_pip_invert_bar     = false;
+// Pip bar inversion, theme-relative like the other section inverts (Tuxedo
+// only): not inverted = matches the base theme (dark in dark mode), inverted =
+// the opposite. Defaults ON to match the date bar's default, so the band
+// blends with the date bar out of the box.
+static bool     s_fitness_pip_invert_bar     = true;
 static int s_fitness_overlay_duration_ms = 5000;
 static int s_calendar_shake_event_count = 3;
 static int s_day_event_hours_bitmap = 0;
@@ -1678,23 +1678,22 @@ static void draw_pip_filled(GContext *ctx, int slot_center_x,
 static void draw_fitness_pip_row(GContext *ctx) {
   if (!s_fitness_pip_row_enabled) return;
 
-  // The pip row sits in the date-bar's vertical band (y=31..35). Set the
-  // draw section so draw_fg_color() returns the right contrast color
-  // against whatever the date bar's actual rendered background is
-  // (which depends on light_mode + invert_date_bar). Using a raw
-  // theme_fg_color() here would render invisible against inverted bars.
-  set_draw_section(ColorSectionDateBar);
-
-  // Tuxedo-only inverted pip band: paint the pip strip with the date-bar fg
-  // color so it reads as an inverted stripe. The pips flip to the bg color in
-  // the !use_color branch below. No effect under color mode. The band spans the
-  // pip extent + 2px below: small y=33..39 (h=7), large y=31..41 (h=11).
-  bool invert_bar = s_fitness_pip_invert_bar && (s_color_mode != ColorModeColor);
-  if (invert_bar) {
+  // The pip bar is its own invertible section, flipped relative to the GLOBAL
+  // theme exactly like the top/date/time bars: not inverted = matches the base
+  // theme (dark in dark mode, light in light mode), inverted = the opposite.
+  // Tuxedo (B&W) only; in color mode the pips use the pickers and no band is
+  // painted. The band spans the pip extent + 2px below: small y=33..39 (h=7),
+  // large y=31..41 (h=11), full width. It is always painted in Tuxedo so the
+  // strip carries its own theme color; when that matches the date bar it blends.
+  bool pip_tuxedo   = (s_color_mode != ColorModeColor);
+  bool pip_inverted = s_fitness_pip_invert_bar;
+  GColor pip_band_bg  = pip_inverted ? theme_fg_color() : theme_bg_color();
+  GColor pip_theme_fg = pip_inverted ? theme_bg_color() : theme_fg_color();
+  if (pip_tuxedo) {
     bool bar_large = (s_fitness_pip_size == 1);
     int bar_top = bar_large ? 31 : 33;
     int bar_h   = bar_large ? 11 : 7;
-    graphics_context_set_fill_color(ctx, draw_fg_color());
+    graphics_context_set_fill_color(ctx, pip_band_bg);
     graphics_fill_rect(ctx, GRect(0, bar_top, SCREEN_W, bar_h), 0, GCornerNone);
   }
 
@@ -1782,7 +1781,7 @@ static void draw_fitness_pip_row(GContext *ctx) {
                      (s_color_mode == ColorModeColor);
     GColor pip_color;
     if (!use_color) {
-      pip_color = invert_bar ? draw_bg_color() : draw_fg_color();
+      pip_color = pip_theme_fg;
     } else if (lap >= 1) {
       pip_color = GColorFromHEX(s_fitness_pip_color_high_hex);
     } else if (s_fitness_pip_color_dist == 1) {

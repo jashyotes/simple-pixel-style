@@ -838,6 +838,16 @@ When the time font is Casio (the default), the weekday + month/date line shifts 
 
 Artifact: `release-assets/simple-pixel-style-1.33.0-emery.pbw`.
 
+## 1.34: Pip bar inverts relative to the theme, like every other section (2026-06-08)
+
+Fixes the inconsistency from 1.31/1.32: the pip bar was flipping relative to the **date bar** (it borrowed `ColorSectionDateBar`'s resolved colors via `set_draw_section`), so on an inverted (white) date bar "Invert pip bar ON" produced a *dark* band — the opposite direction of every other invert toggle, which flip relative to the **global theme**.
+
+Now the pip bar is its own theme-relative section, identical rule to top/date/time/weather/meeting: not inverted = matches the base theme (dark in dark mode, light in light mode), inverted = the opposite. `draw_fitness_pip_row` computes `pip_band_bg`/`pip_theme_fg` from `theme_fg_color()`/`theme_bg_color()` and the pip's own flag (not the date bar's), and always paints the band in Tuxedo so it carries its own theme color (it blends when it matches the date bar). All six invert toggles already live in one "Black & White inversions" Clay section (1.32).
+
+Default flipped `false → true` (all three sync points: C static, config.json, `DEFAULT_SETTINGS`) to match the date bar's default-inverted state, so the band blends out of the box and the shipped look is unchanged. To make the pip strip stand out as a dark band on the default white date bar, turn **Invert pip bar OFF** (OFF = dark, matching the base theme). No effect under the color theme.
+
+Artifact: `release-assets/simple-pixel-style-1.34.0-emery.pbw`.
+
 ## Outstanding / parked (as of 1.28 — 2026-06-05)
 
 Current live to-dos. (The "Next actions you take" section higher up is historical 0.1.0-era and no longer current; this is the up-to-date list.)

@@ -56,8 +56,8 @@
         "type": "toggle",
         "messageKey": "FITNESS_PIP_INVERT_BAR",
         "label": "Invert pip bar",
-        "defaultValue": false,
-        "description": "Swaps the fitness pip strip colors, plus 2px below the pips. Applies only when the pip row is on."
+        "defaultValue": true,
+        "description": "Swaps the pip strip colors (and 2px below) relative to the theme, like the bars above. Applies only when the pip row is on."
       },
       {
         "type": "toggle",
