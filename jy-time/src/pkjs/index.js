@@ -10,6 +10,7 @@ function customClay() {
   var BW_ITEM_KEYS = [
     'bw-heading',
     'INVERT_TOP_BAR',
+    'FITNESS_PIP_INVERT_BAR',
     'INVERT_DATE_BAR',
     'INVERT_TIME',
     'INVERT_WEATHER',
@@ -47,8 +48,7 @@ function customClay() {
     'FITNESS_PIP_DIRECTION',
     'FITNESS_PIP_STYLE',
     'FITNESS_PIP_COLOR_SOURCE',
-    'FITNESS_PIP_COLOR_DIST',
-    'FITNESS_PIP_INVERT_BAR'
+    'FITNESS_PIP_COLOR_DIST'
   ];
 
   var SHAKE_FITNESS_ITEM_KEYS = [

@@ -1685,15 +1685,15 @@ static void draw_fitness_pip_row(GContext *ctx) {
   // theme_fg_color() here would render invisible against inverted bars.
   set_draw_section(ColorSectionDateBar);
 
-  // Tuxedo-only inverted pip band: paint the pip bounding box with the
-  // date-bar fg color so the strip reads as an inverted stripe. The pips
-  // flip to the bg color below (CHANGE 2). No effect under color mode.
-  // Bar height = exact pip extent: small y=33..37 (h=5), large y=31..39 (h=9).
+  // Tuxedo-only inverted pip band: paint the pip strip with the date-bar fg
+  // color so it reads as an inverted stripe. The pips flip to the bg color in
+  // the !use_color branch below. No effect under color mode. The band spans the
+  // pip extent + 2px below: small y=33..39 (h=7), large y=31..41 (h=11).
   bool invert_bar = s_fitness_pip_invert_bar && (s_color_mode != ColorModeColor);
   if (invert_bar) {
     bool bar_large = (s_fitness_pip_size == 1);
     int bar_top = bar_large ? 31 : 33;
-    int bar_h   = bar_large ? 9 : 5;
+    int bar_h   = bar_large ? 11 : 7;
     graphics_context_set_fill_color(ctx, draw_fg_color());
     graphics_fill_rect(ctx, GRect(0, bar_top, SCREEN_W, bar_h), 0, GCornerNone);
   }

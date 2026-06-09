@@ -824,6 +824,14 @@ Plumbing: `FITNESS_PIP_INVERT_BAR` message key, persist key 279, C `s_fitness_pi
 
 Shipped without local on-device verification — the emulator can't run here, so the look is confirmed by uploading the PBW. Artifact: `release-assets/simple-pixel-style-1.31.0-emery.pbw`.
 
+## 1.32: Pip-bar invert moved to Inversions menu, +2px (2026-06-08)
+
+Follow-up to 1.31. The **"Invert pip bar"** toggle moved out of the Fitness pip row section into the **Black & White inversions** section, positioned between "Invert top bar" and "Invert date bar" (it sits there physically on the face too). It now hides under the Poor & Irish color theme like its sibling invert toggles (added to `BW_ITEM_KEYS`, removed from `FITNESS_PIP_BASE_KEYS`), and is no longer gated by the pip-row collapse. Relabeled from "Invert pip bar background (Tuxedo only)" to plain "Invert pip bar" to match the section's voice.
+
+Rendering: the swapped band now extends 2px below the pips — small `y=33..39` (h=7), large `y=31..41` (h=11) — so the inverted stripe carries into the gap above the date instead of stopping exactly at the pip bottoms. One value in `draw_fitness_pip_row` (`bar_h` 9/5 → 11/7); no other geometry changed. No C plumbing change (same message/persist key, same static).
+
+Artifact: `release-assets/simple-pixel-style-1.32.0-emery.pbw`.
+
 ## Outstanding / parked (as of 1.28 — 2026-06-05)
 
 Current live to-dos. (The "Next actions you take" section higher up is historical 0.1.0-era and no longer current; this is the up-to-date list.)
