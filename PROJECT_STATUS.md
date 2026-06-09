@@ -814,6 +814,16 @@ English is byte-identical (the original formatter just moved into the `else`); o
 
 Shipped without local on-device verification, by the user's call ("let er rip") — the emulator can't run here and kanji rendering depends on the device firmware fallback, so the Japanese user confirms or reports. If the full form clips at the widest dates (e.g. 12月31日 水曜日), the compact option is already there. Artifact: `release-assets/simple-pixel-style-1.28.0-emery.pbw` (also in `jy-time/release-assets/`).
 
+## 1.31: Invert pip bar background, Tuxedo (2026-06-08)
+
+New **"Invert pip bar background (Tuxedo only)"** toggle in Settings → Fitness pip row (off by default). Under the Tuxedo (B&W) theme it fills the pip strip with the date-bar foreground color and flips the pips to the date-bar background color, so the row reads as an inverted stripe inside the date bar. No effect under the Poor & Irish color theme.
+
+The fill is sized to the exact pip bounding box, full screen width: small pips → `y=33..37` (h=5), large pips → `y=31..39` (h=9), matched off `s_fitness_pip_size`. Top of the bar is the topmost pip pixel, bottom is the bottommost. Gating is `s_fitness_pip_invert_bar && s_color_mode != ColorModeColor`; the pip color only flips in the theme-mode (`!use_color`) branch, so the "Always color" pip pickers are untouched.
+
+Plumbing: `FITNESS_PIP_INVERT_BAR` message key, persist key 279, C `s_fitness_pip_invert_bar` (default false), inbox handler + boot-load, the Clay toggle (hidden when the pip row is off, via `FITNESS_PIP_BASE_KEYS`), `DEFAULT_SETTINGS: false`, and the `sendLayoutSetting` line. Three-way default agrees for the new key (config.json / firmware static / `DEFAULT_SETTINGS` all false). The rendering (two changes in `draw_fitness_pip_row`) was handed to Codex against an exact spec; the setting plumbing was written directly.
+
+Shipped without local on-device verification — the emulator can't run here, so the look is confirmed by uploading the PBW. Artifact: `release-assets/simple-pixel-style-1.31.0-emery.pbw`.
+
 ## Outstanding / parked (as of 1.28 — 2026-06-05)
 
 Current live to-dos. (The "Next actions you take" section higher up is historical 0.1.0-era and no longer current; this is the up-to-date list.)

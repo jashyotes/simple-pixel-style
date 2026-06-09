@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "1.30",
+  "version": "1.31",
   "keywords": [
     "pebble-app"
   ],
@@ -74,6 +74,7 @@
       "FITNESS_PIP_COLOR_SOURCE",
       "FITNESS_PIP_SHAPE",
       "FITNESS_PIP_SIZE",
+      "FITNESS_PIP_INVERT_BAR",
       "LOW_TEMP",
       "SUNRISE_T",
       "SUNSET_T",

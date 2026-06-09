@@ -62,6 +62,7 @@
 #define PERSIST_KEY_CAL_EVENT_DATE_ORDER 276
 #define PERSIST_KEY_CAL_EVENT_DATE_NO_ZERO 277
 #define PERSIST_KEY_DATE_LANGUAGE 278
+#define PERSIST_KEY_FITNESS_PIP_INVERT_BAR 279
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -494,6 +495,11 @@ static uint8_t  s_fitness_pip_shape          = 0;
 // 0 = small (5px tall, original). 1 = large (9px tall, default).
 // Affects every shape; pip row is centered in the y=27..35 gap regardless.
 static uint8_t  s_fitness_pip_size           = 1;
+// Tuxedo (B&W) only: invert the pip-row band. When on, the pip bounding box
+// is filled with the date-bar fg color and the pips flip to the date-bar bg
+// color, so the strip reads as an inverted stripe. No effect in color mode.
+// Off by default. Read by draw_fitness_pip_row (rendering owned by Codex).
+static bool     s_fitness_pip_invert_bar     = false;
 static int s_fitness_overlay_duration_ms = 5000;
 static int s_calendar_shake_event_count = 3;
 static int s_day_event_hours_bitmap = 0;
@@ -1679,6 +1685,19 @@ static void draw_fitness_pip_row(GContext *ctx) {
   // theme_fg_color() here would render invisible against inverted bars.
   set_draw_section(ColorSectionDateBar);
 
+  // Tuxedo-only inverted pip band: paint the pip bounding box with the
+  // date-bar fg color so the strip reads as an inverted stripe. The pips
+  // flip to the bg color below (CHANGE 2). No effect under color mode.
+  // Bar height = exact pip extent: small y=33..37 (h=5), large y=31..39 (h=9).
+  bool invert_bar = s_fitness_pip_invert_bar && (s_color_mode != ColorModeColor);
+  if (invert_bar) {
+    bool bar_large = (s_fitness_pip_size == 1);
+    int bar_top = bar_large ? 31 : 33;
+    int bar_h   = bar_large ? 9 : 5;
+    graphics_context_set_fill_color(ctx, draw_fg_color());
+    graphics_fill_rect(ctx, GRect(0, bar_top, SCREEN_W, bar_h), 0, GCornerNone);
+  }
+
   // Edge-to-edge: 20 pips, 10px slot each, x=0..199 with no margin.
   const int PIP_COUNT = 20;
   const int SLOT_W    = SCREEN_W / PIP_COUNT;  // 10
@@ -1763,7 +1782,7 @@ static void draw_fitness_pip_row(GContext *ctx) {
                      (s_color_mode == ColorModeColor);
     GColor pip_color;
     if (!use_color) {
-      pip_color = draw_fg_color();
+      pip_color = invert_bar ? draw_bg_color() : draw_fg_color();
     } else if (lap >= 1) {
       pip_color = GColorFromHEX(s_fitness_pip_color_high_hex);
     } else if (s_fitness_pip_color_dist == 1) {
@@ -5172,6 +5191,13 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_int(PERSIST_KEY_FITNESS_PIP_SIZE, v);
   }
 
+  t = dict_find(iter, MESSAGE_KEY_FITNESS_PIP_INVERT_BAR);
+  if (t) {
+    s_fitness_pip_invert_bar = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_FITNESS_PIP_INVERT_BAR,
+                       s_fitness_pip_invert_bar);
+  }
+
   t = dict_find(iter, MESSAGE_KEY_FITNESS_VIBRATE_ON_GOAL);
   if (t) {
     s_fitness_vibrate_on_goal = t->value->int32 != 0;
@@ -5911,6 +5937,10 @@ static void load_persisted(void) {
     if (v < 0) v = 0;
     if (v > 1) v = 1;
     s_fitness_pip_size = (uint8_t)v;
+  }
+  if (persist_exists(PERSIST_KEY_FITNESS_PIP_INVERT_BAR)) {
+    s_fitness_pip_invert_bar =
+        persist_read_bool(PERSIST_KEY_FITNESS_PIP_INVERT_BAR);
   }
   if (persist_exists(PERSIST_KEY_FITNESS_VIBRATE_ON_GOAL)) {
     s_fitness_vibrate_on_goal =

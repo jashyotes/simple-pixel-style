@@ -47,7 +47,8 @@ function customClay() {
     'FITNESS_PIP_DIRECTION',
     'FITNESS_PIP_STYLE',
     'FITNESS_PIP_COLOR_SOURCE',
-    'FITNESS_PIP_COLOR_DIST'
+    'FITNESS_PIP_COLOR_DIST',
+    'FITNESS_PIP_INVERT_BAR'
   ];
 
   var SHAKE_FITNESS_ITEM_KEYS = [
@@ -300,6 +301,7 @@ var DEFAULT_SETTINGS = {
   FITNESS_PIP_COLOR_SOURCE: 'color',
   FITNESS_PIP_SHAPE: 'circle',
   FITNESS_PIP_SIZE: 'large',
+  FITNESS_PIP_INVERT_BAR: false,
   ALT_TZ_LABEL: 'LONDON',
   ALT_TZ_OFFSET_MIN: '0',
   YOUR_DAY_WINDOW_MODE: 'rolling',
@@ -519,6 +521,7 @@ function sendLayoutSetting(settings) {
   dict[keys.FITNESS_PIP_COLOR_SOURCE] = fitnessPipColorSourceId(settings.FITNESS_PIP_COLOR_SOURCE);
   dict[keys.FITNESS_PIP_SHAPE] = fitnessPipShapeId(settings.FITNESS_PIP_SHAPE);
   dict[keys.FITNESS_PIP_SIZE] = fitnessPipSizeId(settings.FITNESS_PIP_SIZE);
+  dict[keys.FITNESS_PIP_INVERT_BAR] = settings.FITNESS_PIP_INVERT_BAR ? 1 : 0;
   dict[keys.VIBRATE_ON_DISCONNECT] = settings.VIBRATE_ON_DISCONNECT ? 1 : 0;
   dict[keys.VERBOSE_WEATHER] = settings.VERBOSE_WEATHER ? 1 : 0;
   dict[keys.VERBOSE_WEATHER_STYLE] = settings.VERBOSE_WEATHER_STYLE === 'large' ? 1 : 0;

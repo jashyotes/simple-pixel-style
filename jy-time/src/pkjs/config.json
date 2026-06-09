@@ -712,7 +712,7 @@
         "messageKey": "CAL_EVENT_DATES_ON",
         "label": "Show event dates",
         "defaultValue": false,
-        "description": "Adds each event's date (e.g. 06/04) to the bottom event line and the Upcoming shake list. Off by default; nothing else changes."
+        "description": "Adds each event's date (e.g. 06/04) to the bottom event line and the Upcoming shake list."
       },
       {
         "type": "select",
@@ -792,6 +792,13 @@
           { "label": "Small",            "value": "small" }
         ],
         "description": "Large pips fill the full 9px gap between the step counter and the date. Small pips are the original 5px version, centered in the same gap."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "FITNESS_PIP_INVERT_BAR",
+        "label": "Invert pip bar background (Tuxedo only)",
+        "defaultValue": false,
+        "description": "Tuxedo (B&W) theme only. Fills the pip strip with the opposite color and flips the pips to match, so the row reads as an inverted band sized to the pip height. No effect under the Poor & Irish color theme."
       },
       {
         "type": "select",
