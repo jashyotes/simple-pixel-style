@@ -1097,12 +1097,33 @@ static void fitness_read_health_values(void) {
 #endif
 }
 
+static void update_hr_sample_period(void) {
+#if defined(PBL_HEALTH)
+  // Only run the optical heart-rate sensor when something is actually showing
+  // BPM. 0 = release it (firmware adaptive, lightest). Previously init() forced
+  // a fixed 60s period for everyone, which kept the sensor sampling 24/7 even
+  // when no heart-rate feature was in use.
+  uint16_t period = 0;
+  for (int i = 0; i < COMPLICATION_COUNT; i++) {
+    if (s_complication_slots[i] == ComplicationHeartRate) {
+      period = 600;  // glanceable BPM complication: ~every 10 min at rest
+      break;
+    }
+  }
+  if (s_shake_overlay_visible && s_shake_behavior == ShakeBehaviorHeartRate) {
+    period = 10;  // big-BPM overlay on screen: sample fast, but only while visible
+  }
+  health_service_set_heart_rate_sample_period(period);
+#endif
+}
+
 static void shake_hide_overlay(bool cancel_timer) {
   if (cancel_timer && s_shake_overlay_timer) {
     app_timer_cancel(s_shake_overlay_timer);
     s_shake_overlay_timer = NULL;
   }
   s_shake_overlay_visible = false;
+  update_hr_sample_period();
   if (s_shake_overlay_layer) {
     layer_set_hidden(s_shake_overlay_layer, true);
   }
@@ -1132,12 +1153,10 @@ static void shake_show_overlay(void) {
     fitness_read_health_values();
   } else if (s_shake_behavior == ShakeBehaviorHeartRate) {
     update_stats();
-#if defined(PBL_HEALTH)
-    health_service_set_heart_rate_sample_period(15);
-#endif
   }
 
   s_shake_overlay_visible = true;
+  update_hr_sample_period();
   layer_set_hidden(s_shake_overlay_layer, false);
   layer_mark_dirty(s_shake_overlay_layer);
   shake_schedule_hide_timer();
@@ -5331,6 +5350,10 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_int(PERSIST_KEY_COMP_SLOT_3, s_complication_slots[2]);
   }
 
+  // Selecting/clearing the Heart Rate complication changes whether the optical
+  // sensor needs to run; re-evaluate the sample period after any sync.
+  update_hr_sample_period();
+
   t = dict_find(iter, MESSAGE_KEY_SHAKE_BEHAVIOR);
   if (t) {
     s_shake_behavior = sanitize_shake_behavior(t->value->int32);
@@ -6830,7 +6853,7 @@ static void init(void) {
 
 #if defined(PBL_HEALTH)
   health_service_events_subscribe(health_handler, NULL);
-  health_service_set_heart_rate_sample_period(60);
+  update_hr_sample_period();
 #endif
 
   shake_configure_tap_service();

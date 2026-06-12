@@ -895,11 +895,34 @@ Codex implemented per the handoff (`Plan To Implement - Large Battery Icon Fit.m
 - `pebble build` succeeds clean; embedded `versionLabel 1.36` confirmed. Only the three pre-existing warnings carry over.
 - Committed locally after review; not pushed. Staged artifact: `release-assets/simple-pixel-style-1.36.0-emery.pbw`. Emulator can't run here, so the icon fit (and the 100% case above) confirm on upload.
 
-## Outstanding / parked (as of 1.36 — 2026-06-11)
+## 1.37: Heart-rate battery drain fix (2026-06-12)
+
+User report: ~15%/day battery drain on Simple Pixel Style that stopped when switching to a different watchface. Root-caused to the watchface forcing the optical heart-rate sensor on far more than needed.
+
+Two bugs in the HR sample-period handling:
+- **Unconditional 60s forcing (every user).** `init()` called `health_service_set_heart_rate_sample_period(60)` at every launch regardless of whether any heart-rate feature was in use, pinning the sensor to a reading every 60s, 24/7. Firmware default (period 0) samples adaptively, roughly every ~10 min at rest. Each forced reading also woke the app (`health_handler` → mark dirty), which is the "Heavy app" tag. The customer's swap test confirms it: switching watchfaces runs `deinit()`'s `set_heart_rate_sample_period(0)`, releasing the sensor and halting the drain.
+- **"Heart rate big" shake stuck at 15s.** `shake_show_overlay()` dropped the period to 15s for the big-BPM overlay but `shake_hide_overlay()` never restored it, so one shake pinned 15s sampling permanently until the app reloaded (4x worse than the 60s baseline).
+
+Fix: new `update_hr_sample_period()` makes sampling demand-based. Period = 0 (sensor released, firmware adaptive) unless the Heart Rate complication is selected in a slot (then 600s, ~10 min resting refresh for the glanceable BPM), and 10s only while the big-BPM shake overlay is actually on screen. Called from `init()` (after `load_persisted()`), the complication inbox handler, and `shake_show_overlay()` / `shake_hide_overlay()` (the latter restoring the resting period, fixing the stuck-15s leak). `deinit()` still releases to 0 on unload. Users with no HR feature now run the sensor at the firmware's light default instead of a forced 60s.
+
+Ruled out as causes: the fitness pip bar and fitness rings read steps/active/calories (motion data, no optical-sensor power); the main tick is `MINUTE_UNIT`; phone-side weather/calendar/prices timers cost Bluetooth (3.3% in the report), not watch CPU. The user's battery screen also showed system Health "heart rate during activities" on, which is a watch setting separate from the watchface and adds HR cost on top of these bugs.
+
+### Files changed
+
+- `jy-time/src/c/jy-time.c` — new `update_hr_sample_period()`; init / complication inbox / shake-show / shake-hide call it; removed the unconditional 60s and the stuck 15s.
+- `jy-time/package.json` / `package-lock.json` — version 1.36 → 1.37.
+
+### Verification
+
+- `pebble build` succeeds clean; `versionLabel 1.37` confirmed. Only the three pre-existing warnings carry over.
+- Committed locally; not pushed. Staged artifact: `release-assets/simple-pixel-style-1.37.0-emery.pbw`. Actual battery improvement can't be measured here (emulator can't run; no device); confirm on the reporting user's watch after upload.
+
+## Outstanding / parked (as of 1.37 — 2026-06-12)
 
 Current live to-dos. (The "Next actions you take" section higher up is historical 0.1.0-era and no longer current; this is the up-to-date list.)
 
-- **1.35 + 1.36 committed locally, not pushed.** French date + larger battery number (1.35, `16b1104`) and the watch-icon fit (1.36) are committed on `main` but not pushed; PBWs staged in `release-assets/`. Push + upload `simple-pixel-style-1.35.0` / `1.36.0` when ready.
+- **1.35 + 1.36 + 1.37 committed locally, not pushed.** French date + larger battery number (1.35, `16b1104`), watch-icon fit (1.36), and the HR battery-drain fix (1.37) are committed on `main` but not pushed; PBWs staged in `release-assets/`. Push + upload `1.35.0` / `1.36.0` / `1.37.0` when ready.
+- **HR battery fix (1.37) — confirm with the reporting user.** Drain fix can't be measured locally (no device). After they upload 1.37, confirm the drain drops. Follow-up questions still to ask them: which complication slots (is Heart Rate one?), shake behavior (ever use "Heart rate big"?), and whether the watch's system Health "heart rate during activities" is on (separate from the watchface, adds HR cost).
 - **Large battery icon at 100% — eyeball on upload.** The 1.36 large icon clears the step bar (x=56) only if "100" renders under ~37 px in Gothic 24 Bold (unverified; emulator down). 2-digit values clear. If it touches at full charge with the step counter on, a 1-2 px nudge in `draw_watch_icon_large_c` or its call fixes it.
 - **French date — on-device confirmation pending.** Like Japanese (1.28), 1.35's French option shipped without local verification (emulator can't run here). Confirm `mardi 2 juin` renders; the accented months (`février`, `août`, `décembre`) rely on the system Gothic font carrying Latin-1.
 - **Japanese date — on-device confirmation pending.** 1.28 shipped without local verification (emulator can't run here; kanji rely on the device firmware CJK fallback). The Japanese user is to confirm the date line renders and that the full form doesn't clip at the widest dates (e.g. `12月31日 水曜日`); the compact `日本語 compact` option is the built-in fallback if it does.
