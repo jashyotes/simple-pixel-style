@@ -1390,6 +1390,25 @@ static void draw_watch_icon_c(GContext *ctx, GPoint origin) {
   graphics_draw_line(ctx, GPoint(origin.x + 5, origin.y + 8), GPoint(origin.x + 9, origin.y + 8));
 }
 
+static void draw_watch_icon_large_c(GContext *ctx, GPoint origin) {
+  graphics_context_set_stroke_color(ctx, draw_fg_color());
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_rect(ctx, GRect(origin.x + 2, origin.y + 5, 11, 12));
+
+  graphics_draw_line(ctx, GPoint(origin.x + 5, origin.y + 1), GPoint(origin.x + 10, origin.y + 1));
+  graphics_draw_line(ctx, GPoint(origin.x + 5, origin.y + 1), GPoint(origin.x + 3, origin.y + 5));
+  graphics_draw_line(ctx, GPoint(origin.x + 10, origin.y + 1), GPoint(origin.x + 12, origin.y + 5));
+  graphics_draw_line(ctx, GPoint(origin.x + 3, origin.y + 5), GPoint(origin.x + 12, origin.y + 5));
+
+  graphics_draw_line(ctx, GPoint(origin.x + 3, origin.y + 17), GPoint(origin.x + 12, origin.y + 17));
+  graphics_draw_line(ctx, GPoint(origin.x + 3, origin.y + 17), GPoint(origin.x + 5, origin.y + 21));
+  graphics_draw_line(ctx, GPoint(origin.x + 12, origin.y + 17), GPoint(origin.x + 10, origin.y + 21));
+  graphics_draw_line(ctx, GPoint(origin.x + 5, origin.y + 21), GPoint(origin.x + 10, origin.y + 21));
+
+  graphics_draw_line(ctx, GPoint(origin.x + 6, origin.y + 11), GPoint(origin.x + 11, origin.y + 11));
+  graphics_draw_line(ctx, GPoint(origin.x + 6, origin.y + 11), GPoint(origin.x + 6, origin.y + 8));
+}
+
 static void draw_watch_battery(GContext *ctx) {
   GFont batt_font = s_battery_number_large
       ? fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD) : s_font_top;
@@ -1400,7 +1419,12 @@ static void draw_watch_battery(GContext *ctx) {
 
   draw_text(ctx, s_watch_buf, batt_font, battery_frame,
             draw_fg_color(), GTextAlignmentLeft);
-  draw_watch_icon_c(ctx, GPoint(battery_frame.origin.x + battery_size.w - 1, 5));
+  if (s_battery_number_large) {
+    draw_watch_icon_large_c(ctx, GPoint(battery_frame.origin.x + battery_size.w - 1,
+                                        battery_frame.origin.y + 3));
+  } else {
+    draw_watch_icon_c(ctx, GPoint(battery_frame.origin.x + battery_size.w - 1, 5));
+  }
 }
 
 static void draw_w800_steps_digits(GContext *ctx, GRect frame, int steps) {

@@ -848,10 +848,60 @@ Default flipped `false → true` (all three sync points: C static, config.json, 
 
 Artifact: `release-assets/simple-pixel-style-1.34.0-emery.pbw`.
 
-## Outstanding / parked (as of 1.28 — 2026-06-05)
+## 1.35: French date language + larger battery number (2026-06-11)
+
+Two additive options. (The watch-icon fit that makes the larger battery number read cleanly is its own release, 1.36, below.)
+
+### French date language
+
+Third option on the **Date language** select (Settings → Time), extending the 1.28 Japanese feature: English (default) / 日本語 full / 日本語 compact / **Français (`mardi 2 juin`)**. (This was written in a prior session but left uncommitted and undocumented; verified, built, and shipped in 1.35.)
+
+Simpler than the Japanese path: where Japanese leans on the firmware CJK fallback, French accented Latin (`février`, `août`, `décembre`) is already carried by the system Gothic font the date bar uses (`FONT_KEY_GOTHIC_24_BOLD`), so no bundled font, resource, or layout change. New `s_date_language == 3` branch in `update_time_date` with `fr_days[]` / `fr_months[]` tables, formatted `"%s %d %s"`. The inbox-handler valid-range check widened `<= 2` → `<= 3`. `s_date_buf[32]` holds the longest French string (`mercredi 28 septembre`, ~22 bytes incl. null) with room to spare. English output is byte-identical (unchanged `else` branch). No new message key (reuses `DATE_LANGUAGE`); `index.js` adds the `'fr' → 3` mapping, `'en'` default unchanged.
+
+### Larger battery number
+
+New **"Larger battery number"** toggle (Settings → Layout, under the top step-counter toggle; default off). When on, the always-on top-left watch battery % renders in `FONT_KEY_GOTHIC_24_BOLD` instead of the default `s_font_top` (`FONT_KEY_GOTHIC_18_BOLD`). Targets the top-bar watch battery readout specifically, not the optional battery complications in the circle row.
+
+Plumbing mirrors the `MILITARY_TIME` toggle exactly: `BATTERY_NUMBER_LARGE` message key, persist key 280, C `s_battery_number_large` (default false), inbox handler, boot-load, the Clay toggle, `DEFAULT_SETTINGS: false`, and the `sendLayoutSetting` mapping. `draw_watch_battery` picks the font off the flag; the small case is byte-identical (same font, icon at `origin.y = 5`). A clean rebuild was required so the SDK regenerated `message_keys.auto.h` from the new key (the first incremental build failed with `MESSAGE_KEY_BATTERY_NUMBER_LARGE` undeclared).
+
+### Files changed
+
+- `jy-time/package.json` / `package-lock.json` — version 1.34 → 1.35; added `BATTERY_NUMBER_LARGE` to messageKeys (French reuses the existing `DATE_LANGUAGE` key).
+- `jy-time/src/pkjs/config.json` — French dropdown option + description; "Larger battery number" toggle.
+- `jy-time/src/pkjs/index.js` — `'fr' → 3` date mapping; `BATTERY_NUMBER_LARGE` default + mapping.
+- `jy-time/src/c/jy-time.c` — French `s_date_language == 3` branch + widened range check; battery persist key 280, static, `draw_watch_battery` font branch, inbox handler, boot-load.
+
+### Verification
+
+- `pebble build` succeeds clean (clean rebuild for the new message key); embedded `versionLabel 1.35` confirmed in the bundle. Only the three pre-existing warnings (`forecast_x_for_time` unused, two `snprintf` format-truncation notes, linker RWX) carry over.
+- Emulator can't run here (`qemu-pebble` missing `libsndio.so.7`) — build-only. On-device confirmation pending via upload: the French date line renders.
+- Committed locally `16b1104`; not pushed. Staged artifact: `release-assets/simple-pixel-style-1.35.0-emery.pbw` (default-off).
+
+## 1.36: Larger battery number — watch icon fit (2026-06-11)
+
+Follow-up to the 1.35 "Larger battery number" toggle: with the large number on, the small watch icon next to it (fixed `y=5`, ~8×16 px, tuned for the 18 px number) looked undersized and sat too high. 1.36 draws a dedicated larger icon in the large case only.
+
+Codex implemented per the handoff (`Plan To Implement - Large Battery Icon Fit.md`): a new `draw_watch_icon_large_c` (11×21 px, same 1px line/lug/body language), called only in `draw_watch_battery`'s large branch at `origin = (7 + battery_size.w, 7)`. The shared `draw_watch_icon_c` (also used by the battery complication via `draw_watch_icon_centered`) is untouched, and the small case stays byte-identical. Reviewed for scope (clean — only the new fn + the branch) and rebuilt clean (no new warnings). Icon bounds y=8..28, under the 31 px top-bar ceiling.
+
+**Open eyeball — battery at 100%.** Clearance from the step-counter bar (x=56) depends on the unverified Gothic-24 width of "100": icon right edge = `19 + battery_size.w`, so it clears only if "100" renders under ~37 px (estimated ~36, but near the frame's 42 px cap). 2-digit values clear comfortably. Check 100% with the step counter on after upload; if it touches, a 1-2 px nudge fixes it. Minor cosmetic: the large icon has a two-segment (L) hand vs the small icon's single-line hand (the handoff said "two hands") — large mode only.
+
+### Files changed
+
+- `jy-time/src/c/jy-time.c` — new `draw_watch_icon_large_c`; large/small icon branch in `draw_watch_battery`.
+- `jy-time/package.json` / `package-lock.json` — version 1.35 → 1.36.
+
+### Verification
+
+- `pebble build` succeeds clean; embedded `versionLabel 1.36` confirmed. Only the three pre-existing warnings carry over.
+- Committed locally after review; not pushed. Staged artifact: `release-assets/simple-pixel-style-1.36.0-emery.pbw`. Emulator can't run here, so the icon fit (and the 100% case above) confirm on upload.
+
+## Outstanding / parked (as of 1.36 — 2026-06-11)
 
 Current live to-dos. (The "Next actions you take" section higher up is historical 0.1.0-era and no longer current; this is the up-to-date list.)
 
+- **1.35 + 1.36 committed locally, not pushed.** French date + larger battery number (1.35, `16b1104`) and the watch-icon fit (1.36) are committed on `main` but not pushed; PBWs staged in `release-assets/`. Push + upload `simple-pixel-style-1.35.0` / `1.36.0` when ready.
+- **Large battery icon at 100% — eyeball on upload.** The 1.36 large icon clears the step bar (x=56) only if "100" renders under ~37 px in Gothic 24 Bold (unverified; emulator down). 2-digit values clear. If it touches at full charge with the step counter on, a 1-2 px nudge in `draw_watch_icon_large_c` or its call fixes it.
+- **French date — on-device confirmation pending.** Like Japanese (1.28), 1.35's French option shipped without local verification (emulator can't run here). Confirm `mardi 2 juin` renders; the accented months (`février`, `août`, `décembre`) rely on the system Gothic font carrying Latin-1.
 - **Japanese date — on-device confirmation pending.** 1.28 shipped without local verification (emulator can't run here; kanji rely on the device firmware CJK fallback). The Japanese user is to confirm the date line renders and that the full form doesn't clip at the widest dates (e.g. `12月31日 水曜日`); the compact `日本語 compact` option is the built-in fallback if it does.
 - **Clay menu declutters (5, deferred).** Same `customClay` show/hide pattern as the pip-row collapse — hide controls that have no effect in the current state: (1) CASIO phantom backdrop → only when Time font = CASIO; (2) collapse the Calendar section (ICS URLs, look-ahead, no-events label, event-date options) when "Enable bottom event" is off; (3) manual latitude/longitude → only when Location = Manual; (4) Verbose weather style → only when Verbose weather is on; (5) Your Day → rolling-window hours in Rolling mode, fixed start/end in Fixed mode.
 - **Shake "Upcoming" list time in Japanese (optional).** Each row's time (e.g. `8:30am`) is phone-formatted in `formatEvent()` (`src/pkjs/index.js`); the 1.28 date-language feature covers the main date line only. Extending Japanese to the shake list's per-event time would be a phone-side formatter change.
