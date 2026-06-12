@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "1.34",
+  "version": "1.35",
   "keywords": [
     "pebble-app"
   ],
@@ -112,6 +112,7 @@
       "ALT_TZ_OFFSET_MIN",
       "REMOVE_LEADING_ZERO",
       "DATE_LANGUAGE",
+      "BATTERY_NUMBER_LARGE",
       "DAY_EVENT_HOURS_BITMAP_TOMORROW",
       "DAY_EVENT_HOURS_BITMAP_YESTERDAY",
       "YOUR_DAY_WINDOW_MODE",

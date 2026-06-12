@@ -63,6 +63,7 @@
 #define PERSIST_KEY_CAL_EVENT_DATE_NO_ZERO 277
 #define PERSIST_KEY_DATE_LANGUAGE 278
 #define PERSIST_KEY_FITNESS_PIP_INVERT_BAR 279
+#define PERSIST_KEY_BATTERY_NUMBER_LARGE 280
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -414,6 +415,7 @@ static bool s_invert_top_bar = true;
 static bool s_invert_date_bar = true;
 static bool s_invert_time = true;
 static bool s_military_time_enabled = false;
+static bool s_battery_number_large = false;  // larger top-left watch battery %
 static bool s_remove_leading_zero = false;
 // Calendar event dates (meeting bar + Upcoming shake overlay). All gated on
 // s_cal_event_dates_on; when off, event rendering is byte-identical to before.
@@ -422,8 +424,9 @@ static bool s_cal_event_date_after_time = false;  // false = before time, true =
 static bool s_cal_event_date_month_first = true;  // true = MM/DD, false = DD/MM
 static bool s_cal_event_date_no_zero = false;     // strip leading zeros (date only)
 // Date bar language: 0 = English (default, unchanged), 1 = Japanese full
-// (6月2日 火曜日), 2 = Japanese compact (6月2日（火）). Kanji render via the
-// firmware CJK fallback (same as event titles).
+// (6月2日 火曜日), 2 = Japanese compact (6月2日（火）), 3 = French full
+// (mardi 2 juin). Kanji render via the firmware CJK fallback (same as event
+// titles); French accented Latin renders via the system Gothic font.
 static uint8_t s_date_language = 0;
 // Multi-timezone display. Inactive zones carry an empty label. Offsets and
 // labels are resolved on the phone (the watch has no timezone database) and
@@ -1388,12 +1391,14 @@ static void draw_watch_icon_c(GContext *ctx, GPoint origin) {
 }
 
 static void draw_watch_battery(GContext *ctx) {
+  GFont batt_font = s_battery_number_large
+      ? fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD) : s_font_top;
   const GRect battery_frame = GRect(8, 4, 42, 24);
   GSize battery_size = graphics_text_layout_get_content_size(
-      s_watch_buf, s_font_top, battery_frame,
+      s_watch_buf, batt_font, battery_frame,
       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
 
-  draw_text(ctx, s_watch_buf, s_font_top, battery_frame,
+  draw_text(ctx, s_watch_buf, batt_font, battery_frame,
             draw_fg_color(), GTextAlignmentLeft);
   draw_watch_icon_c(ctx, GPoint(battery_frame.origin.x + battery_size.w - 1, 5));
 }
@@ -4192,6 +4197,18 @@ static void update_time_date(struct tm *t) {
       snprintf(s_date_buf, sizeof(s_date_buf), "%d月%d日 %s曜日",
                t->tm_mon + 1, t->tm_mday, jp_wday[t->tm_wday]);
     }
+  } else if (s_date_language == 3) {
+    // French full date, e.g. "mardi 2 juin". Accented Latin (février, août,
+    // décembre) renders via the system Gothic font; no bundled font required.
+    static const char *fr_days[] = {
+      "dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"
+    };
+    static const char *fr_months[] = {
+      "janvier", "février", "mars", "avril", "mai", "juin",
+      "juillet", "août", "septembre", "octobre", "novembre", "décembre"
+    };
+    snprintf(s_date_buf, sizeof(s_date_buf), "%s %d %s",
+             fr_days[t->tm_wday], t->tm_mday, fr_months[t->tm_mon]);
   } else {
     static const char *days[] = {
       "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
@@ -4936,6 +4953,12 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_bool(PERSIST_KEY_INVERT_TIME, s_invert_time);
   }
 
+  t = dict_find(iter, MESSAGE_KEY_BATTERY_NUMBER_LARGE);
+  if (t) {
+    s_battery_number_large = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_BATTERY_NUMBER_LARGE, s_battery_number_large);
+  }
+
   t = dict_find(iter, MESSAGE_KEY_MILITARY_TIME);
   if (t) {
     s_military_time_enabled = t->value->int32 != 0;
@@ -5025,7 +5048,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   t = dict_find(iter, MESSAGE_KEY_DATE_LANGUAGE);
   if (t) {
     int dl = (int)t->value->int32;
-    s_date_language = (uint8_t)((dl >= 0 && dl <= 2) ? dl : 0);
+    s_date_language = (uint8_t)((dl >= 0 && dl <= 3) ? dl : 0);
     persist_write_int(PERSIST_KEY_DATE_LANGUAGE, s_date_language);
     time_t now = time(NULL);
     struct tm *lt = localtime(&now);
@@ -5986,6 +6009,9 @@ static void load_persisted(void) {
   }
   if (persist_exists(PERSIST_KEY_MILITARY_TIME)) {
     s_military_time_enabled = persist_read_bool(PERSIST_KEY_MILITARY_TIME);
+  }
+  if (persist_exists(PERSIST_KEY_BATTERY_NUMBER_LARGE)) {
+    s_battery_number_large = persist_read_bool(PERSIST_KEY_BATTERY_NUMBER_LARGE);
   }
   if (persist_exists(PERSIST_KEY_REMOVE_LEADING_ZERO)) {
     s_remove_leading_zero = persist_read_bool(PERSIST_KEY_REMOVE_LEADING_ZERO);

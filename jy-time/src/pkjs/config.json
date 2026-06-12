@@ -229,9 +229,13 @@
           {
             "label": "日本語 compact (6月2日（火）)",
             "value": "ja_compact"
+          },
+          {
+            "label": "Français (mardi 2 juin)",
+            "value": "fr"
           }
         ],
-        "description": "Language for the date line only. Japanese shows the date as 6月2日 火曜日 (full) or 6月2日（火） (compact). Everything else is unchanged."
+        "description": "Language for the date line only. Japanese shows the date as 6月2日 火曜日 (full) or 6月2日（火） (compact); French shows it as mardi 2 juin. Everything else is unchanged."
       }
     ]
   },
@@ -327,6 +331,13 @@
         "label": "Top W800 step counter",
         "defaultValue": true,
         "description": "Shows the walking-man step counter above the date."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "BATTERY_NUMBER_LARGE",
+        "label": "Larger battery number",
+        "defaultValue": false,
+        "description": "Shows the watch battery percentage in the top-left corner at a larger size."
       },
       {
         "type": "select",

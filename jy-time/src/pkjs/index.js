@@ -248,6 +248,7 @@ var DEFAULT_SETTINGS = {
   MILITARY_TIME: false,
   REMOVE_LEADING_ZERO: false,
   DATE_LANGUAGE: 'en',
+  BATTERY_NUMBER_LARGE: false,
   TIME_FONT: '1',
   CASIO_PHANTOM: true,
   INVERT_WEATHER: false,
@@ -505,7 +506,9 @@ function sendLayoutSetting(settings) {
   dict[keys.MILITARY_TIME] = settings.MILITARY_TIME ? 1 : 0;
   dict[keys.REMOVE_LEADING_ZERO] = settings.REMOVE_LEADING_ZERO ? 1 : 0;
   dict[keys.DATE_LANGUAGE] = settings.DATE_LANGUAGE === 'ja' ? 1
-      : (settings.DATE_LANGUAGE === 'ja_compact' ? 2 : 0);
+      : (settings.DATE_LANGUAGE === 'ja_compact' ? 2
+      : (settings.DATE_LANGUAGE === 'fr' ? 3 : 0));
+  dict[keys.BATTERY_NUMBER_LARGE] = settings.BATTERY_NUMBER_LARGE ? 1 : 0;
   dict[keys.TIME_FONT] = numberSetting(settings.TIME_FONT, 0, 0, 3);
   dict[keys.CASIO_PHANTOM] = settings.CASIO_PHANTOM ? 1 : 0;
   dict[keys.INVERT_WEATHER] = settings.INVERT_WEATHER ? 1 : 0;
