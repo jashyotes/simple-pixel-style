@@ -249,6 +249,7 @@ var DEFAULT_SETTINGS = {
   REMOVE_LEADING_ZERO: false,
   DATE_LANGUAGE: 'en',
   BATTERY_NUMBER_LARGE: false,
+  DISTANCE_UNITS: 'auto',
   TIME_FONT: '1',
   CASIO_PHANTOM: true,
   INVERT_WEATHER: false,
@@ -497,6 +498,11 @@ function sendToWatch(dict, label) {
   sendNextMessage();
 }
 
+function distanceUnitsId(settings) {
+  return settings.DISTANCE_UNITS === 'metric' ? 1
+      : (settings.DISTANCE_UNITS === 'imperial' ? 2 : 0);
+}
+
 function sendLayoutSetting(settings) {
   var dict = {};
   dict[keys.LIGHT_MODE] = settings.LIGHT_MODE ? 1 : 0;
@@ -509,6 +515,7 @@ function sendLayoutSetting(settings) {
       : (settings.DATE_LANGUAGE === 'ja_compact' ? 2
       : (settings.DATE_LANGUAGE === 'fr' ? 3 : 0));
   dict[keys.BATTERY_NUMBER_LARGE] = settings.BATTERY_NUMBER_LARGE ? 1 : 0;
+  dict[keys.DISTANCE_UNITS] = distanceUnitsId(settings);
   dict[keys.TIME_FONT] = numberSetting(settings.TIME_FONT, 0, 0, 3);
   dict[keys.CASIO_PHANTOM] = settings.CASIO_PHANTOM ? 1 : 0;
   dict[keys.INVERT_WEATHER] = settings.INVERT_WEATHER ? 1 : 0;

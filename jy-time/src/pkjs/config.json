@@ -523,6 +523,27 @@
         ]
       },
       {
+        "type": "select",
+        "messageKey": "DISTANCE_UNITS",
+        "label": "Distance units",
+        "defaultValue": "auto",
+        "options": [
+          {
+            "label": "Match watch setting",
+            "value": "auto"
+          },
+          {
+            "label": "Metric (km)",
+            "value": "metric"
+          },
+          {
+            "label": "Imperial (mi)",
+            "value": "imperial"
+          }
+        ],
+        "description": "Units for the Distance today complication and the fitness-rings distance row. \"Match watch setting\" follows your Pebble measurement-system preference."
+      },
+      {
         "type": "toggle",
         "messageKey": "VERBOSE_WEATHER",
         "label": "Verbose weather, centered time",

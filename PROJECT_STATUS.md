@@ -917,12 +917,32 @@ Ruled out as causes: the fitness pip bar and fitness rings read steps/active/cal
 - `pebble build` succeeds clean; `versionLabel 1.37` confirmed. Only the three pre-existing warnings carry over.
 - Committed locally; not pushed. Staged artifact: `release-assets/simple-pixel-style-1.37.0-emery.pbw`. Actual battery improvement can't be measured here (emulator can't run; no device); confirm on the reporting user's watch after upload.
 
-## Outstanding / parked (as of 1.37 — 2026-06-12)
+## 1.38: Distance units (metric/imperial) (2026-06-15)
+
+User report: the daily distance always renders in km even when the watch's system units are set to imperial. `format_distance_km()` hard-coded `"%d.%02d km"`, so both distance surfaces (the Distance today complication and the fitness-rings "Distance while active" row) were metric-only with no control.
+
+Fix: new **"Distance units"** select (Settings, in the complications section under the three complication slots; default "Match watch setting"), with three values: Auto / Metric (km) / Imperial (mi). Auto resolves at draw time via `health_service_get_measurement_system_for_display(HealthMetricWalkedDistanceMeters)`, so it follows the watch's own measurement-system preference (Imperial gives miles). Metric and Imperial force the unit regardless, which also covers the case where the API returns `MeasurementSystemUnknown`. `format_distance_km` was renamed `format_distance` and now branches: imperial converts meters to miles at two decimals (1 mi = 1609.344 m, rounded), metric keeps the existing km path byte-identical. The measurement-system lookup is a cached setting read, not an optical-sensor activation, so it has no battery cost (unrelated to the 1.37 HR work).
+
+Plumbing mirrors the `BATTERY_NUMBER_LARGE` toggle: `DISTANCE_UNITS` message key, persist key 281, C `s_distance_units` int (0 auto / 1 metric / 2 imperial, default 0), inbox handler (validates 0..2, persists, `mark_face_dirty()` plus `fitness_settings_changed` for the live overlay), boot-load, the Clay select, `DEFAULT_SETTINGS: 'auto'`, and the `distanceUnitsId()` mapping in `sendLayoutSetting`. As with 1.35, a clean rebuild was required so the SDK regenerated `message_keys.auto.h` from the new key (the first incremental build failed with `MESSAGE_KEY_DISTANCE_UNITS` undeclared).
+
+### Files changed
+
+- `jy-time/src/c/jy-time.c` — persist key 281; `s_distance_units`; `distance_use_imperial()` helper + `format_distance` (renamed from `format_distance_km`, both call sites updated); inbox handler; boot-load.
+- `jy-time/src/pkjs/config.json` — "Distance units" select.
+- `jy-time/src/pkjs/index.js` — `DISTANCE_UNITS` default, `distanceUnitsId()`, `sendLayoutSetting` mapping.
+- `jy-time/package.json` / `package-lock.json` — version 1.37 → 1.38; added `DISTANCE_UNITS` to messageKeys.
+
+### Verification
+
+- `pebble clean && pebble build` succeeds; `versionLabel 1.38` confirmed. Only the three pre-existing warnings carry over (no new ones). Staged: `release-assets/simple-pixel-style-1.38.0-emery.pbw`.
+- Auto-path rendering (km vs mi based on the watch setting) can't be measured here (emulator can't run; no device). Confirm on the reporting user's watch after upload: with the watch on imperial and Distance units on "Match watch setting", the distance should read e.g. `1.34 mi`.
+
+## Outstanding / parked (as of 1.38, 2026-06-15)
 
 Current live to-dos. (The "Next actions you take" section higher up is historical 0.1.0-era and no longer current; this is the up-to-date list.)
 
-- **1.35 + 1.36 + 1.37 committed locally, not pushed.** French date + larger battery number (1.35, `16b1104`), watch-icon fit (1.36), and the HR battery-drain fix (1.37) are committed on `main` but not pushed; PBWs staged in `release-assets/`. Push + upload `1.35.0` / `1.36.0` / `1.37.0` when ready.
-- **HR battery fix (1.37) — confirm with the reporting user.** Drain fix can't be measured locally (no device). After they upload 1.37, confirm the drain drops. Follow-up questions still to ask them: which complication slots (is Heart Rate one?), shake behavior (ever use "Heart rate big"?), and whether the watch's system Health "heart rate during activities" is on (separate from the watchface, adds HR cost).
+- **1.35 + 1.36 + 1.37 committed locally, not pushed; 1.38 built but not committed.** French date + larger battery number (1.35, `16b1104`), watch-icon fit (1.36), and the HR battery-drain fix (1.37) are committed on `main` but not pushed. Distance units (1.38) is built and staged but not yet committed. PBWs for all four staged in `release-assets/`. Push + upload `1.35.0` / `1.36.0` / `1.37.0` / `1.38.0` when ready.
+- **HR battery fix (1.37), confirm with the reporting user.** Drain fix can't be measured locally (no device). After they upload 1.37, confirm the drain drops. Update (2026-06-15): the reporting user confirmed they were using the **"Heart rate big"** shake behavior. That is exactly bug #2 in 1.37, the stuck-15s leak (one shake pinned 15s HR sampling permanently because `shake_hide_overlay()` never restored the period), which is the more severe of the two 1.37 bugs. So their drain should drop noticeably once they are on 1.37, where the overlay now releases the sensor (period back to 0) after the ~3s window. One factor still outside the watchface: their battery screen showed system Health "heart rate during activities" on, which adds HR cost regardless of the face. Still worth confirming which complication slots they run (a Heart Rate complication holds the sensor at a ~10-min refresh).
 - **Large battery icon at 100% — eyeball on upload.** The 1.36 large icon clears the step bar (x=56) only if "100" renders under ~37 px in Gothic 24 Bold (unverified; emulator down). 2-digit values clear. If it touches at full charge with the step counter on, a 1-2 px nudge in `draw_watch_icon_large_c` or its call fixes it.
 - **French date — on-device confirmation pending.** Like Japanese (1.28), 1.35's French option shipped without local verification (emulator can't run here). Confirm `mardi 2 juin` renders; the accented months (`février`, `août`, `décembre`) rely on the system Gothic font carrying Latin-1.
 - **Japanese date — on-device confirmation pending.** 1.28 shipped without local verification (emulator can't run here; kanji rely on the device firmware CJK fallback). The Japanese user is to confirm the date line renders and that the full form doesn't clip at the widest dates (e.g. `12月31日 水曜日`); the compact `日本語 compact` option is the built-in fallback if it does.

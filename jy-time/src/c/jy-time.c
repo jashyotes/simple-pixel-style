@@ -64,6 +64,7 @@
 #define PERSIST_KEY_DATE_LANGUAGE 278
 #define PERSIST_KEY_FITNESS_PIP_INVERT_BAR 279
 #define PERSIST_KEY_BATTERY_NUMBER_LARGE 280
+#define PERSIST_KEY_DISTANCE_UNITS 281
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -416,6 +417,10 @@ static bool s_invert_date_bar = true;
 static bool s_invert_time = true;
 static bool s_military_time_enabled = false;
 static bool s_battery_number_large = false;  // larger top-left watch battery %
+// 0 = auto (match the watch's measurement-system setting), 1 = metric (km),
+// 2 = imperial (mi). Applies to the Distance today complication and the
+// fitness-rings "Distance while active" row.
+static int s_distance_units = 0;
 static bool s_remove_leading_zero = false;
 // Calendar event dates (meeting bar + Upcoming shake overlay). All gated on
 // s_cal_event_dates_on; when off, event rendering is byte-identical to before.
@@ -941,13 +946,36 @@ static void format_number_commas(char *buf, size_t len, int value) {
   }
 }
 
-static void format_distance_km(char *buf, size_t len, int meters) {
+// Resolve whether distance should render in miles. Auto (0) follows the
+// watch's own measurement-system preference; 1 forces metric, 2 forces imperial.
+static bool distance_use_imperial(void) {
+  if (s_distance_units == 1) {
+    return false;  // forced metric
+  }
+  if (s_distance_units == 2) {
+    return true;   // forced imperial
+  }
+#if defined(PBL_HEALTH)
+  return health_service_get_measurement_system_for_display(
+             HealthMetricWalkedDistanceMeters) == MeasurementSystemImperial;
+#else
+  return false;
+#endif
+}
+
+static void format_distance(char *buf, size_t len, int meters) {
   if (meters < 0) {
     meters = 0;
   }
-  int whole = meters / 1000;
-  int hundredths = (meters % 1000) / 10;
-  snprintf(buf, len, "%d.%02d km", whole, hundredths);
+  if (distance_use_imperial()) {
+    // 1 mile = 1609.344 m; show two decimals, rounded to the nearest 0.01 mi.
+    int hundredths = (meters * 100 + 804) / 1609;
+    snprintf(buf, len, "%d.%02d mi", hundredths / 100, hundredths % 100);
+  } else {
+    int whole = meters / 1000;
+    int hundredths = (meters % 1000) / 10;
+    snprintf(buf, len, "%d.%02d km", whole, hundredths);
+  }
 }
 
 static void fitness_draw_ring(GContext *ctx, GPoint center, int radius, int stroke_width,
@@ -1243,7 +1271,7 @@ static void fitness_draw_overlay(GContext *ctx) {
   graphics_draw_line(ctx, GPoint(8, separator_y), GPoint(192, separator_y));
 
   char distance_buf[20];
-  format_distance_km(distance_buf, sizeof(distance_buf), s_fitness_distance_meters_value);
+  format_distance(distance_buf, sizeof(distance_buf), s_fitness_distance_meters_value);
 
   fitness_draw_info_row(ctx, 198, "Distance while active", distance_buf);
 }
@@ -2147,7 +2175,7 @@ static void draw_complication_sleep_last_night(GContext *ctx, GPoint center) {
 
 static void draw_complication_distance_today(GContext *ctx, GPoint center) {
   char value_buf[16];
-  format_distance_km(value_buf, sizeof(value_buf),
+  format_distance(value_buf, sizeof(value_buf),
                      health_sum_today_int(HealthMetricWalkedDistanceMeters));
   draw_text(ctx, value_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
             GRect(center.x - 23, center.y - 8, 46, 18),
@@ -5002,6 +5030,15 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_bool(PERSIST_KEY_BATTERY_NUMBER_LARGE, s_battery_number_large);
   }
 
+  t = dict_find(iter, MESSAGE_KEY_DISTANCE_UNITS);
+  if (t) {
+    int v = t->value->int32;
+    s_distance_units = (v >= 0 && v <= 2) ? v : 0;
+    persist_write_int(PERSIST_KEY_DISTANCE_UNITS, s_distance_units);
+    fitness_settings_changed = true;
+    mark_face_dirty();
+  }
+
   t = dict_find(iter, MESSAGE_KEY_MILITARY_TIME);
   if (t) {
     s_military_time_enabled = t->value->int32 != 0;
@@ -6059,6 +6096,10 @@ static void load_persisted(void) {
   }
   if (persist_exists(PERSIST_KEY_BATTERY_NUMBER_LARGE)) {
     s_battery_number_large = persist_read_bool(PERSIST_KEY_BATTERY_NUMBER_LARGE);
+  }
+  if (persist_exists(PERSIST_KEY_DISTANCE_UNITS)) {
+    int v = persist_read_int(PERSIST_KEY_DISTANCE_UNITS);
+    s_distance_units = (v >= 0 && v <= 2) ? v : 0;
   }
   if (persist_exists(PERSIST_KEY_REMOVE_LEADING_ZERO)) {
     s_remove_leading_zero = persist_read_bool(PERSIST_KEY_REMOVE_LEADING_ZERO);
