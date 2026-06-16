@@ -1769,6 +1769,19 @@ static void draw_fitness_pip_row(GContext *ctx) {
     bool bar_large = (s_fitness_pip_size == 1);
     int bar_top = bar_large ? 31 : 33;
     int bar_h   = bar_large ? 11 : 7;
+    // Small-pip band normally starts at y=33, 2px below the top-bar boundary
+    // (y=31), which leaves a 2px strip of the base background exposed between
+    // the top status bar and the band. When the pip band and the top bar
+    // resolve to the SAME tuxedo color (both inverted, or both not inverted),
+    // that strip reads as a seam: a white line on a dark face, a black line on
+    // a light face. Pull the small band's top up to y=31 so it meets the top
+    // bar and blends into one continuous block, exactly like the large band
+    // (which already starts at y=31). When the two sections differ in color,
+    // keep the 2px gap; the color change there is intentional, not a seam.
+    if (!bar_large && (s_fitness_pip_invert_bar == s_invert_top_bar)) {
+      bar_top = 31;
+      bar_h   = 9;  // bottom stays at y=39 (31 + 9 - 1)
+    }
     graphics_context_set_fill_color(ctx, pip_band_bg);
     graphics_fill_rect(ctx, GRect(0, bar_top, SCREEN_W, bar_h), 0, GCornerNone);
   }
