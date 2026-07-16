@@ -222,28 +222,91 @@ static char s_nws_alert_title[NWS_ALERT_LEN];
 static char s_nws_location_label[NWS_LOCATION_LEN];
 static uint32_t s_nws_last_update_t = 0;
 
-#define SCREEN_W 200
-#define SCREEN_H 228
+// Display size comes from the SDK per-platform defines so the band
+// layout tracks the target: emery = 200x228 rect, gabbro = 260x260 round.
+#define SCREEN_W PBL_DISPLAY_WIDTH
+#define SCREEN_H PBL_DISPLAY_HEIGHT
 #define FITNESS_DEFAULT_TARGET_STEPS 10000
 #define FITNESS_DEFAULT_TARGET_ACTIVE_MIN 30
 #define FITNESS_DEFAULT_TARGET_CALORIES 500
 #define FITNESS_DEFAULT_COLOR_STEPS 0x00FF00
 #define FITNESS_DEFAULT_COLOR_ACTIVE 0x00AAFF
 #define FITNESS_DEFAULT_COLOR_CALORIES 0xFF0000
+#define FACE_CONTENT_W 200
+#if defined(PBL_ROUND)
+#define FACE_CONTENT_X ((SCREEN_W - FACE_CONTENT_W) / 2)
+#define TOP_BAR_OFFSET_Y 21
+#define TOP_BAR_H 52
+#define DATE_BAR_Y 52
+#define DATE_FRAME_Y 58
+#define TIME_FRAME_Y 89
+#define TIME_VISUAL_BOTTOM 132
+#define VERBOSE_WEATHER_LARGE_Y 158
+#define VERBOSE_WEATHER_SMALL_Y 174
+#define VERBOSE_WEATHER_CENTER_Y 188
+#define EVENT_SEPARATOR_Y 216
+#define EVENT_SEPARATOR_X1 38
+#define EVENT_SEPARATOR_X2 222
+#define EVENT_TEXT_X 60
+#define EVENT_TEXT_Y 218
+#define EVENT_TEXT_W 140
+#define EVENT_TEXT_H 22
+#define COMPLICATION_CENTER_Y 180
+#define COMPLICATION_X1 65
+#define COMPLICATION_X2 130
+#define COMPLICATION_X3 195
+#define WATCH_BATTERY_X 50
+#define BT_ICON_X 200
+#define BT_ICON_Y 29
+#define QUIET_TIME_ICON_X 207
+#define OVERLAY_W 200
+#define OVERLAY_H 228
+#define OVERLAY_FRAME_X ((SCREEN_W - OVERLAY_W) / 2)
+#define OVERLAY_FRAME_Y ((SCREEN_H - OVERLAY_H) / 2)
+#define OVERLAY_CHART_EDGE 22
+#define NWS_PERIOD_START_Y 22
+#define NWS_PERIOD_GAP 2
+#else
+#define FACE_CONTENT_X 0
+#define TOP_BAR_OFFSET_Y 0
+#define TOP_BAR_H 31
+#define DATE_BAR_Y 31
 #define DATE_FRAME_Y 36
 #define TIME_FRAME_Y 69
-#define TIME_FRAME_H 60
 #define TIME_VISUAL_BOTTOM 111
-#define VERBOSE_WEATHER_OFFSET_Y 16
+#define VERBOSE_WEATHER_LARGE_Y 148
+#define VERBOSE_WEATHER_SMALL_Y 162
 #define VERBOSE_WEATHER_CENTER_Y 183
 #define EVENT_SEPARATOR_Y 200
+#define EVENT_SEPARATOR_X1 8
+#define EVENT_SEPARATOR_X2 192
+#define EVENT_TEXT_X 8
+#define EVENT_TEXT_Y 203
+#define EVENT_TEXT_W 184
+#define EVENT_TEXT_H 25
+#define COMPLICATION_CENTER_Y 163
+#define COMPLICATION_X1 40
+#define COMPLICATION_X2 100
+#define COMPLICATION_X3 160
+#define WATCH_BATTERY_X 8
+#define BT_ICON_X 181
+#define BT_ICON_Y 7
+#define QUIET_TIME_ICON_X 177
+#define OVERLAY_W SCREEN_W
+#define OVERLAY_H SCREEN_H
+#define OVERLAY_FRAME_X 0
+#define OVERLAY_FRAME_Y 0
+#define OVERLAY_CHART_EDGE 8
+#define NWS_PERIOD_START_Y 26
+#define NWS_PERIOD_GAP 6
+#endif
+#define TIME_FRAME_H 60
+#define VERBOSE_WEATHER_OFFSET_Y 16
 #define COMPLICATION_RADIUS 24
 #define COMPLICATION_COUNT 3
-#define COMPLICATION_CENTER_Y 163
 #define WEATHER_ICON_SMALL_SIZE 18
 #define WEATHER_ICON_LARGE_SIZE 32
 #define QUIET_TIME_ICON_SIZE 18
-#define QUIET_TIME_ICON_X 177
 #define FORECAST_HOURS 24
 #define CASIO_GAP 3
 #define CASIO_AMPM_LABEL_W 20
@@ -742,7 +805,8 @@ static bool verbose_weather_layout_is_large(void) {
 
 static int weather_band_y(void) {
   if (s_verbose_weather_enabled) {
-    return verbose_weather_layout_is_large() ? 148 : 162;
+    return verbose_weather_layout_is_large()
+        ? VERBOSE_WEATHER_LARGE_Y : VERBOSE_WEATHER_SMALL_Y;
   }
 
   return COMPLICATION_CENTER_Y - COMPLICATION_RADIUS - 1;
@@ -765,6 +829,35 @@ static void draw_text(GContext *ctx, const char *text, GFont font, GRect frame,
   set_text_color(ctx, color);
   graphics_draw_text(ctx, text, font, frame, GTextOverflowModeTrailingEllipsis,
                      alignment, NULL);
+}
+
+static GRect overlay_safe_frame(int margin, int y, int h) {
+#if defined(PBL_ROUND)
+  const int radius = SCREEN_W / 2;
+  int inset = margin;
+  const int screen_y[2] = {
+    OVERLAY_FRAME_Y + y,
+    OVERLAY_FRAME_Y + y + h - 1,
+  };
+  for (int i = 0; i < 2; i++) {
+    int dy = screen_y[i] - (SCREEN_H / 2);
+    if (dy < 0) {
+      dy = -dy;
+    }
+    int chord_sq = (radius * radius) - (dy * dy);
+    int half_chord = 0;
+    while ((half_chord + 1) * (half_chord + 1) <= chord_sq) {
+      half_chord++;
+    }
+    int chord_inset = (SCREEN_W / 2) - half_chord - OVERLAY_FRAME_X;
+    if (chord_inset > inset) {
+      inset = chord_inset;
+    }
+  }
+  return GRect(inset, y, OVERLAY_W - (inset * 2), h);
+#else
+  return GRect(margin, y, OVERLAY_W - (margin * 2), h);
+#endif
 }
 
 static ComplicationType sanitize_complication(int value, ComplicationType fallback) {
@@ -1064,7 +1157,7 @@ static void fitness_draw_metric_row(GContext *ctx, int y, int metric,
     snprintf(suffix_buf, sizeof(suffix_buf), "/%s", target_buf);
   }
 
-  GRect measure_frame = GRect(0, 0, SCREEN_W, 24);
+  GRect measure_frame = GRect(0, 0, OVERLAY_W, 24);
   GSize value_size = graphics_text_layout_get_content_size(
       value_buf, s_font_complication, measure_frame,
       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
@@ -1075,7 +1168,7 @@ static void fitness_draw_metric_row(GContext *ctx, int y, int metric,
   const int icon_w = 16;
   const int icon_gap = 8;
   int row_width = icon_w + icon_gap + value_size.w + suffix_size.w;
-  int row_x = (SCREEN_W - row_width) / 2;
+  int row_x = (OVERLAY_W - row_width) / 2;
   if (row_x < 6) {
     row_x = 6;
   }
@@ -1100,9 +1193,13 @@ static void fitness_draw_metric_row(GContext *ctx, int y, int metric,
 
 static void fitness_draw_info_row(GContext *ctx, int y, const char *label, const char *value) {
   GFont label_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
-  draw_text(ctx, label, label_font, GRect(8, y, 126, 18),
+  GRect row_frame = overlay_safe_frame(8, y, 20);
+  draw_text(ctx, label, label_font,
+            GRect(row_frame.origin.x, y, row_frame.size.w - 58, 18),
             fitness_muted_text_color(), GTextAlignmentLeft);
-  draw_text(ctx, value, s_font_complication, GRect(126, y - 4, 66, 24),
+  draw_text(ctx, value, s_font_complication,
+            GRect(row_frame.origin.x + row_frame.size.w - 66,
+                  y - 4, 66, 24),
             theme_fg_color(), GTextAlignmentRight);
 }
 
@@ -1215,7 +1312,7 @@ static void fitness_draw_overlay(GContext *ctx) {
       s_fitness_color_calories_hex, FITNESS_DEFAULT_COLOR_CALORIES);
 
   graphics_context_set_fill_color(ctx, theme_bg_color());
-  graphics_fill_rect(ctx, GRect(0, 0, SCREEN_W, SCREEN_H), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(0, 0, OVERLAY_W, OVERLAY_H), 0, GCornerNone);
 
   const GPoint ring_center = GPoint(100, 64);
   const int ring_stroke = 11;
@@ -1339,7 +1436,8 @@ static bool casio_ampm_visible(void) {
 static void draw_casio_time_row_at(GContext *ctx, int frame_y, int slot_bottom) {
   (void)slot_bottom;
   GFont font = s_font_casio_55 ? s_font_casio_55 : s_font_time;
-  const GRect time_frame = GRect(0, frame_y, SCREEN_W, TIME_FRAME_H);
+  const GRect time_frame =
+      GRect(FACE_CONTENT_X, frame_y, FACE_CONTENT_W, TIME_FRAME_H);
   const bool show_ampm = casio_ampm_visible();
 
   // Phantom segments: render all-segments-lit "88:88" backdrop first.
@@ -1361,7 +1459,8 @@ static void draw_casio_time_row_at(GContext *ctx, int frame_y, int slot_bottom) 
     const int ampm_height = 10;
     const int digit_bottom_y = frame_y + text_size.h;
     draw_ampm_label(ctx, s_ampm_buf,
-                    GPoint(CASIO_GAP, digit_bottom_y - ampm_height));
+                    GPoint(FACE_CONTENT_X + CASIO_GAP,
+                           digit_bottom_y - ampm_height));
   }
 
   draw_quiet_time_icon(ctx,
@@ -1382,7 +1481,8 @@ static void draw_time_row_at(GContext *ctx, int frame_y, int visual_bottom) {
     font = s_font_leco;
   }
 
-  const GRect time_frame = GRect(0, frame_y, SCREEN_W, TIME_FRAME_H);
+  const GRect time_frame =
+      GRect(FACE_CONTENT_X, frame_y, FACE_CONTENT_W, TIME_FRAME_H);
   const int ampm_width = 20;
   const int ampm_height = 10;
   const int ampm_gap = 5;
@@ -1390,10 +1490,10 @@ static void draw_time_row_at(GContext *ctx, int frame_y, int visual_bottom) {
   GSize time_size = graphics_text_layout_get_content_size(
       s_time_buf, font, time_frame,
       GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter);
-  int time_left = (SCREEN_W - time_size.w) / 2;
+  int time_left = FACE_CONTENT_X + (FACE_CONTENT_W - time_size.w) / 2;
   int ampm_x = time_left - ampm_gap - ampm_width;
-  if (ampm_x < 0) {
-    ampm_x = 0;
+  if (ampm_x < FACE_CONTENT_X) {
+    ampm_x = FACE_CONTENT_X;
   }
 
   draw_text(ctx, s_time_buf, font, time_frame,
@@ -1459,7 +1559,8 @@ static void draw_watch_icon_large_c(GContext *ctx, GPoint origin) {
 static void draw_watch_battery(GContext *ctx) {
   GFont batt_font = s_battery_number_large
       ? fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD) : s_font_top;
-  const GRect battery_frame = GRect(8, 4, 42, 24);
+  const GRect battery_frame =
+      GRect(WATCH_BATTERY_X, 4 + TOP_BAR_OFFSET_Y, 42, 24);
   GSize battery_size = graphics_text_layout_get_content_size(
       s_watch_buf, batt_font, battery_frame,
       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
@@ -1470,7 +1571,9 @@ static void draw_watch_battery(GContext *ctx) {
     draw_watch_icon_large_c(ctx, GPoint(battery_frame.origin.x + battery_size.w - 1,
                                         battery_frame.origin.y + 3));
   } else {
-    draw_watch_icon_c(ctx, GPoint(battery_frame.origin.x + battery_size.w - 1, 5));
+    draw_watch_icon_c(ctx,
+                      GPoint(battery_frame.origin.x + battery_size.w - 1,
+                             5 + TOP_BAR_OFFSET_Y));
   }
 }
 
@@ -1522,13 +1625,18 @@ static void draw_w800_steps_top_bar(GContext *ctx) {
     return;
   }
 
-  const GRect bar_frame = GRect(56, 3, 88, 24);
+  const GRect bar_frame =
+      GRect(FACE_CONTENT_X + 56, 3 + TOP_BAR_OFFSET_Y, 88, 24);
   graphics_context_set_fill_color(ctx, draw_bg_color());
   graphics_fill_rect(ctx, bar_frame, 1, GCornersAll);
 
   graphics_context_set_compositing_mode(ctx, GCompOpSet);
-  graphics_draw_bitmap_in_rect(ctx, walking_bitmap, GRect(61, 8, 8, 13));
-  draw_w800_steps_digits(ctx, GRect(73, 3, 64, 24), s_steps_count);
+  graphics_draw_bitmap_in_rect(
+      ctx, walking_bitmap,
+      GRect(FACE_CONTENT_X + 61, 8 + TOP_BAR_OFFSET_Y, 8, 13));
+  draw_w800_steps_digits(
+      ctx, GRect(FACE_CONTENT_X + 73, 3 + TOP_BAR_OFFSET_Y, 64, 24),
+      s_steps_count);
 }
 
 typedef enum {
@@ -1626,14 +1734,16 @@ static void draw_pip_outline(GContext *ctx, int slot_center_x,
   switch (shape) {
     case PipShapeRectangle:
       if (large) {
-        graphics_draw_rect(ctx, GRect(slot_center_x - 4, 31, 9, 9));
+        graphics_draw_rect(
+            ctx, GRect(slot_center_x - 4, 31 + TOP_BAR_OFFSET_Y, 9, 9));
       } else {
-        graphics_draw_rect(ctx, GRect(slot_center_x - 4, 33, 8, 5));
+        graphics_draw_rect(
+            ctx, GRect(slot_center_x - 4, 33 + TOP_BAR_OFFSET_Y, 8, 5));
       }
       break;
     case PipShapePyramid: {
-      int top_y    = large ? 31 : 33;
-      int bot_y    = large ? 39 : 37;
+      int top_y    = (large ? 31 : 33) + TOP_BAR_OFFSET_Y;
+      int bot_y    = (large ? 39 : 37) + TOP_BAR_OFFSET_Y;
       int half_w   = 4;  // base half-width stays 4 either way
       graphics_draw_line(ctx, GPoint(slot_center_x - half_w, bot_y),
                                GPoint(slot_center_x + half_w, bot_y));
@@ -1647,13 +1757,15 @@ static void draw_pip_outline(GContext *ctx, int slot_center_x,
       if (large) {
         // 7x7 large square, slightly smaller than the 9x9 rectangle so
         // lap-0 rectangle and lap-2 square stay visually distinct.
-        graphics_draw_rect(ctx, GRect(slot_center_x - 3, 32, 7, 7));
+        graphics_draw_rect(
+            ctx, GRect(slot_center_x - 3, 32 + TOP_BAR_OFFSET_Y, 7, 7));
       } else {
-        graphics_draw_rect(ctx, GRect(slot_center_x - 2, 33, 5, 5));
+        graphics_draw_rect(
+            ctx, GRect(slot_center_x - 2, 33 + TOP_BAR_OFFSET_Y, 5, 5));
       }
       break;
     case PipShapeCircle:
-      graphics_draw_circle(ctx, GPoint(slot_center_x, 35),
+      graphics_draw_circle(ctx, GPoint(slot_center_x, 35 + TOP_BAR_OFFSET_Y),
                            large ? 4 : 2);
       break;
   }
@@ -1669,7 +1781,7 @@ static void draw_pip_filled(GContext *ctx, int slot_center_x,
   switch (shape) {
     case PipShapeRectangle: {
       int w     = large ? 9 : 8;
-      int top_y = large ? 31 : 33;
+      int top_y = (large ? 31 : 33) + TOP_BAR_OFFSET_Y;
       int h     = large ? 9 : 5;
       int half_w = w / 2;  // 4 either way (9/2=4 with integer math)
       GRect r = GRect(slot_center_x - 4, top_y, w, h);
@@ -1683,8 +1795,8 @@ static void draw_pip_filled(GContext *ctx, int slot_center_x,
       break;
     }
     case PipShapePyramid: {
-      int top_y = large ? 31 : 33;
-      int bot_y = large ? 39 : 37;
+      int top_y = (large ? 31 : 33) + TOP_BAR_OFFSET_Y;
+      int bot_y = (large ? 39 : 37) + TOP_BAR_OFFSET_Y;
       int half_w = 4;
       GPathInfo info_full = { .num_points = 3, .points = (GPoint[]){
         {slot_center_x - half_w, bot_y},
@@ -1711,7 +1823,7 @@ static void draw_pip_filled(GContext *ctx, int slot_center_x,
     }
     case PipShapeSquare: {
       int w     = large ? 7 : 5;
-      int top_y = large ? 32 : 33;
+      int top_y = (large ? 32 : 33) + TOP_BAR_OFFSET_Y;
       int left_x = slot_center_x - (large ? 3 : 2);
       GRect r = GRect(left_x, top_y, w, w);
       if (half_only) {
@@ -1731,12 +1843,12 @@ static void draw_pip_filled(GContext *ctx, int slot_center_x,
       //   Right half: 0..180   (top -> right -> bottom).
       int radius = large ? 4 : 2;
       int diameter = large ? 9 : 5;
-      GPoint center = GPoint(slot_center_x, 35);
+      GPoint center = GPoint(slot_center_x, 35 + TOP_BAR_OFFSET_Y);
       if (!half_only) {
         graphics_fill_circle(ctx, center, radius);
       } else {
         GRect pip_frame = GRect(slot_center_x - radius,
-                                35 - radius,
+                                35 + TOP_BAR_OFFSET_Y - radius,
                                 diameter, diameter);
         if (half_is_left) {
           graphics_fill_radial(ctx, pip_frame, GOvalScaleModeFitCircle, diameter,
@@ -1767,7 +1879,7 @@ static void draw_fitness_pip_row(GContext *ctx) {
   GColor pip_theme_fg = pip_inverted ? theme_bg_color() : theme_fg_color();
   if (pip_tuxedo) {
     bool bar_large = (s_fitness_pip_size == 1);
-    int bar_top = bar_large ? 31 : 33;
+    int bar_top = (bar_large ? 31 : 33) + TOP_BAR_OFFSET_Y;
     int bar_h   = bar_large ? 11 : 7;
     // Small-pip band normally starts at y=33, 2px below the top-bar boundary
     // (y=31), which leaves a 2px strip of the base background exposed between
@@ -1779,7 +1891,7 @@ static void draw_fitness_pip_row(GContext *ctx) {
     // (which already starts at y=31). When the two sections differ in color,
     // keep the 2px gap; the color change there is intentional, not a seam.
     if (!bar_large && (s_fitness_pip_invert_bar == s_invert_top_bar)) {
-      bar_top = 31;
+      bar_top = 31 + TOP_BAR_OFFSET_Y;
       bar_h   = 9;  // bottom stays at y=39 (31 + 9 - 1)
     }
     graphics_context_set_fill_color(ctx, pip_band_bg);
@@ -1788,7 +1900,7 @@ static void draw_fitness_pip_row(GContext *ctx) {
 
   // Edge-to-edge: 20 pips, 10px slot each, x=0..199 with no margin.
   const int PIP_COUNT = 20;
-  const int SLOT_W    = SCREEN_W / PIP_COUNT;  // 10
+  const int SLOT_W    = FACE_CONTENT_W / PIP_COUNT;  // 10
 
   int target = s_fitness_target_steps > 0
       ? s_fitness_target_steps
@@ -1838,7 +1950,7 @@ static void draw_fitness_pip_row(GContext *ctx) {
   if (filled_halves > PIP_COUNT * 2) filled_halves = PIP_COUNT * 2;
 
   for (int i = 0; i < PIP_COUNT; i++) {
-    int slot_center_x = i * SLOT_W + SLOT_W / 2;  // 5, 15, 25, ..., 195
+    int slot_center_x = FACE_CONTENT_X + i * SLOT_W + SLOT_W / 2;
 
     int logical_idx;
     switch (s_fitness_pip_direction) {
@@ -2397,7 +2509,7 @@ static void format_time_short(char *buf, size_t len, time_t timestamp, bool know
 }
 
 static void draw_overlay_title(GContext *ctx, const char *title) {
-  draw_text(ctx, title, s_font_top, GRect(8, 2, SCREEN_W - 16, 24),
+  draw_text(ctx, title, s_font_top, overlay_safe_frame(8, 2, 24),
             fitness_muted_text_color(), GTextAlignmentCenter);
 }
 
@@ -2425,13 +2537,13 @@ static void prices_draw_hero(GContext *ctx, int y, int h,
   (void)h;
   char symbol_buf[16];
   snprintf(symbol_buf, sizeof(symbol_buf), "%s:", row->symbol);
-  draw_text(ctx, symbol_buf, s_font_top, GRect(8, y + 48, SCREEN_W - 16, 24),
+  draw_text(ctx, symbol_buf, s_font_top, overlay_safe_frame(8, y + 48, 24),
             theme_fg_color(), GTextAlignmentCenter);
 
   char delta_buf[12];
   format_ticker_delta(delta_buf, sizeof(delta_buf), row->delta_x100);
   draw_text(ctx, delta_buf, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD),
-            GRect(8, y + 78, SCREEN_W - 16, 38),
+            overlay_safe_frame(8, y + 78, 38),
             prices_delta_color(row->delta_x100), GTextAlignmentCenter);
 }
 
@@ -2442,7 +2554,7 @@ static void prices_draw_medium_row(GContext *ctx, int y, int h,
   char line_buf[28];
   snprintf(line_buf, sizeof(line_buf), "%s: %s", row->symbol, delta_buf);
   draw_text(ctx, line_buf, s_font_top,
-            GRect(8, y + ((h - 24) / 2), SCREEN_W - 16, 24),
+            overlay_safe_frame(8, y + ((h - 24) / 2), 24),
             prices_delta_color(row->delta_x100), GTextAlignmentCenter);
 }
 
@@ -2453,7 +2565,7 @@ static void prices_draw_compact_row(GContext *ctx, int y, int h,
   char line_buf[28];
   snprintf(line_buf, sizeof(line_buf), "%s: %s", row->symbol, delta_buf);
   draw_text(ctx, line_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-            GRect(8, y + ((h - 22) / 2), SCREEN_W - 16, 22),
+            overlay_safe_frame(8, y + ((h - 22) / 2), 22),
             prices_delta_color(row->delta_x100), GTextAlignmentCenter);
 }
 
@@ -2482,11 +2594,11 @@ static void prices_draw_overlay(GContext *ctx) {
   }
 
   const int content_top = 28;
-  const int content_bottom = SCREEN_H - 24;
+  const int content_bottom = OVERLAY_H - 24;
   const int content_h = content_bottom - content_top;
   if (count == 0) {
     draw_text(ctx, "No tickers enabled", fonts_get_system_font(FONT_KEY_GOTHIC_18),
-              GRect(8, 101, SCREEN_W - 16, 24),
+              overlay_safe_frame(8, 101, 24),
               fitness_muted_text_color(), GTextAlignmentCenter);
   } else if (count == 1) {
     prices_draw_hero(ctx, content_top, content_h, &rows[0]);
@@ -2513,7 +2625,7 @@ static void prices_draw_overlay(GContext *ctx) {
     snprintf(footer, sizeof(footer), "Waiting for data...");
   }
   draw_text(ctx, footer, fonts_get_system_font(FONT_KEY_GOTHIC_14),
-            GRect(8, SCREEN_H - 21, SCREEN_W - 16, 18),
+            overlay_safe_frame(8, OVERLAY_H - 21, 18),
             fitness_muted_text_color(), GTextAlignmentCenter);
 }
 
@@ -2552,7 +2664,8 @@ static void calendar_draw_overlay(GContext *ctx) {
 
   if (visible_count == 0) {
     draw_text(ctx, s_empty_event_label, s_font_complication,
-              GRect(8, 96, SCREEN_W - 16, 28), theme_fg_color(), GTextAlignmentCenter);
+              overlay_safe_frame(8, 96, 28),
+              theme_fg_color(), GTextAlignmentCenter);
     return;
   }
 
@@ -2565,7 +2678,7 @@ static void calendar_draw_overlay(GContext *ctx) {
       continue;
     }
 
-    draw_text(ctx, title, s_font_event, GRect(8, y, SCREEN_W - 16, 22),
+    draw_text(ctx, title, s_font_event, overlay_safe_frame(8, y, 22),
               theme_fg_color(), GTextAlignmentLeft);
     // Countdown line. When event dates are on, prefix this row's date (from the
     // matching meeting slot epoch); otherwise it's the original delta string.
@@ -2581,7 +2694,7 @@ static void calendar_draw_overlay(GContext *ctx) {
     }
     draw_text(ctx, delta_text,
               fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-              GRect(8, y + 19, SCREEN_W - 16, 18),
+              overlay_safe_frame(8, y + 19, 18),
               fitness_muted_text_color(), GTextAlignmentLeft);
 
     if (i < row_count - 1) {
@@ -2670,7 +2783,7 @@ static void draw_your_day_hour_pips(GContext *ctx, const char *now_text, GFont n
   if (gap_x > 22) {
     gap_x = 22;
   }
-  const int start_x = (SCREEN_W - ((pip_count - 1) * gap_x)) / 2;
+  const int start_x = (OVERLAY_W - ((pip_count - 1) * gap_x)) / 2;
   const int y = 96;
   const int elbow_y = y + 43;
   GFont label_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
@@ -2737,15 +2850,15 @@ static void draw_your_day_hour_pips(GContext *ctx, const char *now_text, GFont n
   }
 
   GSize now_size = graphics_text_layout_get_content_size(
-      now_text ? now_text : "", now_font, GRect(0, 0, SCREEN_W - 16, 22),
+      now_text ? now_text : "", now_font, GRect(0, 0, OVERLAY_W - 16, 22),
       GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter);
-  int now_left = (SCREEN_W - now_size.w) / 2;
+  int now_left = (OVERLAY_W - now_size.w) / 2;
   int now_right = now_left + now_size.w;
   if (now_left < 8) {
     now_left = 8;
   }
-  if (now_right > SCREEN_W - 8) {
-    now_right = SCREEN_W - 8;
+  if (now_right > OVERLAY_W - 8) {
+    now_right = OVERLAY_W - 8;
   }
 
   const int target_x = current_x <= ((now_left + now_right) / 2)
@@ -2771,7 +2884,13 @@ static void your_day_draw_overlay(GContext *ctx) {
   snprintf(weather_buf, sizeof(weather_buf), "%s/%s  %s rain", hi_buf, lo_buf, rain_buf);
 
   draw_weather_icon_centered(ctx, GPoint(38, 30), true);
-  draw_text(ctx, weather_buf, s_font_complication, GRect(64, 18, 128, 28),
+  GRect weather_frame = GRect(64, 18, 128, 28);
+#if defined(PBL_ROUND)
+  GRect safe_weather_frame = overlay_safe_frame(0, 18, 28);
+  weather_frame.size.w = safe_weather_frame.origin.x
+      + safe_weather_frame.size.w - weather_frame.origin.x;
+#endif
+  draw_text(ctx, weather_buf, s_font_complication, weather_frame,
             theme_fg_color(), GTextAlignmentLeft);
 
   graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
@@ -2786,7 +2905,7 @@ static void your_day_draw_overlay(GContext *ctx) {
     snprintf(title_buf, sizeof(title_buf), "FUTURE");
   }
   draw_text(ctx, title_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(8, 64, SCREEN_W - 16, 18),
+            overlay_safe_frame(8, 64, 18),
             fitness_muted_text_color(), GTextAlignmentCenter);
 
   time_t now = time(NULL);
@@ -2806,7 +2925,7 @@ static void your_day_draw_overlay(GContext *ctx) {
   }
   GFont now_font = fonts_get_system_font(FONT_KEY_GOTHIC_18);
   draw_your_day_hour_pips(ctx, now_buf, now_font);
-  draw_text(ctx, now_buf, now_font, GRect(8, 126, SCREEN_W - 16, 22),
+  draw_text(ctx, now_buf, now_font, overlay_safe_frame(8, 126, 22),
             theme_fg_color(), GTextAlignmentCenter);
 
   graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
@@ -2814,13 +2933,14 @@ static void your_day_draw_overlay(GContext *ctx) {
 
   char count_buf[28];
   snprintf(count_buf, sizeof(count_buf), "%d events in window", s_day_event_count_today);
-  draw_text(ctx, count_buf, s_font_complication, GRect(8, 162, SCREEN_W - 16, 24),
+  draw_text(ctx, count_buf, s_font_complication,
+            overlay_safe_frame(8, 162, 24),
             theme_fg_color(), GTextAlignmentCenter);
 
   char next_buf[96];
   snprintf(next_buf, sizeof(next_buf), "Next: %s", event_display_text(s_event_buf));
   draw_text(ctx, next_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(8, 190, SCREEN_W - 16, 28), fitness_muted_text_color(),
+            overlay_safe_frame(8, 190, 28), fitness_muted_text_color(),
             GTextAlignmentCenter);
 }
 
@@ -3047,7 +3167,19 @@ static void draw_forecast_graph(GContext *ctx, GRect bounds) {
                        GPoint(x, plot_bottom + 1 + tick_h));
     char label[4];
     snprintf(label, sizeof(label), "%d", (start_hour + i) % 24);
-    draw_text(ctx, label, label_font, GRect(x - 12, plot_bottom + 4, 24, 14),
+    GRect label_frame = GRect(x - 12, plot_bottom + 4, 24, 14);
+#if defined(PBL_ROUND)
+    GRect safe_label_frame =
+        overlay_safe_frame(0, plot_bottom + 4, 14);
+    if (label_frame.origin.x < safe_label_frame.origin.x) {
+      label_frame.origin.x = safe_label_frame.origin.x;
+    } else if (label_frame.origin.x + label_frame.size.w >
+               safe_label_frame.origin.x + safe_label_frame.size.w) {
+      label_frame.origin.x = safe_label_frame.origin.x
+          + safe_label_frame.size.w - label_frame.size.w;
+    }
+#endif
+    draw_text(ctx, label, label_font, label_frame,
               fitness_muted_text_color(), GTextAlignmentCenter);
   }
 }
@@ -3102,21 +3234,32 @@ static void detailed_weather_draw_overlay(GContext *ctx) {
   format_time_short(sunset_buf, sizeof(sunset_buf), s_sunset_t, s_sunset_known);
 
   draw_weather_icon_centered(ctx, GPoint(100, 24), true);
-  draw_text(ctx, temp_buf, s_font_time, GRect(0, 48, SCREEN_W, 48),
+  draw_text(ctx, temp_buf, s_font_time, overlay_safe_frame(0, 48, 48),
             theme_fg_color(), GTextAlignmentCenter);
-  draw_text(ctx, feels_buf, s_font_complication, GRect(8, 91, SCREEN_W - 16, 22),
+  draw_text(ctx, feels_buf, s_font_complication,
+            overlay_safe_frame(8, 91, 22),
             fitness_muted_text_color(), GTextAlignmentCenter);
   draw_text(ctx, forecast_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-            GRect(6, 112, SCREEN_W - 12, 20), theme_fg_color(), GTextAlignmentCenter);
+            overlay_safe_frame(6, 112, 20),
+            theme_fg_color(), GTextAlignmentCenter);
 
   draw_forecast_graph(ctx, GRect(4, 132, 192, 62));
 
+#if defined(PBL_ROUND)
+  draw_small_sun(ctx, GPoint(38, 209), theme_fg_color());
+  draw_text(ctx, sunrise_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+            GRect(50, 199, 50, 24), theme_fg_color(), GTextAlignmentLeft);
+  draw_small_moon(ctx, GPoint(112, 209), theme_fg_color());
+  draw_text(ctx, sunset_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+            GRect(124, 199, 48, 24), theme_fg_color(), GTextAlignmentLeft);
+#else
   draw_small_sun(ctx, GPoint(13, 209), theme_fg_color());
   draw_text(ctx, sunrise_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
             GRect(24, 199, 72, 24), theme_fg_color(), GTextAlignmentLeft);
   draw_small_moon(ctx, GPoint(110, 209), theme_fg_color());
   draw_text(ctx, sunset_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
             GRect(121, 199, 76, 24), theme_fg_color(), GTextAlignmentLeft);
+#endif
 }
 
 static void alt_timezone_draw_overlay(GContext *ctx) {
@@ -3153,13 +3296,16 @@ static void alt_timezone_draw_overlay(GContext *ctx) {
              s_alt_tz_offset_min > 0 ? "ahead" : "behind");
   }
 
-  draw_text(ctx, s_alt_tz_label, s_font_top, GRect(8, 22, SCREEN_W - 16, 24),
+  draw_text(ctx, s_alt_tz_label, s_font_top,
+            overlay_safe_frame(8, 22, 24),
             fitness_muted_text_color(), GTextAlignmentCenter);
-  draw_text(ctx, time_buf, s_font_time, GRect(0, 62, SCREEN_W, 58),
+  draw_text(ctx, time_buf, s_font_time, overlay_safe_frame(0, 62, 58),
             theme_fg_color(), GTextAlignmentCenter);
-  draw_text(ctx, date_buf, s_font_complication, GRect(8, 132, SCREEN_W - 16, 24),
+  draw_text(ctx, date_buf, s_font_complication,
+            overlay_safe_frame(8, 132, 24),
             theme_fg_color(), GTextAlignmentCenter);
-  draw_text(ctx, offset_buf, s_font_complication, GRect(8, 172, SCREEN_W - 16, 24),
+  draw_text(ctx, offset_buf, s_font_complication,
+            overlay_safe_frame(8, 172, 24),
             fitness_muted_text_color(), GTextAlignmentCenter);
 }
 
@@ -3214,7 +3360,8 @@ static void draw_multi_tz_line(GContext *ctx, int y) {
   }
   if (line[0] == '\0') return;
   draw_text(ctx, line, fonts_get_system_font(FONT_KEY_GOTHIC_14),
-            GRect(0, y, SCREEN_W, 16), draw_fg_color(), GTextAlignmentCenter);
+            GRect(FACE_CONTENT_X, y, FACE_CONTENT_W, 16),
+            draw_fg_color(), GTextAlignmentCenter);
 }
 
 // Secondary timezone complication. zone_index is 1 or 2.
@@ -3282,14 +3429,16 @@ static void heart_rate_draw_overlay(GContext *ctx) {
   }
 
   draw_large_heart(ctx, GPoint(82, 24), GColorRed);
-  draw_text(ctx, s_bpm_buf, s_font_time, GRect(0, 66, SCREEN_W, 58),
+  draw_text(ctx, s_bpm_buf, s_font_time, overlay_safe_frame(0, 66, 58),
             theme_fg_color(), GTextAlignmentCenter);
-  draw_text(ctx, "BPM", s_font_complication, GRect(8, 120, SCREEN_W - 16, 24),
+  draw_text(ctx, "BPM", s_font_complication,
+            overlay_safe_frame(8, 120, 24),
             fitness_muted_text_color(), GTextAlignmentCenter);
   draw_text(ctx, heart_rate_zone(bpm), s_font_complication,
-            GRect(8, 154, SCREEN_W - 16, 24), theme_fg_color(), GTextAlignmentCenter);
+            overlay_safe_frame(8, 154, 24),
+            theme_fg_color(), GTextAlignmentCenter);
   draw_text(ctx, last_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18),
-            GRect(8, 188, SCREEN_W - 16, 24), fitness_muted_text_color(),
+            overlay_safe_frame(8, 188, 24), fitness_muted_text_color(),
             GTextAlignmentCenter);
 }
 
@@ -3337,9 +3486,11 @@ static bool tide_has_hourly_data(void) {
 
 static void tide_draw_placeholder(GContext *ctx, const char *line1,
                                   const char *line2) {
-  draw_text(ctx, line1, s_font_complication, GRect(8, 88, SCREEN_W - 16, 28),
+  draw_text(ctx, line1, s_font_complication,
+            overlay_safe_frame(8, 88, 28),
             theme_fg_color(), GTextAlignmentCenter);
-  draw_text(ctx, line2, s_font_complication, GRect(8, 116, SCREEN_W - 16, 28),
+  draw_text(ctx, line2, s_font_complication,
+            overlay_safe_frame(8, 116, 28),
             fitness_muted_text_color(), GTextAlignmentCenter);
 }
 
@@ -3355,7 +3506,7 @@ static void tide_format_event_line(char *out_buf, size_t out_len,
 
 static void tide_chart_draw_overlay(GContext *ctx) {
   const int chart_left = 8;
-  const int chart_right = SCREEN_W - 8;
+  const int chart_right = OVERLAY_W - 8;
   const int chart_top = 24;
   const int chart_bottom = 140;
   const int chart_h = chart_bottom - chart_top;
@@ -3367,10 +3518,14 @@ static void tide_chart_draw_overlay(GContext *ctx) {
 
   const char *station_label =
       s_tide_station_name[0] ? s_tide_station_name : s_tide_station_id;
+  GRect header_frame = overlay_safe_frame(8, 4, 16);
   draw_text(ctx, "TIDE", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(8, 4, 60, 16), fitness_muted_text_color(), GTextAlignmentLeft);
+            GRect(header_frame.origin.x, 4, 60, 16),
+            fitness_muted_text_color(), GTextAlignmentLeft);
   draw_text(ctx, station_label, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(60, 4, SCREEN_W - 68, 16), fitness_muted_text_color(),
+            GRect(header_frame.origin.x + 52, 4,
+                  header_frame.size.w - 52, 16),
+            fitness_muted_text_color(),
             GTextAlignmentRight);
 
   if (!tide_has_hourly_data()) {
@@ -3464,11 +3619,14 @@ static void tide_chart_draw_overlay(GContext *ctx) {
   tide_format_event_line(low_line, sizeof(low_line), "Low ",
                          s_tide_next_low_t, s_tide_next_low_level);
 
-  draw_text(ctx, now_line, s_font_complication, GRect(8, 148, SCREEN_W - 16, 20),
+  draw_text(ctx, now_line, s_font_complication,
+            overlay_safe_frame(8, 148, 20),
             theme_fg_color(), GTextAlignmentLeft);
-  draw_text(ctx, high_line, s_font_complication, GRect(8, 172, SCREEN_W - 16, 20),
+  draw_text(ctx, high_line, s_font_complication,
+            overlay_safe_frame(8, 172, 20),
             theme_fg_color(), GTextAlignmentLeft);
-  draw_text(ctx, low_line, s_font_complication, GRect(8, 196, SCREEN_W - 16, 20),
+  draw_text(ctx, low_line, s_font_complication,
+            overlay_safe_frame(8, 196, 20),
             fitness_muted_text_color(), GTextAlignmentLeft);
 }
 
@@ -3495,9 +3653,13 @@ static void nws_draw_alert_badge(GContext *ctx, GRect frame) {
 static void nws_draw_header(GContext *ctx) {
   const char *location = s_nws_location_label[0]
       ? s_nws_location_label : "NWS FORECAST";
-  draw_text(ctx, location, s_font_top, GRect(8, 0, SCREEN_W - 38, 22),
+  GRect header_frame = overlay_safe_frame(8, 0, 20);
+  draw_text(ctx, location, s_font_top,
+            GRect(header_frame.origin.x, 0, header_frame.size.w - 22, 22),
             theme_fg_color(), GTextAlignmentLeft);
-  nws_draw_alert_badge(ctx, GRect(SCREEN_W - 24, 4, 16, 16));
+  nws_draw_alert_badge(
+      ctx, GRect(header_frame.origin.x + header_frame.size.w - 16,
+                 4, 16, 16));
 }
 
 // Render the dual-line chart (24h temp + 24h precip%) used by the Chart
@@ -3630,10 +3792,10 @@ static void nws_forecast_chart_heavy_draw(GContext *ctx) {
            compact_label, (int)s_nws_hourly_temps_f[0],
            (int)s_nws_p1_temp, (int)s_nws_p2_temp);
   draw_text(ctx, sub, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(8, 22, SCREEN_W - 16, 18),
+            overlay_safe_frame(8, 22, 18),
             theme_fg_color(), GTextAlignmentLeft);
 
-  const GRect chart = GRect(28, 42, SCREEN_W - 56, 90);
+  const GRect chart = GRect(28, 42, OVERLAY_W - 56, 90);
 
   // Y-axis temp labels (left), aligned to chart's top / bottom.
   int t_min = 127, t_max = -127;
@@ -3655,10 +3817,10 @@ static void nws_forecast_chart_heavy_draw(GContext *ctx) {
 
   // Y-axis precip labels (right), aligned to chart's top / bottom.
   draw_text(ctx, "100", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(SCREEN_W - 28, 38, 26, 16),
+            GRect(OVERLAY_W - 28, 38, 26, 16),
             fitness_muted_text_color(), GTextAlignmentLeft);
   draw_text(ctx, "0", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(SCREEN_W - 28, 118, 26, 16),
+            GRect(OVERLAY_W - 28, 118, 26, 16),
             fitness_muted_text_color(), GTextAlignmentLeft);
 
   nws_draw_dual_chart(ctx, chart);
@@ -3669,7 +3831,7 @@ static void nws_forecast_chart_heavy_draw(GContext *ctx) {
     time_t base = (time_t)s_nws_hourly_start_t;
     const int idxs[6] = {0, 4, 8, 12, 16, 20};
     const int chart_left = 28;
-    const int chart_w = SCREEN_W - 56;
+    const int chart_w = OVERLAY_W - 56;
     for (int i = 0; i < 6; i++) {
       int idx = idxs[i];
       time_t t = base + idx * 3600;
@@ -3690,11 +3852,11 @@ static void nws_forecast_chart_heavy_draw(GContext *ctx) {
   // Narrative block (short forecast + detailed prose) gets the bottom
   // half of the screen now that the hour legend moved up.
   draw_text(ctx, s_nws_p1_short, s_font_complication,
-            GRect(8, 156, SCREEN_W - 16, 22),
+            overlay_safe_frame(8, 156, 22),
             theme_fg_color(), GTextAlignmentLeft);
   draw_text(ctx, s_nws_p1_detailed,
             fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(8, 178, SCREEN_W - 16, 50),
+            overlay_safe_frame(8, 178, 50),
             fitness_muted_text_color(), GTextAlignmentLeft);
 }
 
@@ -3711,24 +3873,26 @@ static int nws_draw_period_block(GContext *ctx, int y, const char *label,
              label, temp_high, temp_low_or_none);
   }
   draw_text(ctx, header, s_font_complication,
-            GRect(8, y, SCREEN_W - 16, 22),
+            overlay_safe_frame(8, y, 22),
             theme_fg_color(), GTextAlignmentLeft);
   draw_text(ctx, detailed,
             fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-            GRect(8, y + 22, SCREEN_W - 16, line_count * 18 + 2),
+            overlay_safe_frame(8, y + 22, line_count * 18 + 2),
             fitness_muted_text_color(), GTextAlignmentLeft);
-  int next_y = y + 22 + line_count * 18 + 6;
+  int next_y = y + 22 + line_count * 18 + NWS_PERIOD_GAP;
   // Horizontal rule
   graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
-  graphics_draw_line(ctx, GPoint(8, next_y - 2),
-                     GPoint(SCREEN_W - 8, next_y - 2));
+  GRect rule_frame = overlay_safe_frame(8, next_y - 2, 1);
+  graphics_draw_line(ctx, GPoint(rule_frame.origin.x, next_y - 2),
+                     GPoint(rule_frame.origin.x + rule_frame.size.w,
+                            next_y - 2));
   return next_y;
 }
 
 // Layout B — Narrative Weather. Header + three stacked period blocks.
 static void nws_forecast_narrative_draw(GContext *ctx) {
   nws_draw_header(ctx);
-  int y = 26;
+  int y = NWS_PERIOD_START_Y;
   // Block 1: current period — pair with the next period's low (assumed to
   // be Tonight when current is daytime) to render H/L when available.
   int p1_low = (s_nws_p2_temp != 0) ? (int)s_nws_p2_temp : INT16_MIN;
@@ -3753,10 +3917,10 @@ static void nws_forecast_draw_overlay(GContext *ctx) {
   if (s_weather_provider != WeatherProviderNws) {
     nws_draw_header(ctx);
     draw_text(ctx, "Set provider to NWS", s_font_complication,
-              GRect(8, 60, SCREEN_W - 16, 24),
+              overlay_safe_frame(8, 60, 24),
               theme_fg_color(), GTextAlignmentCenter);
     draw_text(ctx, "in Pebble app settings", s_font_complication,
-              GRect(8, 86, SCREEN_W - 16, 24),
+              overlay_safe_frame(8, 86, 24),
               fitness_muted_text_color(), GTextAlignmentCenter);
     return;
   }
@@ -3764,7 +3928,7 @@ static void nws_forecast_draw_overlay(GContext *ctx) {
   if (s_nws_p1_label[0] == '\0') {
     nws_draw_header(ctx);
     draw_text(ctx, "Waiting for NWS data...", s_font_complication,
-              GRect(8, 80, SCREEN_W - 16, 28),
+              overlay_safe_frame(8, 80, 28),
               theme_fg_color(), GTextAlignmentCenter);
     return;
   }
@@ -3777,7 +3941,8 @@ static void nws_forecast_draw_overlay(GContext *ctx) {
 }
 
 static void step_history_draw_overlay(GContext *ctx) {
-  draw_text(ctx, "STEPS TODAY", s_font_top, GRect(8, 4, SCREEN_W - 16, 22),
+  draw_text(ctx, "STEPS TODAY", s_font_top,
+            overlay_safe_frame(8, 4, 22),
             theme_fg_color(), GTextAlignmentLeft);
 
   HealthValue totals[7] = {0};
@@ -3814,14 +3979,14 @@ static void step_history_draw_overlay(GContext *ctx) {
   // 1,234-style step counts shows as the missing-glyph box. Use Bitham 42,
   // which carries the full Latin set.
   draw_text(ctx, steps_buf, s_font_time,
-            GRect(0, 28, SCREEN_W, 56),
+            overlay_safe_frame(0, 28, 56),
             theme_fg_color(), GTextAlignmentCenter);
   draw_text(ctx, goal_line, s_font_complication,
-            GRect(0, 82, SCREEN_W, 20),
+            overlay_safe_frame(0, 82, 20),
             fitness_muted_text_color(), GTextAlignmentCenter);
 
-  const int chart_left = 8;
-  const int chart_right = SCREEN_W - 8;
+  const int chart_left = OVERLAY_CHART_EDGE;
+  const int chart_right = OVERLAY_W - OVERLAY_CHART_EDGE;
   const int chart_w = chart_right - chart_left;
   // Reserved label row sits at y=108..121 (14px tall). Bars start at y=122
   // so per-bar values are always legible, even on half-goal or zero days
@@ -3949,9 +4114,20 @@ static void step_history_draw_overlay(GContext *ctx) {
     int dow = (today_dow - days_ago + 70) % 7;
     int label_idx = shake_dow_to_label_idx(dow);
     int x = chart_left + (pos * slot_w) + slot_w / 2;
+    GRect label_frame = GRect(x - 12, 200, 24, 18);
+#if defined(PBL_ROUND)
+    GRect safe_label_frame = overlay_safe_frame(0, 200, 18);
+    if (label_frame.origin.x < safe_label_frame.origin.x) {
+      label_frame.origin.x = safe_label_frame.origin.x;
+    } else if (label_frame.origin.x + label_frame.size.w >
+               safe_label_frame.origin.x + safe_label_frame.size.w) {
+      label_frame.origin.x = safe_label_frame.origin.x
+          + safe_label_frame.size.w - label_frame.size.w;
+    }
+#endif
     draw_text(ctx, k_labels[label_idx],
               fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-              GRect(x - 12, 200, 24, 18),
+              label_frame,
               theme_fg_color(), GTextAlignmentCenter);
     if (pos == n_bars - 1) {
       graphics_draw_line(ctx, GPoint(x - 5, 215), GPoint(x + 5, 215));
@@ -3963,7 +4139,7 @@ static void shake_overlay_update_proc(Layer *layer, GContext *ctx) {
   (void)layer;
 
   graphics_context_set_fill_color(ctx, theme_bg_color());
-  graphics_fill_rect(ctx, GRect(0, 0, SCREEN_W, SCREEN_H), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(0, 0, OVERLAY_W, OVERLAY_H), 0, GCornerNone);
 
   // Shake overlays always follow LIGHT_MODE only, never the main-face section
   // INVERT toggles. Reset the active section so bitmap theme lookups
@@ -4038,12 +4214,12 @@ static void draw_verbose_weather_row(GContext *ctx) {
     const int icon_gap = 8;
     GFont temp_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
     GFont summary_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
-    const GRect measure_frame = GRect(0, 0, SCREEN_W, 28);
+    const GRect measure_frame = GRect(0, 0, FACE_CONTENT_W, 28);
     GSize temp_size = graphics_text_layout_get_content_size(
         large_temp_text, temp_font, measure_frame,
         GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
     int top_row_width = icon_size + icon_gap + temp_size.w;
-    int top_row_x = (SCREEN_W - top_row_width) / 2;
+    int top_row_x = FACE_CONTENT_X + (FACE_CONTENT_W - top_row_width) / 2;
     const int top_center_y = VERBOSE_WEATHER_CENTER_Y - 19;
 
     draw_weather_icon_centered(ctx,
@@ -4051,11 +4227,14 @@ static void draw_verbose_weather_row(GContext *ctx) {
                                true);
     draw_text(ctx, large_temp_text, temp_font,
               GRect(top_row_x + icon_size + icon_gap, top_center_y - 19,
-                    SCREEN_W - top_row_x - icon_size - icon_gap, 32),
+                    FACE_CONTENT_X + FACE_CONTENT_W - top_row_x
+                        - icon_size - icon_gap,
+                    32),
               draw_fg_color(), GTextAlignmentLeft);
 
     draw_text(ctx, summary, summary_font,
-              GRect(8, VERBOSE_WEATHER_CENTER_Y - 4, SCREEN_W - 16, 20),
+              GRect(FACE_CONTENT_X + 8, VERBOSE_WEATHER_CENTER_Y - 4,
+                    FACE_CONTENT_W - 16, 20),
               draw_fg_color(), GTextAlignmentCenter);
     return;
   }
@@ -4065,8 +4244,8 @@ static void draw_verbose_weather_row(GContext *ctx) {
 
   const int icon_size = WEATHER_ICON_SMALL_SIZE;
   const int icon_gap = 4;
-  const int max_row_width = SCREEN_W - 8;
-  const GRect measure_frame = GRect(0, 0, SCREEN_W, 24);
+  const int max_row_width = FACE_CONTENT_W - 8;
+  const GRect measure_frame = GRect(0, 0, FACE_CONTENT_W, 24);
   bool using_large_row_font = true;
   GFont row_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   GSize text_size = graphics_text_layout_get_content_size(
@@ -4088,7 +4267,7 @@ static void draw_verbose_weather_row(GContext *ctx) {
     row_width = max_row_width;
   }
 
-  const int row_x = (SCREEN_W - row_width) / 2;
+  const int row_x = FACE_CONTENT_X + (FACE_CONTENT_W - row_width) / 2;
   const int icon_center_y = VERBOSE_WEATHER_CENTER_Y;
   const int text_y = using_large_row_font ? VERBOSE_WEATHER_CENTER_Y - 17
                                           : VERBOSE_WEATHER_CENTER_Y - 13;
@@ -4120,12 +4299,13 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   graphics_fill_rect(ctx, GRect(0, 0, SCREEN_W, SCREEN_H), 0, GCornerNone);
 
   set_draw_section(ColorSectionTopBar);
-  fill_inverted_section_background(ctx, ColorSectionTopBar, GRect(0, 0, SCREEN_W, 31));
+  fill_inverted_section_background(
+      ctx, ColorSectionTopBar, GRect(0, 0, SCREEN_W, TOP_BAR_H));
   draw_watch_battery(ctx);
   if (s_w800_steps_top_enabled) {
     draw_w800_steps_top_bar(ctx);
   }
-  draw_bt_icon(ctx, GPoint(181, 7));
+  draw_bt_icon(ctx, GPoint(BT_ICON_X, BT_ICON_Y));
 
   const int content_offset_y =
       (draw_verbose_weather && s_time_font != TIME_FONT_CASIO) ? VERBOSE_WEATHER_OFFSET_Y : 0;
@@ -4141,7 +4321,9 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   // is unchanged; only the text frame shifts.
   const int date_casio_offset = (s_time_font == TIME_FONT_CASIO) ? 4 : 0;
   const GRect date_frame =
-      GRect(0, DATE_FRAME_Y + content_offset_y + date_casio_offset, SCREEN_W, 29);
+      GRect(FACE_CONTENT_X,
+            DATE_FRAME_Y + content_offset_y + date_casio_offset,
+            FACE_CONTENT_W, 29);
   const bool verbose_weather_meeting_color_break =
       draw_verbose_weather &&
       section_backgrounds_differ(ColorSectionWeather, ColorSectionMeetingBar);
@@ -4162,7 +4344,7 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   set_draw_section(ColorSectionDateBar);
   fill_inverted_section_background(
       ctx, ColorSectionDateBar,
-      GRect(0, 31, SCREEN_W, time_frame_y - 31));
+      GRect(0, DATE_BAR_Y, SCREEN_W, time_frame_y - DATE_BAR_Y));
   draw_text(ctx, s_date_buf, s_font_date, date_frame,
             draw_fg_color(), GTextAlignmentCenter);
 
@@ -4193,17 +4375,27 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
         GRect(0, weather_y, SCREEN_W, compact_weather_bottom - weather_y));
     const int complication_center_y = COMPLICATION_CENTER_Y + 3;
     if (multi_tz_circle_mode) {
-      draw_complication_timezone(ctx, GPoint(40, complication_center_y), 1);
+      draw_complication_timezone(
+          ctx, GPoint(COMPLICATION_X1, complication_center_y), 1);
       if (s_multi_tz2_label[0] != '\0') {
-        draw_complication_timezone(ctx, GPoint(100, complication_center_y), 2);
+        draw_complication_timezone(
+            ctx, GPoint(COMPLICATION_X2, complication_center_y), 2);
       } else {
-        draw_complication(ctx, GPoint(100, complication_center_y), s_complication_slots[1]);
+        draw_complication(
+            ctx, GPoint(COMPLICATION_X2, complication_center_y),
+            s_complication_slots[1]);
       }
     } else {
-      draw_complication(ctx, GPoint(40, complication_center_y), s_complication_slots[0]);
-      draw_complication(ctx, GPoint(100, complication_center_y), s_complication_slots[1]);
+      draw_complication(
+          ctx, GPoint(COMPLICATION_X1, complication_center_y),
+          s_complication_slots[0]);
+      draw_complication(
+          ctx, GPoint(COMPLICATION_X2, complication_center_y),
+          s_complication_slots[1]);
     }
-    draw_complication(ctx, GPoint(160, complication_center_y), s_complication_slots[2]);
+    draw_complication(
+        ctx, GPoint(COMPLICATION_X3, complication_center_y),
+        s_complication_slots[2]);
   }
 
   set_draw_section(ColorSectionMeetingBar);
@@ -4216,11 +4408,13 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
   if (draw_meeting_separator) {
     graphics_context_set_stroke_color(ctx, draw_fg_color());
     graphics_context_set_stroke_width(ctx, 1);
-    graphics_draw_line(ctx, GPoint(8, meeting_bar_y), GPoint(192, meeting_bar_y));
+    graphics_draw_line(ctx, GPoint(EVENT_SEPARATOR_X1, meeting_bar_y),
+                       GPoint(EVENT_SEPARATOR_X2, meeting_bar_y));
   }
 
   draw_text(ctx, event_display_text(s_event_buf), s_font_event,
-            GRect(8, 203, 184, 25), draw_fg_color(), GTextAlignmentCenter);
+            GRect(EVENT_TEXT_X, EVENT_TEXT_Y, EVENT_TEXT_W, EVENT_TEXT_H),
+            draw_fg_color(), GTextAlignmentCenter);
 
   // Drawn last so the date-bar background fill (y=31..time_frame_y) does
   // not overwrite the pips. The pip row sits in y=31..35.
@@ -6845,7 +7039,8 @@ static void window_load(Window *window) {
   layer_set_update_proc(s_face_layer, face_update_proc);
   layer_add_child(root, s_face_layer);
 
-  s_shake_overlay_layer = layer_create(bounds);
+  s_shake_overlay_layer = layer_create(
+      GRect(OVERLAY_FRAME_X, OVERLAY_FRAME_Y, OVERLAY_W, OVERLAY_H));
   layer_set_update_proc(s_shake_overlay_layer, shake_overlay_update_proc);
   layer_set_hidden(s_shake_overlay_layer, true);
   layer_add_child(root, s_shake_overlay_layer);

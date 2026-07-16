@@ -948,3 +948,16 @@ Current live to-dos. (The "Next actions you take" section higher up is historica
 - **Japanese date — on-device confirmation pending.** 1.28 shipped without local verification (emulator can't run here; kanji rely on the device firmware CJK fallback). The Japanese user is to confirm the date line renders and that the full form doesn't clip at the widest dates (e.g. `12月31日 水曜日`); the compact `日本語 compact` option is the built-in fallback if it does.
 - **Clay menu declutters (5, deferred).** Same `customClay` show/hide pattern as the pip-row collapse — hide controls that have no effect in the current state: (1) CASIO phantom backdrop → only when Time font = CASIO; (2) collapse the Calendar section (ICS URLs, look-ahead, no-events label, event-date options) when "Enable bottom event" is off; (3) manual latitude/longitude → only when Location = Manual; (4) Verbose weather style → only when Verbose weather is on; (5) Your Day → rolling-window hours in Rolling mode, fixed start/end in Fixed mode.
 - **Shake "Upcoming" list time in Japanese (optional).** Each row's time (e.g. `8:30am`) is phone-formatted in `formatEvent()` (`src/pkjs/index.js`); the 1.28 date-language feature covers the main date line only. Extending Japanese to the shake list's per-event time would be a phone-side formatter change.
+
+## 1.40 packaged 2026-07-15: Pebble Time Round 2 (gabbro) support
+
+Codex's round implementation reviewed and accepted: per-platform layout constant blocks + `overlay_safe_frame()` chord helper, emery `#else` branch byte-identical to 1.39, all ten shake overlays made round-safe, only `jy-time/src/c/jy-time.c` touched (+322 lines). Clean build both platforms, only the three pre-existing warnings, gabbro free heap ~80K. Emery/gabbro emulator screenshots verified in `round-preview/` (emery matches shipped 1.39; gabbro renders everything inside the circle). PBW staged at `release-assets/simple-pixel-style-1.40.0-emery-gabbro.pbw`.
+
+## Round support handoff notes (2026-07-15, superseded by the 1.40 release above)
+
+Adding the face to the Pebble Time Round 2. Split per the usual scoping: Claude = plumbing, Codex = round layout design.
+
+- Plumbing DONE (working tree, not committed): `jy-time/package.json` targetPlatforms now emery + gabbro; `SCREEN_W`/`SCREEN_H` (~line 225 of `jy-time.c`) now derive from `PBL_DISPLAY_WIDTH`/`PBL_DISPLAY_HEIGHT`. Both platforms build green on SDK 4.9.169; gabbro (260x260 round, 128K RAM) reports ~80K free heap. Version stays 1.39 until the round work ships.
+- Codex handoff doc: `CODEX_HANDOFF_jytime_gabbro_round.md` (this folder). Codex owns the round band re-map behind `#if defined(PBL_ROUND)` with a hard 13-item element-visibility checklist (never-remove-features rule baked in); emery must stay pixel-identical; screenshots to `round-preview/`; chalk explicitly out of scope (64K RAM class).
+- Sibling: US Tidemaps gets gabbro + chalk, handoff doc at `Project - US Tidemaps/CODEX_HANDOFF_round_support.md`. Visual-sync rule applies once both round layouts exist.
+- After Codex returns: Claude reviews diff (correctness + scope), then release packaging.

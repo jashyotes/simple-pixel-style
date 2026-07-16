@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "1.39",
+  "version": "1.40",
   "keywords": [
     "pebble-app"
   ],
@@ -15,7 +15,8 @@
     "sdkVersion": "3",
     "enableMultiJS": true,
     "targetPlatforms": [
-      "emery"
+      "emery",
+      "gabbro"
     ],
     "capabilities": [
       "configurable",
