@@ -961,3 +961,55 @@ Adding the face to the Pebble Time Round 2. Split per the usual scoping: Claude 
 - Codex handoff doc: `CODEX_HANDOFF_jytime_gabbro_round.md` (this folder). Codex owns the round band re-map behind `#if defined(PBL_ROUND)` with a hard 13-item element-visibility checklist (never-remove-features rule baked in); emery must stay pixel-identical; screenshots to `round-preview/`; chalk explicitly out of scope (64K RAM class).
 - Sibling: US Tidemaps gets gabbro + chalk, handoff doc at `Project - US Tidemaps/CODEX_HANDOFF_round_support.md`. Visual-sync rule applies once both round layouts exist.
 - After Codex returns: Claude reviews diff (correctness + scope), then release packaging.
+
+## CASIO dark-mode drop shadow legibility, Codex three-variant handoff (2026-07-21)
+
+User report: with the CASIO time style in dark mode, the drop-shadow treatment behind the digits is illegible (the phantom "88:88" backdrop renders GColorDarkGray under white digits on black and reads as a smeared shadow). Direction confirmed by the user: KEEP the shadow effect and make the time legible, do not remove it (removal already exists as the phantom toggle-off state). Codex is to submit three genuinely distinct best-effort treatments as screenshots; user picks the winner. Fallback if all three miss: survey open-source Pebble faces for a shadow style to copy.
+
+- Checked first (user thought the request may have gone to OpenClaw): no prior commit, handoff doc, status entry, or OpenClaw workspace trace of this request existed. Fresh work as of today.
+- Codex handoff doc: `CODEX_HANDOFF_casio_dark_phantom.md` (this folder). Visual exploration pass, NOT a ship: three variants, each edit confined to `draw_casio_time_row_at` / `casio_phantom_color`, dark palette only (light mode pixel-identical), build both platforms, emery emulator screenshot per variant, exact patch saved per variant, then file reverted to baseline. Deliverables land in `casio-dark-variants/` (variant-{a,b,c}.png + .patch). Emulator boots straight into the repro state (defaults: dark mode, CASIO font, phantom on), so no scaffolding. No version bump, no commit.
+- Candidate directions seeded in the doc: true offset drop shadow of the time string itself; black separation halo cutting the digits out of the 88:88 backdrop; near-black tinted backdrop tones (no neutral gray darker than DarkGray exists in the 64-color palette).
+- Outcome: Codex delivered all three variants (screenshots + patches in `casio-dark-variants/`). Josh picked TWO: Variant B (phantom + crisp halo) ships as default, Variant A (true offset shadow) ships as a Clay-selectable alternative, Variant C (Oxford Blue) rejected. Codex wrote the production spec back as `CLAUDE_HANDOFF_casio_dark_shadow_styles.md`; implemented by Claude as 1.41 below.
+
+## 1.41: CASIO dark shadow styles (halo default + offset option) (2026-07-21)
+
+Implements the approved two-variant decision. Behavior matrix: effect off = clean foreground-only time (any palette); light sections = classic LightGray 88:88 backdrop, pixel-identical to 1.40; dark sections + "halo" (default) = DarkGray 88:88 backdrop plus a 1 px black moat cut around the lit digits (Variant B); dark sections + "offset" = no backdrop, the time's own shadow in DarkGray at +2/+2 px (Variant A). "Dark/light" means `section_uses_light_palette(s_draw_section)`, so inverted time bands behave correctly; `casio_phantom_color()` unchanged.
+
+Plumbing follows the DISTANCE_UNITS pattern: `CasioDarkShadowStyle` enum (halo 0 / offset 1), C static default halo, persist key **282** (Codex's doc suggested 238 but that is `WEATHER_SUMMARY_COMPACT`; 282 is the true next-free after DISTANCE_UNITS 281), inbox handler sanitizing to halo for any value other than 1, boot-load with same sanitize, `CASIO_DARK_SHADOW_STYLE` message key **appended at the end** of package.json messageKeys (id 10315; append-only proven by diff, no existing key renumbered), `DEFAULT_SETTINGS: 'halo'` + `casioDarkShadowStyleId()` + sendLayoutSetting in index.js. Three-place defaults audit passes (C halo / config.json "halo" / DEFAULT_SETTINGS 'halo').
+
+Clay: CASIO_PHANTOM relabeled "CASIO shadow/backdrop effect" (still the master off switch, description updated), new "Dark CASIO shadow style" select below it (halo/offset), hidden via `customClay` unless Time font = CASIO AND the effect toggle is on (same show/hide pattern as pip row + calendar dependents; also knocks out item 1 of the parked Clay-declutter list for the new select). TIME_FONT description no longer promises only an 88:88 backdrop.
+
+### Files changed
+
+- `jy-time/src/c/jy-time.c` (+60): enum + static; persist define 282; three-branch shadow block in `draw_casio_time_row_at` (light 88:88 / dark offset / dark halo, real-time pass untouched); inbox handler; boot-load.
+- `jy-time/src/pkjs/config.json` (+23): phantom toggle relabel + description; new style select; TIME_FONT description.
+- `jy-time/src/pkjs/index.js` (+27): DEFAULT_SETTINGS, converter, sendLayoutSetting, customClay visibility sync.
+- `jy-time/package.json` / `package-lock.json`: 1.40 to 1.41; messageKey appended last.
+
+### Verification
+
+- `pebble clean && pebble build` green for emery AND gabbro (clean rebuild required for the new message key). Warning set identical to 1.40: the two format-truncation sites, the unused `forecast_x_for_time`, and the linker RWX notice per platform. Nothing new. Emery free heap 80,098 bytes (unchanged ~80K; halo adds draw calls, no RAM).
+- 1.41 PBW appinfo verified: versionLabel 1.41, targetPlatforms emery+gabbro, new appKey present, staged at `release-assets/simple-pixel-style-1.41.0-emery-gabbro.pbw`. (No 1.40 PBW existed in release-assets to overwrite.)
+- Emulator steps from the Codex doc (dark-palette screenshots vs variant PNGs, Clay persistence toggling, light-regression capture) cannot run here (qemu-pebble libsndio failure, standing limitation). On-watch checks for Josh after upload: default dark CASIO time should match `casio-dark-variants/variant-b.png`; switching the new select to "True offset shadow" should match `variant-a.png` and survive a restart; light/inverted time band should look exactly like 1.40; effect toggle off = clean digits under both styles.
+- Not committed, not pushed, per the handoff. Working-tree deletions + package-lock user state preserved.
+- **SUPERSEDED same day, never shipped.** Josh reviewed a fourth Codex exploration (Variant D, hollow gray outline) and replaced filled Variant B as the default before 1.41 was committed or uploaded. The staged 1.41 PBW in `release-assets/` is dead; 1.42 below is the shipping release. All 1.41 plumbing (keys, persist 282, enum, Clay select, pkjs) carries into 1.42 unchanged.
+
+## 1.42: CASIO dark default becomes hollow gray outline (Variant D) (2026-07-21)
+
+Final form of the dark CASIO shadow work, per Codex's `CLAUDE_HANDOFF_casio_hollow_outline_final.md` (supersedes the B-default doc) with Josh's overrides: version 1.42 instead of the doc's 1.41, plus document + commit + push (the doc's no-commit guard was Codex's default, overridden by Josh directly).
+
+Only the value-0/default dark rendering and Clay copy changed vs the 1.41 working tree. Behavior matrix now: effect off = clean foreground time; light sections = filled LightGray 88:88, pixel-identical to 1.40; dark + "halo"/0 (default) = **Variant D hollow outline**: "88:88" drawn in DarkGray at the four cardinal 1 px offsets, then punched back to black at center (thin gray perimeter only), then the real time's 8-neighbor black moat, then white foreground time; dark + "offset"/1 = Variant A unchanged (time's own DarkGray shadow at +2/+2). The four-offset outline is deliberate (sparse pixel density for backlight readability); internal enum name `CASIO_DARK_SHADOW_HALO` and Clay value `'halo'` intentionally kept to avoid migration risk, only rendering + label changed. No blue/tinted colors anywhere (Variant C direction fully rejected).
+
+### Files changed (vs 1.40 HEAD, includes carried 1.41 plumbing)
+
+- `jy-time/src/c/jy-time.c`: applied `casio-dark-variants/variant-d-hollow-outline.patch` verbatim (apply-check passed; +12/-4 over the 1.41 tree) on top of the 1.41 enum/persist/inbox/boot/render work.
+- `jy-time/src/pkjs/config.json`: first option label now "Hollow gray 88:88 (default)", select description per the handoff. Offset option and visibility logic untouched.
+- `jy-time/package.json` / `package-lock.json`: 1.41 to 1.42 (lockfile both project-version fields).
+- `jy-time/src/pkjs/index.js`: unchanged this delta (1.41 plumbing only).
+
+### Verification
+
+- `pebble clean && pebble build` green for emery AND gabbro. Warning set identical to 1.40/1.41 (two format-truncation sites + unused `forecast_x_for_time`, line numbers shifted by the patch; linker RWX per platform). Emery free heap 80,010 bytes.
+- PBW staged: `release-assets/simple-pixel-style-1.42.0-emery-gabbro.pbw`; appinfo verified (versionLabel 1.42, emery+gabbro, `CASIO_DARK_SHADOW_STYLE` = 10315 unchanged).
+- Emulator visual pass not runnable here (standing qemu limitation); Codex's variant-d screenshot is the reference. On-watch after upload: dark CASIO default should match `casio-dark-variants/variant-d-hollow-outline.png` (hollow gray outlines, no blue), offset option should match `variant-a.png` and persist across restart, light/inverted band identical to 1.40, effect off = clean digits.
+- Committed and pushed to `main` per Josh's instruction (release commit, source files + this status doc; PBWs remain gitignored).

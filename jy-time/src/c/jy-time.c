@@ -65,6 +65,7 @@
 #define PERSIST_KEY_FITNESS_PIP_INVERT_BAR 279
 #define PERSIST_KEY_BATTERY_NUMBER_LARGE 280
 #define PERSIST_KEY_DISTANCE_UNITS 281
+#define PERSIST_KEY_CASIO_DARK_SHADOW_STYLE 282
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -515,6 +516,13 @@ typedef enum {
 
 static TimeFont s_time_font = TIME_FONT_CASIO;
 static bool s_casio_phantom = true;
+
+typedef enum {
+  CASIO_DARK_SHADOW_HALO = 0,
+  CASIO_DARK_SHADOW_OFFSET = 1,
+} CasioDarkShadowStyle;
+
+static CasioDarkShadowStyle s_casio_dark_shadow_style = CASIO_DARK_SHADOW_HALO;
 static GFont s_font_roboto;
 static GFont s_font_leco;
 static bool s_invert_weather = false;
@@ -1440,11 +1448,51 @@ static void draw_casio_time_row_at(GContext *ctx, int frame_y, int slot_bottom) 
       GRect(FACE_CONTENT_X, frame_y, FACE_CONTENT_W, TIME_FRAME_H);
   const bool show_ampm = casio_ampm_visible();
 
-  // Phantom segments: render all-segments-lit "88:88" backdrop first.
+  // Shadow/backdrop effect. Light sections keep the classic faded "88:88"
+  // backdrop. Dark sections use the selected style: halo keeps a sparse,
+  // hollow backdrop and cuts a 1 px black moat around the lit digits; offset
+  // drops the backdrop and draws the time's own shadow 2 px down-right.
   if (s_casio_phantom) {
-    graphics_context_set_text_color(ctx, casio_phantom_color());
-    graphics_draw_text(ctx, "88:88", font, time_frame,
-                       GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    if (section_uses_light_palette(s_draw_section)) {
+      graphics_context_set_text_color(ctx, casio_phantom_color());
+      graphics_draw_text(ctx, "88:88", font, time_frame,
+                         GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    } else if (s_casio_dark_shadow_style == CASIO_DARK_SHADOW_OFFSET) {
+      GRect shadow_frame = time_frame;
+      shadow_frame.origin.x += 2;
+      shadow_frame.origin.y += 2;
+      graphics_context_set_text_color(ctx, casio_phantom_color());
+      graphics_draw_text(ctx, s_time_buf_casio, font, shadow_frame,
+                         GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    } else {
+      const GPoint phantom_outline_offsets[] = {
+        GPoint(0, -1), GPoint(-1, 0), GPoint(1, 0), GPoint(0, 1),
+      };
+      graphics_context_set_text_color(ctx, casio_phantom_color());
+      for (size_t i = 0; i < ARRAY_LENGTH(phantom_outline_offsets); i++) {
+        GRect outline_frame = time_frame;
+        outline_frame.origin.x += phantom_outline_offsets[i].x;
+        outline_frame.origin.y += phantom_outline_offsets[i].y;
+        graphics_draw_text(ctx, "88:88", font, outline_frame,
+                           GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+      }
+      // Punch the segment centers back to black, leaving only their outlines.
+      graphics_context_set_text_color(ctx, GColorBlack);
+      graphics_draw_text(ctx, "88:88", font, time_frame,
+                         GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+      const GPoint halo_offsets[] = {
+        GPoint(-1, -1), GPoint(0, -1), GPoint(1, -1),
+        GPoint(-1,  0),                GPoint(1,  0),
+        GPoint(-1,  1), GPoint(0,  1), GPoint(1,  1),
+      };
+      for (size_t i = 0; i < ARRAY_LENGTH(halo_offsets); i++) {
+        GRect halo_frame = time_frame;
+        halo_frame.origin.x += halo_offsets[i].x;
+        halo_frame.origin.y += halo_offsets[i].y;
+        graphics_draw_text(ctx, s_time_buf_casio, font, halo_frame,
+                           GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+      }
+    }
   }
 
   // Real time on top.
@@ -5287,6 +5335,16 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     mark_face_dirty();
   }
 
+  t = dict_find(iter, MESSAGE_KEY_CASIO_DARK_SHADOW_STYLE);
+  if (t) {
+    int v = t->value->int32;
+    s_casio_dark_shadow_style = (v == CASIO_DARK_SHADOW_OFFSET)
+        ? CASIO_DARK_SHADOW_OFFSET : CASIO_DARK_SHADOW_HALO;
+    persist_write_int(PERSIST_KEY_CASIO_DARK_SHADOW_STYLE,
+                      (int)s_casio_dark_shadow_style);
+    mark_face_dirty();
+  }
+
   t = dict_find(iter, MESSAGE_KEY_INVERT_WEATHER);
   if (t) {
     s_invert_weather = t->value->int32 != 0;
@@ -6340,6 +6398,11 @@ static void load_persisted(void) {
   }
   if (persist_exists(PERSIST_KEY_CASIO_PHANTOM)) {
     s_casio_phantom = persist_read_bool(PERSIST_KEY_CASIO_PHANTOM);
+  }
+  if (persist_exists(PERSIST_KEY_CASIO_DARK_SHADOW_STYLE)) {
+    int v = persist_read_int(PERSIST_KEY_CASIO_DARK_SHADOW_STYLE);
+    s_casio_dark_shadow_style = (v == CASIO_DARK_SHADOW_OFFSET)
+        ? CASIO_DARK_SHADOW_OFFSET : CASIO_DARK_SHADOW_HALO;
   }
   if (persist_exists(PERSIST_KEY_INVERT_WEATHER)) {
     s_invert_weather = persist_read_bool(PERSIST_KEY_INVERT_WEATHER);

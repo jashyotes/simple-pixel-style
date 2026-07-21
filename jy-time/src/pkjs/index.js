@@ -146,6 +146,9 @@ function customClay() {
     var multiTzEnabledItem = clayCfg.getItemByMessageKey('MULTI_TZ_ENABLED');
     var calEventDatesItem = clayCfg.getItemByMessageKey('CAL_EVENT_DATES_ON');
     var pipRowItem = clayCfg.getItemByMessageKey('FITNESS_PIP_ROW_ON');
+    var timeFontItem = clayCfg.getItemByMessageKey('TIME_FONT');
+    var casioPhantomItem = clayCfg.getItemByMessageKey('CASIO_PHANTOM');
+    var casioDarkStyleItem = clayCfg.getItemByMessageKey('CASIO_DARK_SHADOW_STYLE');
 
     function syncColorMode() {
       var v = colorModeItem.get();
@@ -198,6 +201,17 @@ function customClay() {
       setGroupVisible(CAL_EVENT_DATE_DEPENDENT_KEYS, !!calEventDatesItem.get());
     }
 
+    function syncCasioDarkStyle() {
+      if (!casioDarkStyleItem) return;
+      var casioFont = timeFontItem ? timeFontItem.get() === '1' : true;
+      var effectOn = casioPhantomItem ? !!casioPhantomItem.get() : true;
+      if (casioFont && effectOn) {
+        casioDarkStyleItem.show();
+      } else {
+        casioDarkStyleItem.hide();
+      }
+    }
+
     colorModeItem.on('change', syncColorMode);
     shakeItem.on('change', syncShake);
     if (pipColorSourceItem) {
@@ -212,11 +226,18 @@ function customClay() {
     if (calEventDatesItem) {
       calEventDatesItem.on('change', syncCalEventDates);
     }
+    if (timeFontItem) {
+      timeFontItem.on('change', syncCasioDarkStyle);
+    }
+    if (casioPhantomItem) {
+      casioPhantomItem.on('change', syncCasioDarkStyle);
+    }
     syncColorMode();
     syncShake();
     syncPipRow();
     syncMultiTz();
     syncCalEventDates();
+    syncCasioDarkStyle();
   });
 }
 
@@ -252,6 +273,7 @@ var DEFAULT_SETTINGS = {
   DISTANCE_UNITS: 'auto',
   TIME_FONT: '1',
   CASIO_PHANTOM: true,
+  CASIO_DARK_SHADOW_STYLE: 'halo',
   INVERT_WEATHER: false,
   INVERT_MEETING_BAR: false,
   TOP_STEPS: true,
@@ -503,6 +525,10 @@ function distanceUnitsId(settings) {
       : (settings.DISTANCE_UNITS === 'imperial' ? 2 : 0);
 }
 
+function casioDarkShadowStyleId(settings) {
+  return settings.CASIO_DARK_SHADOW_STYLE === 'offset' ? 1 : 0;
+}
+
 function sendLayoutSetting(settings) {
   var dict = {};
   dict[keys.LIGHT_MODE] = settings.LIGHT_MODE ? 1 : 0;
@@ -518,6 +544,7 @@ function sendLayoutSetting(settings) {
   dict[keys.DISTANCE_UNITS] = distanceUnitsId(settings);
   dict[keys.TIME_FONT] = numberSetting(settings.TIME_FONT, 0, 0, 3);
   dict[keys.CASIO_PHANTOM] = settings.CASIO_PHANTOM ? 1 : 0;
+  dict[keys.CASIO_DARK_SHADOW_STYLE] = casioDarkShadowStyleId(settings);
   dict[keys.INVERT_WEATHER] = settings.INVERT_WEATHER ? 1 : 0;
   dict[keys.INVERT_MEETING_BAR] = settings.INVERT_MEETING_BAR ? 1 : 0;
   dict[keys.TOP_STEPS] = settings.TOP_STEPS ? 1 : 0;

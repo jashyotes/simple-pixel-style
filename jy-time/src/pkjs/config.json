@@ -189,14 +189,31 @@
             "value": "3"
           }
         ],
-        "description": "Default is the original Bitham bold serif. CASIO style renders the time as WV-58A LCD digits with a phantom 88:88 backdrop. Roboto is Pebble's built-in Roboto bold subset. LECO is Pebble's built-in LECO 32 bold numbers. Roboto and LECO anchor AM/PM bottom to the digit bottom."
+        "description": "Default is the original Bitham bold serif. CASIO style renders the time as WV-58A LCD digits with an optional shadow/backdrop treatment. Roboto is Pebble's built-in Roboto bold subset. LECO is Pebble's built-in LECO 32 bold numbers. Roboto and LECO anchor AM/PM bottom to the digit bottom."
       },
       {
         "type": "toggle",
         "messageKey": "CASIO_PHANTOM",
-        "label": "CASIO phantom 88:88 backdrop",
+        "label": "CASIO shadow/backdrop effect",
         "defaultValue": true,
-        "description": "Draws the faded 88:88 all-segments-lit backdrop behind the CASIO digits. Turn off for a clean foreground-only look. Only applies when Time font is CASIO style."
+        "description": "Enables the CASIO shadow treatment. Light time sections keep the classic faded 88:88 all-segments-lit backdrop; dark time sections use the shadow style selected below. Turn off for a clean foreground-only look. Only applies when Time font is CASIO style."
+      },
+      {
+        "type": "select",
+        "messageKey": "CASIO_DARK_SHADOW_STYLE",
+        "label": "Dark CASIO shadow style",
+        "defaultValue": "halo",
+        "options": [
+          {
+            "label": "Hollow gray 88:88 (default)",
+            "value": "halo"
+          },
+          {
+            "label": "True offset shadow",
+            "value": "offset"
+          }
+        ],
+        "description": "Hollow draws a sparse neutral-gray outline of the 88:88 LCD backdrop, with black centers and a black edge around the active digits. Offset draws the current time's own shadow 2 px down and right. Applies only to dark CASIO time sections when the effect above is on."
       },
       {
         "type": "toggle",
