@@ -202,18 +202,26 @@
         "type": "select",
         "messageKey": "CASIO_DARK_SHADOW_STYLE",
         "label": "Dark CASIO shadow style",
-        "defaultValue": "halo",
+        "defaultValue": "halo_shadow",
         "options": [
           {
-            "label": "Hollow gray 88:88 (default)",
-            "value": "halo"
+            "label": "Hollow 88:88 + Offset Shadow (default)",
+            "value": "halo_shadow"
           },
           {
-            "label": "True offset shadow",
+            "label": "Stippled 88:88 + Offset Shadow",
+            "value": "stipple"
+          },
+          {
+            "label": "True Offset Shadow Only",
             "value": "offset"
+          },
+          {
+            "label": "Hollow gray 88:88",
+            "value": "halo"
           }
         ],
-        "description": "Hollow draws a sparse neutral-gray outline of the 88:88 LCD backdrop, with black centers and a black edge around the active digits. Offset draws the current time's own shadow 2 px down and right. Applies only to dark CASIO time sections when the effect above is on."
+        "description": "Hollow + Offset Shadow draws the sparse neutral-gray outline of the 88:88 LCD backdrop plus the current time's own shadow 2 px down and right. Stippled keeps the full 88:88 backdrop faintly visible as outlined ghost segments with a sparse even dot fill, plus the same shadow. True Offset Shadow Only draws just the time's shadow with no 88:88 backdrop. Hollow gray 88:88 draws just the outline backdrop with no shadow. Applies only to dark CASIO time sections when the effect above is on."
       },
       {
         "type": "toggle",

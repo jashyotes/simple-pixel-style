@@ -520,9 +520,11 @@ static bool s_casio_phantom = true;
 typedef enum {
   CASIO_DARK_SHADOW_HALO = 0,
   CASIO_DARK_SHADOW_OFFSET = 1,
+  CASIO_DARK_SHADOW_STIPPLE = 2,
+  CASIO_DARK_SHADOW_HALO_SHADOW = 3,
 } CasioDarkShadowStyle;
 
-static CasioDarkShadowStyle s_casio_dark_shadow_style = CASIO_DARK_SHADOW_HALO;
+static CasioDarkShadowStyle s_casio_dark_shadow_style = CASIO_DARK_SHADOW_HALO_SHADOW;
 static GFont s_font_roboto;
 static GFont s_font_leco;
 static bool s_invert_weather = false;
@@ -1449,15 +1451,123 @@ static void draw_casio_time_row_at(GContext *ctx, int frame_y, int slot_bottom) 
   const bool show_ampm = casio_ampm_visible();
 
   // Shadow/backdrop effect. Light sections keep the classic faded "88:88"
-  // backdrop. Dark sections use the selected style: halo keeps a sparse,
-  // hollow backdrop and cuts a 1 px black moat around the lit digits; offset
-  // drops the backdrop and draws the time's own shadow 2 px down-right.
+  // backdrop. Dark sections use the selected style: halo-shadow (default)
+  // draws the hollow gray backdrop plus the time's own shadow 2 px
+  // down-right; stipple draws hollow ghost segments with an even 1-in-4
+  // dot fill (color platforms only, BW falls through to halo), a 1 px
+  // background moat around the lit digits, and the time's own shadow;
+  // halo keeps a sparse, hollow backdrop and cuts a 1 px black moat
+  // around the lit digits; offset draws only the time's own shadow.
   if (s_casio_phantom) {
     if (section_uses_light_palette(s_draw_section)) {
       graphics_context_set_text_color(ctx, casio_phantom_color());
       graphics_draw_text(ctx, "88:88", font, time_frame,
                          GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
     } else if (s_casio_dark_shadow_style == CASIO_DARK_SHADOW_OFFSET) {
+      GRect shadow_frame = time_frame;
+      shadow_frame.origin.x += 2;
+      shadow_frame.origin.y += 2;
+      graphics_context_set_text_color(ctx, casio_phantom_color());
+      graphics_draw_text(ctx, s_time_buf_casio, font, shadow_frame,
+                         GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+#if defined(PBL_COLOR)
+    } else if (s_casio_dark_shadow_style == CASIO_DARK_SHADOW_STIPPLE) {
+      // Ghost segments drawn as a hollow DarkGray rim (4-offset dilate of
+      // "88:88", the halo technique) with a sparse even interior: the
+      // sentinel fill covers the glyph body, then the framebuffer pass
+      // keeps a 1-in-4 dot lattice inside each segment and restores the
+      // rest to the section background, leaving the 1 px rim intact. A
+      // 1 px moat in the background color is then punched around the lit
+      // digits, and the time's own offset shadow draws solid on top.
+      const GPoint stipple_outline_offsets[] = {
+        GPoint(0, -1), GPoint(-1, 0), GPoint(1, 0), GPoint(0, 1),
+      };
+      graphics_context_set_text_color(ctx, casio_phantom_color());
+      for (size_t i = 0; i < ARRAY_LENGTH(stipple_outline_offsets); i++) {
+        GRect ghost_frame = time_frame;
+        ghost_frame.origin.x += stipple_outline_offsets[i].x;
+        ghost_frame.origin.y += stipple_outline_offsets[i].y;
+        graphics_draw_text(ctx, "88:88", font, ghost_frame,
+                           GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+      }
+      graphics_context_set_text_color(ctx, GColorShockingPink);
+      graphics_draw_text(ctx, "88:88", font, time_frame,
+                         GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+      GBitmap *fb = graphics_capture_frame_buffer(ctx);
+      if (fb) {
+        const GRect fb_bounds = gbitmap_get_bounds(fb);
+        const uint8_t bg_argb = draw_bg_color().argb;
+        int y_start = time_frame.origin.y;
+        if (y_start < 0) { y_start = 0; }
+        int y_end = time_frame.origin.y + time_frame.size.h;
+        if (y_end > fb_bounds.size.h) { y_end = fb_bounds.size.h; }
+        for (int y = y_start; y < y_end; y++) {
+          GBitmapDataRowInfo row = gbitmap_get_data_row_info(fb, y);
+          int x_start = time_frame.origin.x;
+          if (x_start < row.min_x) { x_start = row.min_x; }
+          int x_end = time_frame.origin.x + time_frame.size.w - 1;
+          if (x_end > row.max_x) { x_end = row.max_x; }
+          for (int x = x_start; x <= x_end; x++) {
+            if (row.data[x] == GColorShockingPinkARGB8) {
+              const uint8_t tile_idx = (uint8_t)(((y & 3) << 2) | (x & 3));
+              row.data[x] = ((0x0505u >> tile_idx) & 1u) ? GColorLightGrayARGB8
+                                                         : bg_argb;
+            }
+          }
+        }
+        graphics_release_frame_buffer(ctx, fb);
+      }
+      graphics_context_set_text_color(ctx, draw_bg_color());
+      const GPoint stipple_moat_offsets[] = {
+        GPoint(-1, -1), GPoint(0, -1), GPoint(1, -1),
+        GPoint(-1,  0),                GPoint(1,  0),
+        GPoint(-1,  1), GPoint(0,  1), GPoint(1,  1),
+      };
+      for (size_t i = 0; i < ARRAY_LENGTH(stipple_moat_offsets); i++) {
+        GRect moat_frame = time_frame;
+        moat_frame.origin.x += stipple_moat_offsets[i].x;
+        moat_frame.origin.y += stipple_moat_offsets[i].y;
+        graphics_draw_text(ctx, s_time_buf_casio, font, moat_frame,
+                           GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+      }
+      GRect shadow_frame = time_frame;
+      shadow_frame.origin.x += 2;
+      shadow_frame.origin.y += 2;
+      graphics_context_set_text_color(ctx, casio_phantom_color());
+      graphics_draw_text(ctx, s_time_buf_casio, font, shadow_frame,
+                         GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+#endif
+    } else if (s_casio_dark_shadow_style == CASIO_DARK_SHADOW_HALO_SHADOW) {
+      // Hollow gray 88:88 backdrop, duplicated verbatim from the halo
+      // branch below, plus the time's own offset shadow drawn between
+      // backdrop and foreground.
+      const GPoint phantom_outline_offsets[] = {
+        GPoint(0, -1), GPoint(-1, 0), GPoint(1, 0), GPoint(0, 1),
+      };
+      graphics_context_set_text_color(ctx, casio_phantom_color());
+      for (size_t i = 0; i < ARRAY_LENGTH(phantom_outline_offsets); i++) {
+        GRect outline_frame = time_frame;
+        outline_frame.origin.x += phantom_outline_offsets[i].x;
+        outline_frame.origin.y += phantom_outline_offsets[i].y;
+        graphics_draw_text(ctx, "88:88", font, outline_frame,
+                           GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+      }
+      // Punch the segment centers back to black, leaving only their outlines.
+      graphics_context_set_text_color(ctx, GColorBlack);
+      graphics_draw_text(ctx, "88:88", font, time_frame,
+                         GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+      const GPoint halo_offsets[] = {
+        GPoint(-1, -1), GPoint(0, -1), GPoint(1, -1),
+        GPoint(-1,  0),                GPoint(1,  0),
+        GPoint(-1,  1), GPoint(0,  1), GPoint(1,  1),
+      };
+      for (size_t i = 0; i < ARRAY_LENGTH(halo_offsets); i++) {
+        GRect halo_frame = time_frame;
+        halo_frame.origin.x += halo_offsets[i].x;
+        halo_frame.origin.y += halo_offsets[i].y;
+        graphics_draw_text(ctx, s_time_buf_casio, font, halo_frame,
+                           GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+      }
       GRect shadow_frame = time_frame;
       shadow_frame.origin.x += 2;
       shadow_frame.origin.y += 2;
@@ -5338,8 +5448,11 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   t = dict_find(iter, MESSAGE_KEY_CASIO_DARK_SHADOW_STYLE);
   if (t) {
     int v = t->value->int32;
-    s_casio_dark_shadow_style = (v == CASIO_DARK_SHADOW_OFFSET)
-        ? CASIO_DARK_SHADOW_OFFSET : CASIO_DARK_SHADOW_HALO;
+    s_casio_dark_shadow_style =
+        (v == CASIO_DARK_SHADOW_OFFSET) ? CASIO_DARK_SHADOW_OFFSET
+        : (v == CASIO_DARK_SHADOW_STIPPLE) ? CASIO_DARK_SHADOW_STIPPLE
+        : (v == CASIO_DARK_SHADOW_HALO_SHADOW) ? CASIO_DARK_SHADOW_HALO_SHADOW
+        : CASIO_DARK_SHADOW_HALO;
     persist_write_int(PERSIST_KEY_CASIO_DARK_SHADOW_STYLE,
                       (int)s_casio_dark_shadow_style);
     mark_face_dirty();
@@ -6401,8 +6514,11 @@ static void load_persisted(void) {
   }
   if (persist_exists(PERSIST_KEY_CASIO_DARK_SHADOW_STYLE)) {
     int v = persist_read_int(PERSIST_KEY_CASIO_DARK_SHADOW_STYLE);
-    s_casio_dark_shadow_style = (v == CASIO_DARK_SHADOW_OFFSET)
-        ? CASIO_DARK_SHADOW_OFFSET : CASIO_DARK_SHADOW_HALO;
+    s_casio_dark_shadow_style =
+        (v == CASIO_DARK_SHADOW_OFFSET) ? CASIO_DARK_SHADOW_OFFSET
+        : (v == CASIO_DARK_SHADOW_STIPPLE) ? CASIO_DARK_SHADOW_STIPPLE
+        : (v == CASIO_DARK_SHADOW_HALO_SHADOW) ? CASIO_DARK_SHADOW_HALO_SHADOW
+        : CASIO_DARK_SHADOW_HALO;
   }
   if (persist_exists(PERSIST_KEY_INVERT_WEATHER)) {
     s_invert_weather = persist_read_bool(PERSIST_KEY_INVERT_WEATHER);

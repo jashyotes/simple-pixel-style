@@ -273,7 +273,7 @@ var DEFAULT_SETTINGS = {
   DISTANCE_UNITS: 'auto',
   TIME_FONT: '1',
   CASIO_PHANTOM: true,
-  CASIO_DARK_SHADOW_STYLE: 'halo',
+  CASIO_DARK_SHADOW_STYLE: 'halo_shadow',
   INVERT_WEATHER: false,
   INVERT_MEETING_BAR: false,
   TOP_STEPS: true,
@@ -526,6 +526,8 @@ function distanceUnitsId(settings) {
 }
 
 function casioDarkShadowStyleId(settings) {
+  if (settings.CASIO_DARK_SHADOW_STYLE === 'halo_shadow') { return 3; }
+  if (settings.CASIO_DARK_SHADOW_STYLE === 'stipple') { return 2; }
   return settings.CASIO_DARK_SHADOW_STYLE === 'offset' ? 1 : 0;
 }
 

@@ -1013,3 +1013,44 @@ Only the value-0/default dark rendering and Clay copy changed vs the 1.41 workin
 - PBW staged: `release-assets/simple-pixel-style-1.42.0-emery-gabbro.pbw`; appinfo verified (versionLabel 1.42, emery+gabbro, `CASIO_DARK_SHADOW_STYLE` = 10315 unchanged).
 - Emulator visual pass not runnable here (standing qemu limitation); Codex's variant-d screenshot is the reference. On-watch after upload: dark CASIO default should match `casio-dark-variants/variant-d-hollow-outline.png` (hollow gray outlines, no blue), offset option should match `variant-a.png` and persist across restart, light/inverted band identical to 1.40, effect off = clean digits.
 - Committed and pushed to `main` per Josh's instruction (release commit, source files + this status doc; PBWs remain gitignored).
+
+## 1.43: CASIO dark default becomes "Stippled 88:88" always-on ghost (2026-07-25, staged, NOT yet committed)
+
+Third dark CASIO shadow style `CASIO_DARK_SHADOW_STIPPLE` (value 2), now the fresh-install default in all three default sites (C static initializer, config.json `defaultValue: "stipple"`, `DEFAULT_SETTINGS: 'stipple'`). Halo and offset rendering byte-identical and still selectable ("True offset shadow", "Hollow gray 88:88"); saved Clay choices preserved by the existing settings flow; unknown decode values still fall back to HALO at both decode sites (inbox + boot persist).
+
+Rendering (color platforms only via `#if defined(PBL_COLOR)`; gabbro falls through to hollow because a 1-bit framebuffer has no sentinel color): "88:88" drawn in sentinel GColorShockingPink into the standard time frame, framebuffer captured, sentinel pixels rewritten to a 50% checkerboard of `GColorLightGrayARGB8` with the rest restored to `draw_bg_color()`, released before the solid foreground time draws on top. Planned tuning if too faint on-wrist: LightGray to White at the single assignment site (no config knob).
+
+Implemented by Codex per the in-chat handoff; Claude reviewed the diff against spec. Two cosmetic wording drifts from the exact spec: C comments (content-identical, kept) and the Clay select description (restored to spec text by Claude). All functional hunks landed verbatim, including the offset-closes-into-stipple `#if` bracing.
+
+### Files changed (vs 1.42 HEAD)
+
+- `jy-time/src/c/jy-time.c`: enum value + STIPPLE static default, three-way decode at both sites (~5374 inbox, ~6439 boot), stipple branch in `draw_casio_time_row_at` (~1470).
+- `jy-time/src/pkjs/config.json`: select gains "Stippled 88:88 (default)" first, defaultValue "stipple", description covers all three styles.
+- `jy-time/src/pkjs/index.js`: `DEFAULT_SETTINGS` stipple + `casioDarkShadowStyleId` maps stipple to 2. Visibility logic untouched.
+- `jy-time/package.json` / `package-lock.json`: 1.42 to 1.43 (Claude; lockfile both project-version fields).
+
+### Verification
+
+- `pebble clean && pebble build` green for emery AND gabbro. Warning set identical to 1.42 baseline (format-truncation at 3025/3897, unused `forecast_x_for_time`, linker RWX per platform); zero new warnings. Emery free heap 79,754 bytes (80,010 at 1.42; stipple branch costs ~256 bytes of code).
+- Sanity greps: `CASIO_DARK_SHADOW_STIPPLE` x5, `ShockingPink` x2 in jy-time.c.
+- PBW staged: `release-assets/simple-pixel-style-1.43.0-emery-gabbro.pbw`; appinfo verified (versionLabel 1.43, emery+gabbro, `CASIO_DARK_SHADOW_STYLE` = 10315 unchanged).
+- On-watch after upload: dark CASIO default = full "88:88" ghost as a dim gray checkerboard behind solid digits, always visible; offset and hollow selectable and pixel-identical to 1.42; light band identical; effect off = clean digits.
+- NOT committed. Release commit + push happen after on-wrist sign-off (an ink tweak would belong in the same release commit).
+
+### Revision landed (2026-07-25, Codex handoff 2, reviewed and restaged)
+
+On-wrist feedback round: stipple density dropped from the 50% checkerboard to a 5-of-16 ordered dither (31.25%, the closest clean tile step to the requested 40% cut; keep-mask 0x0525 indexed by ((y & 3) << 2) | (x & 3), a strict subset of the old checkerboard so it only dims). The stipple style now ALSO draws the time's own 2 px offset shadow between ghost and foreground (draw order: stippled ghost, solid DarkGray shadow via the six lines duplicated verbatim from the offset branch after the framebuffer release, then white digits; the shadow is never dithered). Clay renames: "Stippled 88:88 + Offset Shadow (default)" and "True Offset Shadow Only"; enum values, Clay values, and pkjs plumbing unchanged ('stipple' stays 2), so the round-2 scope was jy-time.c + config.json only.
+
+Round-2 review: all six hunks landed verbatim, zero deviations; offset and halo branches byte-untouched. Independent clean build green emery + gabbro, warning set identical to baseline (line numbers shifted by the new hunks), emery free heap 79,702 bytes. Sanity greps: 0x0525 x1, shadow_frame x8, ShockingPink x2, CASIO_DARK_SHADOW_STIPPLE x5. PBW restaged over `release-assets/simple-pixel-style-1.43.0-emery-gabbro.pbw` (appinfo re-verified: 1.43, emery+gabbro, key 10315). Still NOT committed; awaiting on-wrist sign-off of the revised ghost.
+
+### Revision 2 landed (2026-07-25, Codex handoff 3, reviewed and restaged): outlined ghost segments
+
+On-wrist verdict on the round-2 build: dither reads clumpy (the 5-of-16 Bayer tile has an off-lattice fifth dot plus a blank fourth row, so it bands) and segment breaks of the 8 dissolve into blur (sparse fill cannot articulate 1-2 px inter-segment gaps). Fix: (1) mask 0x0525 to 0x0505, a perfect 2 px lattice at 25% density; (2) layer the halo-style 4-offset DarkGray outline dilate UNDER the sentinel fill so each ghost segment keeps a 1 px solid rim (sentinel covers the glyph body, so the rim survives the dither rewrite); (3) punch a 1 px moat around the lit digits in draw_bg_color() (halo technique, bg color instead of hardcoded black) before the shadow so digit edges stay crisp. Offset shadow unchanged, drawn last before the foreground. Whole stipple branch replaced in one hunk; Clay description first sentence updated to "outlined ghost segments with a sparse even dot fill". Scope: jy-time.c + config.json.
+
+Round-3 review: branch matches the spec line for line (verified by direct read, not just Codex's report); all seven sanity greps match (0x0505 x1, 0x0525 x0, stipple_outline_offsets x4, stipple_moat_offsets x4, shadow_frame x8, ShockingPink x2, CASIO_DARK_SHADOW_STIPPLE x5); halo/offset/light branches byte-untouched. Independent clean build green emery + gabbro, baseline warning set only, emery free heap 79,514 bytes (79,702 at round 2). PBW restaged over `release-assets/simple-pixel-style-1.43.0-emery-gabbro.pbw` (appinfo re-verified: 1.43, emery+gabbro, key 10315). Still NOT committed; awaiting on-wrist sign-off of the outlined ghost.
+
+### Fourth style: Hollow 88:88 + Offset Shadow, new default (2026-07-25, implemented by Claude directly)
+
+`CASIO_DARK_SHADOW_HALO_SHADOW` (value 3, Clay value 'halo_shadow'): the halo branch duplicated verbatim (outline dilate, black center punch, black moat, same local names in a sibling scope) plus the standard six shadow lines before the foreground. No framebuffer pass, so it compiles for all platforms and matches halo's existing BW behavior. Now the fresh-install default in all three default sites (C static initializer, config.json defaultValue "halo_shadow", DEFAULT_SETTINGS 'halo_shadow'); casioDarkShadowStyleId maps it to 3; both decode sites accept value 3 with unknown still falling back to HALO. Clay select order: Hollow 88:88 + Offset Shadow (default) / Stippled 88:88 + Offset Shadow / True Offset Shadow Only / Hollow gray 88:88.
+
+Done by Claude (pure duplication of proven blocks plus wiring, no visual judgment, so no Codex round trip). Verification: HALO_SHADOW x5, shadow_frame x12, halo_shadow x2 in index.js and x2 in config.json, config.json parses as valid JSON, clean build green emery + gabbro with baseline warnings only, emery free heap 79,182 bytes. PBW restaged (appinfo: 1.43, emery+gabbro, key 10315). NOT committed; release commit + push after on-wrist sign-off. Note: if the watch does not show the new default after upload, previously saved Clay settings are pinning the old choice; pick "Hollow 88:88 + Offset Shadow" in the config page once.
