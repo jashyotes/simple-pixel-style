@@ -66,6 +66,8 @@
 #define PERSIST_KEY_BATTERY_NUMBER_LARGE 280
 #define PERSIST_KEY_DISTANCE_UNITS 281
 #define PERSIST_KEY_CASIO_DARK_SHADOW_STYLE 282
+#define PERSIST_KEY_VIBRATE_ON_MEETING_START 283
+#define PERSIST_KEY_LAST_MEETING_VIBE_START 284
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -439,6 +441,7 @@ static char s_meeting_title[MEETING_SLOT_COUNT][64];
 static int32_t s_meeting_start[MEETING_SLOT_COUNT];
 static int32_t s_meeting_end[MEETING_SLOT_COUNT];
 static bool s_meeting_feed_active = false;
+static int32_t s_last_meeting_vibe_start = 0;
 static char s_alt_tz_label[24] = "LONDON";
 
 static uint8_t s_phone_battery_pct = 0;
@@ -530,6 +533,7 @@ static GFont s_font_leco;
 static bool s_invert_weather = false;
 static bool s_invert_meeting_bar = false;
 static bool s_vibrate_on_disconnect = true;
+static bool s_vibrate_on_meeting_start = true;
 static ColorMode s_color_mode = ColorModeBW;
 static ShakeBehavior s_shake_behavior = ShakeBehaviorFitnessRings;
 static bool s_shake_tap_subscribed = false;
@@ -4745,6 +4749,28 @@ static void format_event_date(int32_t epoch, char *buf, size_t len) {
   snprintf(buf, len, s_cal_event_date_no_zero ? "%d/%d" : "%02d/%02d", first, second);
 }
 
+// Double-buzz once when a meeting's start time arrives. Keyed on the start
+// epoch (persisted) so each meeting fires at most once even across restarts,
+// and gated to a 2-minute window so entering the face, a calendar push, or a
+// settings save mid-meeting stays silent for a meeting that started earlier.
+#define MEETING_START_VIBE_WINDOW_S 120
+
+static void maybe_fire_meeting_start_vibe(time_t now, int chosen) {
+  if (!s_vibrate_on_meeting_start) {
+    return;
+  }
+  int32_t start = s_meeting_start[chosen];
+  if (start == s_last_meeting_vibe_start) {
+    return;
+  }
+  if (now - start > MEETING_START_VIBE_WINDOW_S) {
+    return;
+  }
+  vibes_double_pulse();
+  s_last_meeting_vibe_start = start;
+  persist_write_int(PERSIST_KEY_LAST_MEETING_VIBE_START, start);
+}
+
 // Re-pick the bottom meeting bar from the phone-supplied event list using the
 // watch's own clock. Runs on every minute tick and on each calendar message, so
 // a finished meeting rolls to the next one without waiting on a phone push. A
@@ -4802,6 +4828,7 @@ static void recompute_meeting_bar(void) {
   }
 
   if (is_now) {
+    maybe_fire_meeting_start_vibe(now, chosen);
     if (datestr[0]) {
       if (s_cal_event_date_after_time) {
         snprintf(line, sizeof(line), "NOW %s | %s", datestr, s_meeting_title[chosen]);
@@ -5713,6 +5740,12 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     persist_write_bool(PERSIST_KEY_VIBRATE_ON_DISCONNECT, s_vibrate_on_disconnect);
   }
 
+  t = dict_find(iter, MESSAGE_KEY_VIBRATE_ON_MEETING_START);
+  if (t) {
+    s_vibrate_on_meeting_start = t->value->int32 != 0;
+    persist_write_bool(PERSIST_KEY_VIBRATE_ON_MEETING_START, s_vibrate_on_meeting_start);
+  }
+
   t = dict_find(iter, MESSAGE_KEY_TEMPERATURE_UNIT);
   if (t) {
     s_temperature_unit_celsius = t->value->int32 != 0;
@@ -6448,6 +6481,9 @@ static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_VIBRATE_ON_DISCONNECT)) {
     s_vibrate_on_disconnect = persist_read_bool(PERSIST_KEY_VIBRATE_ON_DISCONNECT);
   }
+  if (persist_exists(PERSIST_KEY_VIBRATE_ON_MEETING_START)) {
+    s_vibrate_on_meeting_start = persist_read_bool(PERSIST_KEY_VIBRATE_ON_MEETING_START);
+  }
   if (persist_exists(PERSIST_KEY_TEMP_UNIT)) {
     s_temperature_unit_celsius = persist_read_bool(PERSIST_KEY_TEMP_UNIT);
   }
@@ -6583,6 +6619,9 @@ static void load_persisted(void) {
     if (persist_exists(PERSIST_KEY_MEETING_END_BASE + i)) {
       s_meeting_end[i] = persist_read_int(PERSIST_KEY_MEETING_END_BASE + i);
     }
+  }
+  if (persist_exists(PERSIST_KEY_LAST_MEETING_VIBE_START)) {
+    s_last_meeting_vibe_start = persist_read_int(PERSIST_KEY_LAST_MEETING_VIBE_START);
   }
   if (persist_exists(PERSIST_KEY_CALENDAR_EVENT_TITLE_2)) {
     persist_read_string(PERSIST_KEY_CALENDAR_EVENT_TITLE_2, s_calendar_event_titles[0],

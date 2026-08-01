@@ -278,6 +278,7 @@ var DEFAULT_SETTINGS = {
   INVERT_MEETING_BAR: false,
   TOP_STEPS: true,
   VIBRATE_ON_DISCONNECT: true,
+  VIBRATE_ON_MEETING_START: true,
   VERBOSE_WEATHER: false,
   VERBOSE_WEATHER_STYLE: 'one_line',
   COMPLICATION_1: 'weather',
@@ -562,6 +563,7 @@ function sendLayoutSetting(settings) {
   dict[keys.FITNESS_PIP_SIZE] = fitnessPipSizeId(settings.FITNESS_PIP_SIZE);
   dict[keys.FITNESS_PIP_INVERT_BAR] = settings.FITNESS_PIP_INVERT_BAR ? 1 : 0;
   dict[keys.VIBRATE_ON_DISCONNECT] = settings.VIBRATE_ON_DISCONNECT ? 1 : 0;
+  dict[keys.VIBRATE_ON_MEETING_START] = settings.VIBRATE_ON_MEETING_START ? 1 : 0;
   dict[keys.VERBOSE_WEATHER] = settings.VERBOSE_WEATHER ? 1 : 0;
   dict[keys.VERBOSE_WEATHER_STYLE] = settings.VERBOSE_WEATHER_STYLE === 'large' ? 1 : 0;
   dict[keys.COMPLICATION_1] = complicationId(settings.COMPLICATION_1, COMPLICATION_IDS.weather);

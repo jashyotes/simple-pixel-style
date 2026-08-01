@@ -1014,7 +1014,7 @@ Only the value-0/default dark rendering and Clay copy changed vs the 1.41 workin
 - Emulator visual pass not runnable here (standing qemu limitation); Codex's variant-d screenshot is the reference. On-watch after upload: dark CASIO default should match `casio-dark-variants/variant-d-hollow-outline.png` (hollow gray outlines, no blue), offset option should match `variant-a.png` and persist across restart, light/inverted band identical to 1.40, effect off = clean digits.
 - Committed and pushed to `main` per Josh's instruction (release commit, source files + this status doc; PBWs remain gitignored).
 
-## 1.43: CASIO dark default becomes "Stippled 88:88" always-on ghost (2026-07-25, staged, NOT yet committed)
+## 1.43: CASIO dark default becomes "Stippled 88:88" always-on ghost (2026-07-25)
 
 Third dark CASIO shadow style `CASIO_DARK_SHADOW_STIPPLE` (value 2), now the fresh-install default in all three default sites (C static initializer, config.json `defaultValue: "stipple"`, `DEFAULT_SETTINGS: 'stipple'`). Halo and offset rendering byte-identical and still selectable ("True offset shadow", "Hollow gray 88:88"); saved Clay choices preserved by the existing settings flow; unknown decode values still fall back to HALO at both decode sites (inbox + boot persist).
 
@@ -1053,4 +1053,26 @@ Round-3 review: branch matches the spec line for line (verified by direct read, 
 
 `CASIO_DARK_SHADOW_HALO_SHADOW` (value 3, Clay value 'halo_shadow'): the halo branch duplicated verbatim (outline dilate, black center punch, black moat, same local names in a sibling scope) plus the standard six shadow lines before the foreground. No framebuffer pass, so it compiles for all platforms and matches halo's existing BW behavior. Now the fresh-install default in all three default sites (C static initializer, config.json defaultValue "halo_shadow", DEFAULT_SETTINGS 'halo_shadow'); casioDarkShadowStyleId maps it to 3; both decode sites accept value 3 with unknown still falling back to HALO. Clay select order: Hollow 88:88 + Offset Shadow (default) / Stippled 88:88 + Offset Shadow / True Offset Shadow Only / Hollow gray 88:88.
 
-Done by Claude (pure duplication of proven blocks plus wiring, no visual judgment, so no Codex round trip). Verification: HALO_SHADOW x5, shadow_frame x12, halo_shadow x2 in index.js and x2 in config.json, config.json parses as valid JSON, clean build green emery + gabbro with baseline warnings only, emery free heap 79,182 bytes. PBW restaged (appinfo: 1.43, emery+gabbro, key 10315). NOT committed; release commit + push after on-wrist sign-off. Note: if the watch does not show the new default after upload, previously saved Clay settings are pinning the old choice; pick "Hollow 88:88 + Offset Shadow" in the config page once.
+Done by Claude (pure duplication of proven blocks plus wiring, no visual judgment, so no Codex round trip). Verification: HALO_SHADOW x5, shadow_frame x12, halo_shadow x2 in index.js and x2 in config.json, config.json parses as valid JSON, clean build green emery + gabbro with baseline warnings only, emery free heap 79,182 bytes. PBW restaged (appinfo: 1.43, emery+gabbro, key 10315). Note: if the watch does not show the new default after upload, previously saved Clay settings are pinning the old choice; pick "Hollow 88:88 + Offset Shadow" in the config page once.
+
+RELEASED: commit `6d41f93` "Release simple-pixel-style 1.43" pushed to main 2026-07-25 (five source files + this status doc; PBWs remain gitignored). User uploads `release-assets/simple-pixel-style-1.43.0-emery-gabbro.pbw` to the Pebble Appstore.
+
+## 1.44: Vibrate when a meeting starts (2026-07-29, shipped)
+
+New Clay toggle in the Calendar section ("Vibrate when a meeting starts", default ON): the watch fires `vibes_double_pulse()` the minute a calendar event's start time arrives. No new data path; the trigger rides the existing `recompute_meeting_bar()` NOW decision over the already-persisted `s_meeting_start[]` epochs.
+
+Trigger design: helper `maybe_fire_meeting_start_vibe(now, chosen)` called as the first statement of the `is_now` branch. Dedupe is keyed on the meeting's start epoch and persisted (`PERSIST_KEY_LAST_MEETING_VIBE_START` 284), so none of the seven `recompute_meeting_bar()` call sites (minute tick, calendar push, four event-date settings blocks, window_load at boot) can double-fire, including across restarts. A 120s freshness window keeps cold entry silent for meetings that started earlier (launching the face or a calendar refresh mid-meeting does not buzz). Back-to-back meetings buzz at each start; identical starts buzz once; a rescheduled meeting buzzes again at its new start. No `quiet_time_is_active()` gate, matching the disconnect and fitness-goal vibes. All-day events never reach the meeting slots (pkjs drops VALUE=DATE events), so no midnight buzzes.
+
+### Files changed (vs 1.43 HEAD)
+
+- `jy-time/package.json`: version 1.44; `VIBRATE_ON_MEETING_START` appended LAST in messageKeys (existing ordinals preserved; new key = 10316, `CASIO_DARK_SHADOW_STYLE` still 10315).
+- `jy-time/src/pkjs/config.json`: toggle between "Look ahead" and "No-events label", defaultValue true.
+- `jy-time/src/pkjs/index.js`: `DEFAULT_SETTINGS.VIBRATE_ON_MEETING_START: true` + 0/1 send in `sendLayoutSetting()` (runs on both ready and webviewclosed; webviewclosed handler itself untouched per the clay-settings rule).
+- `jy-time/src/c/jy-time.c`: persist keys 283 (toggle bool) + 284 (dedupe int32, appended after prior max 282), statics `s_vibrate_on_meeting_start` / `s_last_meeting_vibe_start`, the helper + call site, inbox receive+persist block after VIBRATE_ON_DISCONNECT, both `load_persisted()` reads (`persist_exists`-guarded; loads run before window_load's recompute, so the dedupe value is in place before the first vibe evaluation).
+
+### Verification
+
+- `pebble clean && pebble build` green for emery AND gabbro (the first build failed only because waf served a stale `message_keys.auto.h`; clean fixed it). Baseline warning set only; zero new warnings.
+- Emulator install stalled twice (240s timeouts, processes killed with bracketed pkill). Cap of 2 reached, so per project rule: build green + full diff review stand in for the render check. Diff reviewed clean (types, scope of `t`, non-negative window math guaranteed by `is_now`, persist write only on actual fire).
+- PBW staged: `release-assets/simple-pixel-style-1.44.0-emery-gabbro.pbw`; appinfo verified (versionLabel 1.44, emery+gabbro, ordinals above).
+- SHIPPED: confirmed live on-watch 2026-07-31. Release commit `Release simple-pixel-style 1.44: Vibrate when a meeting starts` made 2026-07-31 (four source files + package-lock + this status doc; PBW stays gitignored in `release-assets/`). Commit is local, not yet pushed.

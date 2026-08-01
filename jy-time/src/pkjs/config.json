@@ -760,6 +760,13 @@
         ]
       },
       {
+        "type": "toggle",
+        "messageKey": "VIBRATE_ON_MEETING_START",
+        "label": "Vibrate when a meeting starts",
+        "defaultValue": true,
+        "description": "Double-buzzes the watch the moment a calendar event's start time arrives."
+      },
+      {
         "type": "input",
         "messageKey": "EMPTY_EVENT_LABEL",
         "label": "No-events label",
