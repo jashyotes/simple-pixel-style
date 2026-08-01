@@ -56,8 +56,8 @@
         "type": "toggle",
         "messageKey": "FITNESS_PIP_INVERT_BAR",
         "label": "Invert pip bar",
-        "defaultValue": true,
-        "description": "Swaps the pip strip colors (and 2px below) relative to the theme, like the bars above. Applies only when the pip row is on."
+        "defaultValue": false,
+        "description": "Off: the pip strip shares the top status bar's color and blends into it. On: the strip flips to the opposite color for a contrasting Tuxedo band. Applies only when the pip row is on."
       },
       {
         "type": "toggle",
@@ -189,7 +189,7 @@
             "value": "3"
           }
         ],
-        "description": "Default is the original Bitham bold serif. CASIO style renders the time as WV-58A LCD digits with an optional shadow/backdrop treatment. Roboto is Pebble's built-in Roboto bold subset. LECO is Pebble's built-in LECO 32 bold numbers. Roboto and LECO anchor AM/PM bottom to the digit bottom."
+        "description": "Default is the original Bitham bold serif. CASIO style renders the time as WV-58A LCD digits with an optional shadow/backdrop treatment. Roboto is Pebble's built-in Roboto bold subset. LECO is Pebble's built-in LECO 32 bold numbers. Roboto and LECO anchor AM/PM bottom to the digit bottom. LECO is not available on round watches; it falls back to Default there."
       },
       {
         "type": "toggle",
@@ -202,10 +202,10 @@
         "type": "select",
         "messageKey": "CASIO_DARK_SHADOW_STYLE",
         "label": "Dark CASIO shadow style",
-        "defaultValue": "halo_shadow",
+        "defaultValue": "offset",
         "options": [
           {
-            "label": "Hollow 88:88 + Offset Shadow (default)",
+            "label": "Hollow 88:88 + Offset Shadow",
             "value": "halo_shadow"
           },
           {
@@ -213,7 +213,7 @@
             "value": "stipple"
           },
           {
-            "label": "True Offset Shadow Only",
+            "label": "True Offset Shadow Only (default)",
             "value": "offset"
           },
           {
@@ -689,9 +689,9 @@
       {
         "type": "select",
         "messageKey": "WEATHER_PROVIDER",
-        "label": "NWS Forecast provider",
+        "label": "Forecast provider",
         "defaultValue": "open_meteo",
-        "description": "When set to NWS, the NWS Forecast shake overlay pulls hourly + narrative data from api.weather.gov. NWS only covers the United States. The main face and Detailed Weather overlay always use Open-Meteo.",
+        "description": "Open-Meteo works worldwide. NWS (api.weather.gov) covers the United States only. When set to NWS, the watch follows NWS for temperature, summary, icon, rain chance, high/low, wind, and the Detailed Weather graph, and the NWS Forecast shake overlay pulls its hourly + narrative data. Feels like, UV index, and sunrise/sunset always come from Open-Meteo.",
         "options": [
           {
             "label": "Open-Meteo only (global, default)",
@@ -702,6 +702,18 @@
             "value": "nws"
           }
         ]
+      },
+      {
+        "type": "input",
+        "messageKey": "NWS_ZIP",
+        "label": "NWS location ZIP",
+        "defaultValue": "",
+        "attributes": {
+          "type": "text",
+          "maxLength": 5,
+          "placeholder": "36542"
+        },
+        "description": "Optional. US ZIP code for the NWS gridpoint lookup (e.g. 36542 = Gulf Shores, AL). Leave blank to use phone GPS or the manual coordinates above. Phone GPS often lands one NWS grid square off; entering a ZIP locks the forecast to that area."
       }
     ]
   },
@@ -1026,7 +1038,7 @@
       {
         "type": "heading",
         "id": "shake-fitness-heading",
-        "defaultValue": "Fitness rings settings"
+        "defaultValue": "Shake: Fitness rings"
       },
       {
         "type": "toggle",
@@ -1080,6 +1092,11 @@
         }
       },
       {
+        "type": "heading",
+        "id": "goal-vibe-heading",
+        "defaultValue": "Step goal vibration"
+      },
+      {
         "type": "toggle",
         "messageKey": "FITNESS_VIBRATE_ON_GOAL",
         "label": "Vibrate when daily step goal is reached",
@@ -1130,7 +1147,7 @@
       {
         "type": "heading",
         "id": "shake-calendar-heading",
-        "defaultValue": "Calendar events settings"
+        "defaultValue": "Shake: Calendar events"
       },
       {
         "type": "select",
@@ -1156,7 +1173,7 @@
       {
         "type": "heading",
         "id": "shake-yourday-heading",
-        "defaultValue": "Your Day settings"
+        "defaultValue": "Shake: Your Day"
       },
       {
         "type": "select",
@@ -1257,7 +1274,7 @@
       {
         "type": "heading",
         "id": "shake-tide-heading",
-        "defaultValue": "Tide chart settings"
+        "defaultValue": "Shake: Tide chart"
       },
       {
         "type": "input",
@@ -1312,7 +1329,7 @@
       {
         "type": "heading",
         "id": "shake-prices-heading",
-        "defaultValue": "Stocks & Crypto Prices settings"
+        "defaultValue": "Shake: Stocks & Crypto Prices"
       },
       {
         "type": "input",
@@ -1436,7 +1453,7 @@
       {
         "type": "heading",
         "id": "shake-alttz-heading",
-        "defaultValue": "Alt timezone settings"
+        "defaultValue": "Shake: Alt timezone"
       },
       {
         "type": "input",
@@ -1468,7 +1485,7 @@
       {
         "type": "heading",
         "id": "shake-nws-heading",
-        "defaultValue": "NWS Forecast settings"
+        "defaultValue": "Shake: NWS Forecast"
       },
       {
         "type": "select",
@@ -1486,18 +1503,6 @@
             "value": "narrative"
           }
         ]
-      },
-      {
-        "type": "input",
-        "messageKey": "NWS_ZIP",
-        "label": "NWS location ZIP",
-        "defaultValue": "",
-        "attributes": {
-          "type": "text",
-          "maxLength": 5,
-          "placeholder": "36542"
-        },
-        "description": "Optional. US ZIP code for the NWS gridpoint lookup (e.g. 36542 = Gulf Shores, AL). Leave blank to use phone GPS or the global Weather lat/lon. Phone GPS often lands one NWS grid square off; entering a ZIP locks the forecast to that area."
       }
     ]
   },

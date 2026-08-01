@@ -246,7 +246,7 @@ static uint32_t s_nws_last_update_t = 0;
 #define TIME_VISUAL_BOTTOM 132
 #define VERBOSE_WEATHER_LARGE_Y 158
 #define VERBOSE_WEATHER_SMALL_Y 174
-#define VERBOSE_WEATHER_CENTER_Y 188
+#define VERBOSE_WEATHER_CENTER_Y 195
 #define EVENT_SEPARATOR_Y 216
 #define EVENT_SEPARATOR_X1 38
 #define EVENT_SEPARATOR_X2 222
@@ -527,7 +527,7 @@ typedef enum {
   CASIO_DARK_SHADOW_HALO_SHADOW = 3,
 } CasioDarkShadowStyle;
 
-static CasioDarkShadowStyle s_casio_dark_shadow_style = CASIO_DARK_SHADOW_HALO_SHADOW;
+static CasioDarkShadowStyle s_casio_dark_shadow_style = CASIO_DARK_SHADOW_OFFSET;
 static GFont s_font_roboto;
 static GFont s_font_leco;
 static bool s_invert_weather = false;
@@ -584,7 +584,7 @@ static uint8_t  s_fitness_pip_size           = 1;
 // only): not inverted = matches the base theme (dark in dark mode), inverted =
 // the opposite. Defaults ON to match the date bar's default, so the band
 // blends with the date bar out of the box.
-static bool     s_fitness_pip_invert_bar     = true;
+static bool     s_fitness_pip_invert_bar     = false;
 static int s_fitness_overlay_duration_ms = 5000;
 static int s_calendar_shake_event_count = 3;
 static int s_day_event_hours_bitmap = 0;
@@ -710,6 +710,21 @@ static bool section_inverted(ColorSection section) {
 }
 
 static bool section_uses_light_palette(ColorSection section) {
+  if (s_color_mode == ColorModeColor) {
+    // Color mode ignores the B&W inversion toggles, so light/dark must
+    // follow the picked background's luminance instead. GColor channels
+    // are 2 bits each; the sum ranges 0 (black) to 9 (white). Without
+    // this, a black-background section still took the light branch and
+    // the CASIO time drew its faded "88:88" backdrop over black.
+    int section_id = (int)section;
+    if (section_id < (int)ColorSectionBase ||
+        section_id > (int)ColorSectionMeetingBar) {
+      section_id = (int)ColorSectionBase;
+    }
+    GColor bg = GColorFromHEX((uint32_t)s_color_section_bg[section_id]);
+    int lum = ((bg.argb >> 4) & 0x3) + ((bg.argb >> 2) & 0x3) + (bg.argb & 0x3);
+    return lum >= 5;
+  }
   return s_light_mode_enabled != section_inverted(section);
 }
 
@@ -2036,23 +2051,28 @@ static void draw_fitness_pip_row(GContext *ctx) {
   // large y=31..41 (h=11), full width. It is always painted in Tuxedo so the
   // strip carries its own theme color; when that matches the date bar it blends.
   bool pip_tuxedo   = (s_color_mode != ColorModeColor);
-  bool pip_inverted = s_fitness_pip_invert_bar;
-  GColor pip_band_bg  = pip_inverted ? theme_fg_color() : theme_bg_color();
-  GColor pip_theme_fg = pip_inverted ? theme_bg_color() : theme_fg_color();
+  // The band extends the top status bar (steps/BT/battery): it shares that
+  // bar's tuxedo color so the strip never reads as a contrasting bar above
+  // and below the pips (a white band on a black face was the failure). The
+  // invert toggle flips relative to the TOP BAR, not the global theme.
+  bool top_bar_light  = s_light_mode_enabled != s_invert_top_bar;
+  bool band_light     = s_fitness_pip_invert_bar ? !top_bar_light : top_bar_light;
+  GColor pip_band_bg  = band_light ? GColorWhite : GColorBlack;
+  GColor pip_theme_fg = band_light ? GColorBlack : GColorWhite;
   if (pip_tuxedo) {
     bool bar_large = (s_fitness_pip_size == 1);
     int bar_top = (bar_large ? 31 : 33) + TOP_BAR_OFFSET_Y;
     int bar_h   = bar_large ? 11 : 7;
     // Small-pip band normally starts at y=33, 2px below the top-bar boundary
     // (y=31), which leaves a 2px strip of the base background exposed between
-    // the top status bar and the band. When the pip band and the top bar
-    // resolve to the SAME tuxedo color (both inverted, or both not inverted),
-    // that strip reads as a seam: a white line on a dark face, a black line on
-    // a light face. Pull the small band's top up to y=31 so it meets the top
-    // bar and blends into one continuous block, exactly like the large band
-    // (which already starts at y=31). When the two sections differ in color,
-    // keep the 2px gap; the color change there is intentional, not a seam.
-    if (!bar_large && (s_fitness_pip_invert_bar == s_invert_top_bar)) {
+    // the top status bar and the band. When the band shares the top bar's
+    // color (invert off, the default), that strip reads as a seam: a white
+    // line on a dark face, a black line on a light face. Pull the small
+    // band's top up to y=31 so it meets the top bar and blends into one
+    // continuous block, exactly like the large band (which already starts
+    // at y=31). When the invert override makes the band contrast, keep the
+    // 2px gap; the color change there is intentional, not a seam.
+    if (!bar_large && !s_fitness_pip_invert_bar) {
       bar_top = 31 + TOP_BAR_OFFSET_Y;
       bar_h   = 9;  // bottom stays at y=39 (31 + 9 - 1)
     }
@@ -4529,9 +4549,13 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
     draw_time_row(ctx);
 
     set_draw_section(ColorSectionWeather);
-    const int compact_weather_bottom = compact_weather_meeting_inverted
-        ? meeting_bar_y
-        : weather_y + weather_h;
+    // Color mode tiles the weather band down to the meeting bar: the base
+    // background must never show between picked section colors (a black gap
+    // contacted the circles' bottom edge on gabbro).
+    const int compact_weather_bottom =
+        (compact_weather_meeting_inverted || s_color_mode == ColorModeColor)
+            ? meeting_bar_y
+            : weather_y + weather_h;
     fill_inverted_section_background(
         ctx, ColorSectionWeather,
         GRect(0, weather_y, SCREEN_W, compact_weather_bottom - weather_y));
@@ -5457,7 +5481,13 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     } else if (v == TIME_FONT_ROBOTO) {
       s_time_font = TIME_FONT_ROBOTO;
     } else if (v == TIME_FONT_LECO) {
+#if defined(PBL_ROUND)
+      // LECO 32 renders as an illegible small label on the round face;
+      // fall back to the default font there. Rect platforms keep LECO.
+      s_time_font = TIME_FONT_DEFAULT;
+#else
       s_time_font = TIME_FONT_LECO;
+#endif
     } else {
       s_time_font = TIME_FONT_DEFAULT;
     }
@@ -6540,7 +6570,12 @@ static void load_persisted(void) {
     } else if (v == TIME_FONT_ROBOTO) {
       s_time_font = TIME_FONT_ROBOTO;
     } else if (v == TIME_FONT_LECO) {
+#if defined(PBL_ROUND)
+      // Same round fallback as the inbox decode site.
+      s_time_font = TIME_FONT_DEFAULT;
+#else
       s_time_font = TIME_FONT_LECO;
+#endif
     } else {
       s_time_font = TIME_FONT_DEFAULT;
     }

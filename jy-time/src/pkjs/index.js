@@ -51,12 +51,23 @@ function customClay() {
     'FITNESS_PIP_COLOR_DIST'
   ];
 
+  // Fitness-ring rows only the shake overlay uses (ring on/off toggles).
+  // Targets and ring colors are shared with other consumers; see
+  // FITNESS_STEPS_TARGET_KEYS / FITNESS_RINGS_SHARED_KEYS below.
   var SHAKE_FITNESS_ITEM_KEYS = [
     'shake-fitness-heading',
     'FITNESS_RING_STEPS_ON',
     'FITNESS_RING_ACTIVE_ON',
-    'FITNESS_RING_CALORIES_ON',
-    'FITNESS_TARGET_STEPS',
+    'FITNESS_RING_CALORIES_ON'
+  ];
+
+  // The steps target drives the shake overlay, the pip row fill, and the
+  // fitness-rings bubble complication. The other targets and the ring
+  // colors drive the overlay and the bubble complication.
+  var FITNESS_STEPS_TARGET_KEYS = [
+    'FITNESS_TARGET_STEPS'
+  ];
+  var FITNESS_RINGS_SHARED_KEYS = [
     'FITNESS_TARGET_ACTIVE_MIN',
     'FITNESS_TARGET_CALORIES',
     'FITNESS_COLOR_STEPS',
@@ -72,11 +83,12 @@ function customClay() {
   var SHAKE_YOURDAY_ITEM_KEYS = [
     'shake-yourday-heading',
     'YOUR_DAY_WINDOW_MODE',
-    'YOUR_DAY_WINDOW_HOURS',
-    'YOUR_DAY_START_HOUR',
-    'YOUR_DAY_END_HOUR',
     'YOUR_DAY_HALF_HOUR_PIPS'
   ];
+  // Mode-dependent Your Day rows: rolling hours only in Rolling mode,
+  // fixed start/end only in Fixed mode.
+  var YOURDAY_ROLLING_KEYS = ['YOUR_DAY_WINDOW_HOURS'];
+  var YOURDAY_FIXED_KEYS = ['YOUR_DAY_START_HOUR', 'YOUR_DAY_END_HOUR'];
 
   var SHAKE_ALTTZ_ITEM_KEYS = [
     'shake-alttz-heading',
@@ -87,13 +99,15 @@ function customClay() {
   var SHAKE_TIDE_ITEM_KEYS = [
     'shake-tide-heading',
     'TIDE_STATION_ID',
-    'TIDE_UNITS'
+    'TIDE_UNITS',
+    'TIDE_VIEW_HOURS'
   ];
 
+  // NWS_ZIP lives in the Weather section (it also pins the gridpoint for
+  // the NWS weather provider); syncNwsZip gates it on either consumer.
   var SHAKE_NWS_ITEM_KEYS = [
     'shake-nws-heading',
-    'NWS_FORECAST_STYLE',
-    'NWS_ZIP'
+    'NWS_FORECAST_STYLE'
   ];
 
   var SHAKE_PRICES_ITEM_KEYS = [
@@ -123,6 +137,26 @@ function customClay() {
     'CAL_EVENT_DATE_NO_ZERO'
   ];
 
+  // Calendar rows that do nothing while "Enable bottom event" is off.
+  var CALENDAR_CHILD_KEYS = [
+    'CALENDAR_ICS_URL',
+    'CALENDAR_ICS_URL_2',
+    'CALENDAR_LOOKAHEAD_HOURS',
+    'VIBRATE_ON_MEETING_START',
+    'EMPTY_EVENT_LABEL',
+    'CAL_EVENT_DATES_ON'
+  ];
+
+  // Weather rows that do nothing while "Enable weather" is off. Manual
+  // lat/lon and NWS_ZIP are refined further by their own syncs.
+  var WEATHER_BASE_KEYS = [
+    'WEATHER_SOURCE',
+    'TEMPERATURE_UNIT',
+    'WEATHER_REFRESH_MIN',
+    'WEATHER_PROVIDER'
+  ];
+  var WEATHER_MANUAL_KEYS = ['WEATHER_LAT', 'WEATHER_LON'];
+
   function getItem(key) {
     return clayCfg.getItemById(key) || clayCfg.getItemByMessageKey(key);
   }
@@ -149,6 +183,17 @@ function customClay() {
     var timeFontItem = clayCfg.getItemByMessageKey('TIME_FONT');
     var casioPhantomItem = clayCfg.getItemByMessageKey('CASIO_PHANTOM');
     var casioDarkStyleItem = clayCfg.getItemByMessageKey('CASIO_DARK_SHADOW_STYLE');
+    var weatherEnabledItem = clayCfg.getItemByMessageKey('WEATHER_ENABLED');
+    var weatherSourceItem = clayCfg.getItemByMessageKey('WEATHER_SOURCE');
+    var weatherProviderItem = clayCfg.getItemByMessageKey('WEATHER_PROVIDER');
+    var calendarEnabledItem = clayCfg.getItemByMessageKey('CALENDAR_ENABLED');
+    var verboseWeatherItem = clayCfg.getItemByMessageKey('VERBOSE_WEATHER');
+    var yourDayModeItem = clayCfg.getItemByMessageKey('YOUR_DAY_WINDOW_MODE');
+    var complicationItems = [
+      clayCfg.getItemByMessageKey('COMPLICATION_1'),
+      clayCfg.getItemByMessageKey('COMPLICATION_2'),
+      clayCfg.getItemByMessageKey('COMPLICATION_3')
+    ];
 
     function syncColorMode() {
       var v = colorModeItem.get();
@@ -178,6 +223,43 @@ function customClay() {
       var on = pipRowItem ? !!pipRowItem.get() : true;
       setGroupVisible(FITNESS_PIP_BASE_KEYS, on);
       syncPipColorPickers();
+      syncFitnessShared();
+    }
+
+    function ringsBubbleSelected() {
+      for (var i = 0; i < complicationItems.length; i++) {
+        if (complicationItems[i] && complicationItems[i].get() === 'fitness_rings') {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Targets and ring colors follow every consumer, not just the shake
+    // overlay: the pip row fills against the steps target, and the
+    // fitness-rings bubble complication renders from targets + colors.
+    function syncFitnessShared() {
+      var overlayOn = shakeItem.get() === 'fitness_rings';
+      var bubbleOn = ringsBubbleSelected();
+      var pipOn = pipRowItem ? !!pipRowItem.get() : false;
+      setGroupVisible(FITNESS_STEPS_TARGET_KEYS, overlayOn || bubbleOn || pipOn);
+      setGroupVisible(FITNESS_RINGS_SHARED_KEYS, overlayOn || bubbleOn);
+    }
+
+    function syncYourDayMode() {
+      var overlayOn = shakeItem.get() === 'your_day';
+      var mode = yourDayModeItem ? yourDayModeItem.get() : 'rolling';
+      setGroupVisible(YOURDAY_ROLLING_KEYS, overlayOn && mode === 'rolling');
+      setGroupVisible(YOURDAY_FIXED_KEYS, overlayOn && mode === 'fixed');
+    }
+
+    // NWS_ZIP has two consumers: the NWS Forecast shake overlay and the
+    // NWS weather provider. Visible when weather is on and either is active.
+    function syncNwsZip() {
+      var weatherOn = weatherEnabledItem ? !!weatherEnabledItem.get() : true;
+      var provNws = weatherProviderItem && weatherProviderItem.get() === 'nws';
+      var overlayOn = shakeItem.get() === 'nws_forecast';
+      setGroupVisible(['NWS_ZIP'], weatherOn && (provNws || overlayOn));
     }
 
     function syncShake() {
@@ -189,6 +271,15 @@ function customClay() {
       setGroupVisible(SHAKE_TIDE_ITEM_KEYS, v === 'tide_chart');
       setGroupVisible(SHAKE_PRICES_ITEM_KEYS, v === 'prices');
       setGroupVisible(SHAKE_NWS_ITEM_KEYS, v === 'nws_forecast');
+      // The step-goal vibe pair works regardless of the selected overlay,
+      // so it never hides; give it its own heading whenever the Fitness
+      // rings heading above it is hidden.
+      setGroupVisible(['goal-vibe-heading'], v !== 'fitness_rings');
+      // Overlay duration means nothing when shake is Off.
+      setGroupVisible(['FITNESS_OVERLAY_DURATION_S'], v !== 'off');
+      syncFitnessShared();
+      syncYourDayMode();
+      syncNwsZip();
     }
 
     function syncMultiTz() {
@@ -198,18 +289,44 @@ function customClay() {
 
     function syncCalEventDates() {
       if (!calEventDatesItem) return;
-      setGroupVisible(CAL_EVENT_DATE_DEPENDENT_KEYS, !!calEventDatesItem.get());
+      var calOn = calendarEnabledItem ? !!calendarEnabledItem.get() : true;
+      setGroupVisible(CAL_EVENT_DATE_DEPENDENT_KEYS, calOn && !!calEventDatesItem.get());
     }
 
-    function syncCasioDarkStyle() {
-      if (!casioDarkStyleItem) return;
+    function syncCalendarSection() {
+      var on = calendarEnabledItem ? !!calendarEnabledItem.get() : true;
+      setGroupVisible(CALENDAR_CHILD_KEYS, on);
+      syncCalEventDates();
+    }
+
+    function syncWeatherSource() {
+      var weatherOn = weatherEnabledItem ? !!weatherEnabledItem.get() : true;
+      var manual = weatherSourceItem && weatherSourceItem.get() === 'manual';
+      setGroupVisible(WEATHER_MANUAL_KEYS, weatherOn && manual);
+    }
+
+    function syncWeatherSection() {
+      var on = weatherEnabledItem ? !!weatherEnabledItem.get() : true;
+      setGroupVisible(WEATHER_BASE_KEYS, on);
+      syncWeatherSource();
+      syncNwsZip();
+    }
+
+    function syncCasio() {
       var casioFont = timeFontItem ? timeFontItem.get() === '1' : true;
+      setGroupVisible(['CASIO_PHANTOM'], casioFont);
+      if (!casioDarkStyleItem) return;
       var effectOn = casioPhantomItem ? !!casioPhantomItem.get() : true;
       if (casioFont && effectOn) {
         casioDarkStyleItem.show();
       } else {
         casioDarkStyleItem.hide();
       }
+    }
+
+    function syncVerboseWeather() {
+      var on = verboseWeatherItem ? !!verboseWeatherItem.get() : true;
+      setGroupVisible(['VERBOSE_WEATHER_STYLE'], on);
     }
 
     colorModeItem.on('change', syncColorMode);
@@ -226,18 +343,43 @@ function customClay() {
     if (calEventDatesItem) {
       calEventDatesItem.on('change', syncCalEventDates);
     }
+    if (calendarEnabledItem) {
+      calendarEnabledItem.on('change', syncCalendarSection);
+    }
+    if (weatherEnabledItem) {
+      weatherEnabledItem.on('change', syncWeatherSection);
+    }
+    if (weatherSourceItem) {
+      weatherSourceItem.on('change', syncWeatherSource);
+    }
+    if (weatherProviderItem) {
+      weatherProviderItem.on('change', syncNwsZip);
+    }
+    if (verboseWeatherItem) {
+      verboseWeatherItem.on('change', syncVerboseWeather);
+    }
+    if (yourDayModeItem) {
+      yourDayModeItem.on('change', syncYourDayMode);
+    }
     if (timeFontItem) {
-      timeFontItem.on('change', syncCasioDarkStyle);
+      timeFontItem.on('change', syncCasio);
     }
     if (casioPhantomItem) {
-      casioPhantomItem.on('change', syncCasioDarkStyle);
+      casioPhantomItem.on('change', syncCasio);
     }
+    complicationItems.forEach(function(item) {
+      if (item) {
+        item.on('change', syncFitnessShared);
+      }
+    });
     syncColorMode();
     syncShake();
     syncPipRow();
     syncMultiTz();
-    syncCalEventDates();
-    syncCasioDarkStyle();
+    syncCalendarSection();
+    syncWeatherSection();
+    syncVerboseWeather();
+    syncCasio();
   });
 }
 
@@ -273,7 +415,7 @@ var DEFAULT_SETTINGS = {
   DISTANCE_UNITS: 'auto',
   TIME_FONT: '1',
   CASIO_PHANTOM: true,
-  CASIO_DARK_SHADOW_STYLE: 'halo_shadow',
+  CASIO_DARK_SHADOW_STYLE: 'offset',
   INVERT_WEATHER: false,
   INVERT_MEETING_BAR: false,
   TOP_STEPS: true,
@@ -326,7 +468,7 @@ var DEFAULT_SETTINGS = {
   FITNESS_PIP_COLOR_SOURCE: 'color',
   FITNESS_PIP_SHAPE: 'circle',
   FITNESS_PIP_SIZE: 'large',
-  FITNESS_PIP_INVERT_BAR: true,
+  FITNESS_PIP_INVERT_BAR: false,
   ALT_TZ_LABEL: 'LONDON',
   ALT_TZ_OFFSET_MIN: '0',
   YOUR_DAY_WINDOW_MODE: 'rolling',
