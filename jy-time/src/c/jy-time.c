@@ -515,6 +515,10 @@ typedef enum {
   TIME_FONT_CASIO = 1,
   TIME_FONT_ROBOTO = 2,
   TIME_FONT_LECO = 3,
+  // Large Bitham-style digits for readability (bundled font, see
+  // CODEX_HANDOFF_large_time_font.md). Until the font lands this value
+  // renders with the default Bitham 42 digits.
+  TIME_FONT_LARGE = 4,
 } TimeFont;
 
 static TimeFont s_time_font = TIME_FONT_CASIO;
@@ -5040,11 +5044,39 @@ static void update_stats(void) {
   mark_face_dirty();
 }
 
+// Asks the phone JS to refresh weather (and calendar) if anything is due.
+// PKJS timers on the phone are not reliable (Pebble's own guidance is not to
+// depend on setInterval there), so the watch drives the cadence with a tiny
+// outbox message every 15 minutes. The JS decides whether a refresh is
+// actually due, so this costs nothing when the data is fresh.
+static void send_refresh_request(uint8_t reason) {
+  if (!s_phone_connected) {
+    return;
+  }
+  DictionaryIterator *iter = NULL;
+  AppMessageResult result = app_message_outbox_begin(&iter);
+  if (result != APP_MSG_OK || !iter) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Refresh request skipped, outbox busy: %d",
+            (int)result);
+    return;
+  }
+  dict_write_uint8(iter, MESSAGE_KEY_REFRESH_REQUEST, reason);
+  dict_write_end(iter);
+  result = app_message_outbox_send();
+  if (result != APP_MSG_OK) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "Refresh request send failed: %d",
+            (int)result);
+  }
+}
+
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   (void)units_changed;
   update_time_date(tick_time);
   update_stats();
   recompute_meeting_bar();
+  if (tick_time->tm_min % 15 == 0) {
+    send_refresh_request(1);
+  }
 }
 
 static void battery_handler(BatteryChargeState charge) {
@@ -5488,6 +5520,8 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
 #else
       s_time_font = TIME_FONT_LECO;
 #endif
+    } else if (v == TIME_FONT_LARGE) {
+      s_time_font = TIME_FONT_LARGE;
     } else {
       s_time_font = TIME_FONT_DEFAULT;
     }
@@ -6372,6 +6406,13 @@ static void inbox_dropped_handler(AppMessageResult reason, void *context) {
   APP_LOG(APP_LOG_LEVEL_WARNING, "AppMessage inbox dropped: %d", (int)reason);
 }
 
+static void outbox_failed_handler(DictionaryIterator *iter,
+                                  AppMessageResult reason, void *context) {
+  (void)iter;
+  (void)context;
+  APP_LOG(APP_LOG_LEVEL_WARNING, "AppMessage outbox failed: %d", (int)reason);
+}
+
 static void load_persisted(void) {
   if (persist_exists(PERSIST_KEY_PHONE_BATTERY)) {
     s_phone_battery_pct = (uint8_t)persist_read_int(PERSIST_KEY_PHONE_BATTERY);
@@ -6576,6 +6617,8 @@ static void load_persisted(void) {
 #else
       s_time_font = TIME_FONT_LECO;
 #endif
+    } else if (v == TIME_FONT_LARGE) {
+      s_time_font = TIME_FONT_LARGE;
     } else {
       s_time_font = TIME_FONT_DEFAULT;
     }
@@ -7362,6 +7405,7 @@ static void init(void) {
 
   app_message_register_inbox_received(inbox_received_handler);
   app_message_register_inbox_dropped(inbox_dropped_handler);
+  app_message_register_outbox_failed(outbox_failed_handler);
   app_message_open(1024, 64);
 }
 

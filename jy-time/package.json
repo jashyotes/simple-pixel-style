@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "1.50",
+  "version": "1.51",
   "keywords": [
     "pebble-app"
   ],
@@ -203,7 +203,8 @@
       "MULTI_TZ_2_LABEL",
       "MULTI_TZ_2_OFFSET_MIN",
       "CASIO_DARK_SHADOW_STYLE",
-      "VIBRATE_ON_MEETING_START"
+      "VIBRATE_ON_MEETING_START",
+      "REFRESH_REQUEST"
     ],
     "resources": {
       "media": [

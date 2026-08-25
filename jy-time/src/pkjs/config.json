@@ -608,6 +608,11 @@
         "defaultValue": "Weather"
       },
       {
+        "type": "text",
+        "id": "weather-status",
+        "defaultValue": ""
+      },
+      {
         "type": "toggle",
         "messageKey": "WEATHER_ENABLED",
         "label": "Enable weather",

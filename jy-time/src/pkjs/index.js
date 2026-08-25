@@ -391,6 +391,13 @@ var multiTzTimer = null;
 var CURRENT_EVENT_DISPLAY_MINUTES = 15;
 var messageQueue = [];
 var messageInFlight = false;
+var messageWatchdog = null;
+var messageToken = 0;
+// The phone runtime answers every sendAppMessage within ~15 s (5 s for a
+// transaction id, then a 10 s ACK/NACK timeout). Anything longer means the
+// callback is never coming.
+var APPMESSAGE_WATCHDOG_MS = 20000;
+var calendarAttemptAt = 0;
 
 var DEFAULT_SETTINGS = {
   COLOR_MODE: 'bw',
@@ -643,16 +650,40 @@ function sendNextMessage() {
   }
 
   var message = messageQueue.shift();
+  var token = ++messageToken;
   messageInFlight = true;
-  Pebble.sendAppMessage(message.dict, function() {
-    console.log((message.label || 'Message') + ' sent');
+
+  function settle(status) {
+    if (token !== messageToken || !messageInFlight) {
+      return; // late callback for a message the watchdog already gave up on
+    }
+    if (messageWatchdog) {
+      clearTimeout(messageWatchdog);
+      messageWatchdog = null;
+    }
+    console.log((message.label || 'Message') + ' ' + status);
     messageInFlight = false;
     sendNextMessage();
-  }, function(error) {
-    console.log((message.label || 'Message') + ' failed: ' + JSON.stringify(error));
-    messageInFlight = false;
-    sendNextMessage();
-  });
+  }
+
+  // If neither callback ever fires, or sendAppMessage throws, messageInFlight
+  // would stay true until the JS restarts and every later weather/calendar
+  // update would silently never reach the watch. The watchdog and the
+  // try/catch keep the queue moving.
+  messageWatchdog = setTimeout(function() {
+    messageWatchdog = null;
+    settle('callback never fired after ' + (APPMESSAGE_WATCHDOG_MS / 1000) + 's, resetting queue');
+  }, APPMESSAGE_WATCHDOG_MS);
+
+  try {
+    Pebble.sendAppMessage(message.dict, function() {
+      settle('sent');
+    }, function(error) {
+      settle('failed: ' + JSON.stringify(error));
+    });
+  } catch (e) {
+    settle('send threw: ' + e);
+  }
 }
 
 function sendToWatch(dict, label) {
@@ -687,7 +718,7 @@ function sendLayoutSetting(settings) {
       : (settings.DATE_LANGUAGE === 'fr' ? 3 : 0));
   dict[keys.BATTERY_NUMBER_LARGE] = settings.BATTERY_NUMBER_LARGE ? 1 : 0;
   dict[keys.DISTANCE_UNITS] = distanceUnitsId(settings);
-  dict[keys.TIME_FONT] = numberSetting(settings.TIME_FONT, 0, 0, 3);
+  dict[keys.TIME_FONT] = numberSetting(settings.TIME_FONT, 0, 0, 4);
   dict[keys.CASIO_PHANTOM] = settings.CASIO_PHANTOM ? 1 : 0;
   dict[keys.CASIO_DARK_SHADOW_STYLE] = casioDarkShadowStyleId(settings);
   dict[keys.INVERT_WEATHER] = settings.INVERT_WEATHER ? 1 : 0;
@@ -1674,11 +1705,24 @@ function fetchWeatherForCoordinates(lat, lon, unit, done) {
       + '&timezone=auto';
 
   var xhr = new XMLHttpRequest();
+  var finished = false;
+  function finish(error) {
+    if (finished) return;
+    finished = true;
+    if (done) done(error || null);
+  }
+  xhr.timeout = 15000;
   xhr.onload = function() {
+    if (xhr.status && xhr.status !== 200) {
+      console.log('Weather HTTP ' + xhr.status);
+      finish('Open-Meteo HTTP ' + xhr.status);
+      return;
+    }
     try {
       var data = JSON.parse(xhr.responseText);
-      if (!data.current) {
-        if (done) done();
+      if (!data || !data.current) {
+        finish('Open-Meteo returned no current conditions'
+               + (data && data.reason ? ' (' + data.reason + ')' : ''));
         return;
       }
 
@@ -1722,18 +1766,27 @@ function fetchWeatherForCoordinates(lat, lon, unit, done) {
         dict[keys.FORECAST_LAST_UPDATE_T] = Math.floor(Date.now() / 1000);
       }
       sendToWatch(dict, 'Weather');
-      if (done) done();
+      finish(null);
     } catch (e) {
       console.log('Weather parse failed: ' + e);
-      if (done) done();
+      finish('Open-Meteo parse failed: ' + e);
     }
   };
   xhr.onerror = function() {
     console.log('Weather request failed');
-    if (done) done();
+    finish('Open-Meteo request failed (no network?)');
   };
-  xhr.open('GET', url);
-  xhr.send();
+  xhr.ontimeout = function() {
+    console.log('Weather timeout after 15s');
+    finish('Open-Meteo timeout after 15s');
+  };
+  try {
+    xhr.open('GET', url);
+    xhr.send();
+  } catch (e) {
+    console.log('Weather send threw: ' + e);
+    finish('Open-Meteo send threw: ' + e);
+  }
 }
 
 // ---------- NWS (National Weather Service) provider ----------
@@ -2612,18 +2665,160 @@ function nwsFetchForCoordinates(lat, lon, done) {
 
 // ---------- end NWS provider ----------
 
+// ---------- weather refresh state + diagnostics ----------
+// Automatic triggers (the JS interval and the watch's 15-minute ping) never
+// hit the weather APIs closer together than this.
+var WEATHER_MIN_SPACING_MS = 4 * 60 * 1000;
+// After a failed attempt, retry this soon instead of waiting a full interval.
+var WEATHER_RETRY_MS = 5 * 60 * 1000;
+// An attempt older than this is treated as abandoned even if it never
+// reported back.
+var WEATHER_INFLIGHT_STALE_MS = 90 * 1000;
+// getCurrentPosition is capped at 15 s by the runtime; this catches a bridge
+// that never answers at all.
+var GEO_GUARD_MS = 25 * 1000;
+var weatherAttemptAt = 0;
+var weatherAttemptFailed = false;
+// Consecutive failed cycles; drives the retry backoff in maybeRefreshWeather.
+var weatherFailures = 0;
+var weatherInFlight = false;
+
+// 'weather-diag' in localStorage feeds the status line at the top of the
+// Weather settings section, so a user can see when weather last updated and
+// why it is failing without any developer tooling.
+function readWeatherDiag() {
+  try {
+    return JSON.parse(localStorage.getItem('weather-diag')) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function writeWeatherDiag(patch) {
+  var diag = readWeatherDiag();
+  Object.keys(patch).forEach(function(key) {
+    diag[key] = patch[key];
+  });
+  try {
+    localStorage.setItem('weather-diag', JSON.stringify(diag));
+  } catch (e) { /* quota */ }
+  return diag;
+}
+
+function noteWeatherOk(coords) {
+  writeWeatherDiag({
+    okAt: Date.now(),
+    source: coords.source,
+    cachedAt: coords.source === 'cached' ? (coords.cachedAt || 0) : 0
+  });
+}
+
+function noteWeatherError(message) {
+  console.log('Weather error: ' + message);
+  writeWeatherDiag({ lastError: String(message).slice(0, 160), lastErrorAt: Date.now() });
+}
+
+function cacheWeatherCoords(lat, lon) {
+  try {
+    localStorage.setItem('weather-last-coords',
+                         JSON.stringify({ lat: lat, lon: lon, t: Date.now() }));
+  } catch (e) { /* quota */ }
+}
+
+function cachedWeatherCoords() {
+  try {
+    var cached = JSON.parse(localStorage.getItem('weather-last-coords'));
+    if (cached && isFinite(cached.lat) && isFinite(cached.lon)) {
+      return cached;
+    }
+  } catch (e) { /* fall through */ }
+  return null;
+}
+
+// Resolves the coordinates to fetch weather for. cb receives
+// {lat, lon, source} or null when nothing usable exists. Order: manual pair
+// when selected, phone location, then the manual pair, the NWS ZIP, and
+// finally the last coordinates that ever worked. The phone runtime reports
+// "Location permission not granted" whenever the Pebble app lacks Precise
+// location on Android, and "Location not available" when location services
+// are off with nothing cached; without these fallbacks weather froze forever
+// in both cases.
+function resolveWeatherCoords(settings, cb) {
+  var manualLat = parseFloat(settings.WEATHER_LAT);
+  var manualLon = parseFloat(settings.WEATHER_LON);
+  var hasManual = isFinite(manualLat) && isFinite(manualLon);
+  var zip = String(settings.NWS_ZIP || '').trim();
+
+  function fallbackCached(reason) {
+    var cached = cachedWeatherCoords();
+    if (cached) {
+      console.log(reason + '; using last known coordinates saved '
+                  + new Date(cached.t).toISOString());
+      cb({ lat: cached.lat, lon: cached.lon, source: 'cached', cachedAt: cached.t });
+      return;
+    }
+    cb(null);
+  }
+
+  function fallback(reason) {
+    if (hasManual) {
+      cb({ lat: manualLat, lon: manualLon, source: 'manual' });
+      return;
+    }
+    if (settings.WEATHER_PROVIDER === 'nws' && /^\d{5}$/.test(zip)) {
+      resolveZipToLatLon(zip, function(coords) {
+        if (coords) {
+          cb({ lat: coords.lat, lon: coords.lon, source: 'zip' });
+        } else {
+          fallbackCached(reason + '; ZIP ' + zip + ' did not resolve');
+        }
+      });
+      return;
+    }
+    fallbackCached(reason);
+  }
+
+  if (settings.WEATHER_SOURCE === 'manual' && hasManual) {
+    cb({ lat: manualLat, lon: manualLon, source: 'manual' });
+    return;
+  }
+
+  var settled = false;
+  var guard = setTimeout(function() {
+    if (settled) return;
+    settled = true;
+    noteWeatherError('Location request never answered');
+    fallback('Location request never answered');
+  }, GEO_GUARD_MS);
+
+  navigator.geolocation.getCurrentPosition(function(position) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(guard);
+    var lat = position.coords.latitude;
+    var lon = position.coords.longitude;
+    cacheWeatherCoords(lat, lon);
+    cb({ lat: lat, lon: lon, source: 'gps' });
+  }, function(error) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(guard);
+    var message = 'Location failed: '
+        + ((error && error.message) ? error.message : JSON.stringify(error));
+    noteWeatherError(message);
+    fallback(message);
+  }, {
+    enableHighAccuracy: false,
+    timeout: 15000,
+    maximumAge: 30 * 60 * 1000
+  });
+}
+
 function refreshWeather(skipTide) {
   var settings = readSettings();
   var refreshTide = function() {
     if (!skipTide) {
       refreshTidesForSettings(settings);
-    }
-  };
-  var refreshNws = function(lat, lon, andThen) {
-    if (settings.WEATHER_PROVIDER === 'nws') {
-      nwsLocateAndFetch(settings, lat, lon, andThen);
-    } else if (andThen) {
-      andThen();
     }
   };
 
@@ -2634,45 +2829,98 @@ function refreshWeather(skipTide) {
   providerDict[keys.WEATHER_PROVIDER] = weatherProviderId(settings);
   sendToWatch(providerDict, 'Weather provider');
 
+  weatherAttemptAt = Date.now();
   if (!settings.WEATHER_ENABLED) {
     refreshTide();
     return;
   }
 
-  var manualLat = parseFloat(settings.WEATHER_LAT);
-  var manualLon = parseFloat(settings.WEATHER_LON);
-  var hasManual = isFinite(manualLat) && isFinite(manualLon);
+  weatherInFlight = true;
   var unit = temperatureUnit(settings);
+  var cycleOk = false;
 
-  var nwsThenTide = function(lat, lon) {
-    return function() {
-      refreshNws(lat, lon, refreshTide);
-    };
-  };
-
-  if (settings.WEATHER_SOURCE === 'manual' && hasManual) {
-    fetchWeatherForCoordinates(manualLat, manualLon, unit,
-                               nwsThenTide(manualLat, manualLon));
-    return;
+  function finishCycle() {
+    weatherInFlight = false;
+    weatherAttemptFailed = !cycleOk;
+    weatherFailures = cycleOk ? 0 : weatherFailures + 1;
+    refreshTide();
   }
 
-  navigator.geolocation.getCurrentPosition(function(position) {
-    var lat = position.coords.latitude;
-    var lon = position.coords.longitude;
-    fetchWeatherForCoordinates(lat, lon, unit, nwsThenTide(lat, lon));
-  }, function(error) {
-    console.log('Location failed: ' + JSON.stringify(error));
-    if (hasManual) {
-      fetchWeatherForCoordinates(manualLat, manualLon, unit,
-                                 nwsThenTide(manualLat, manualLon));
-    } else {
-      refreshTide();
+  resolveWeatherCoords(settings, function(coords) {
+    if (!coords) {
+      console.log('Weather: no usable coordinates (phone location failed, no manual pair, '
+                  + 'no NWS ZIP, nothing cached)');
+      finishCycle();
+      return;
     }
-  }, {
-    enableHighAccuracy: false,
-    timeout: 15000,
-    maximumAge: 30 * 60 * 1000
+    fetchWeatherForCoordinates(coords.lat, coords.lon, unit, function(error) {
+      if (error) {
+        noteWeatherError(error);
+      } else {
+        noteWeatherOk(coords);
+        cycleOk = true;
+      }
+      if (settings.WEATHER_PROVIDER === 'nws') {
+        nwsLocateAndFetch(settings, coords.lat, coords.lon, finishCycle);
+      } else {
+        finishCycle();
+      }
+    });
   });
+}
+
+// Single gate for every automatic weather trigger. Returns true when a
+// refresh was started. force skips the "not due yet" check but never the
+// spacing or in-flight checks.
+function maybeRefreshWeather(reason, force) {
+  var now = Date.now();
+  var settings = readSettings();
+  var intervalMs = clamp(Number(settings.WEATHER_REFRESH_MIN) || 30, 15, 60) * 60 * 1000;
+  var okAt = Number(readWeatherDiag().okAt) || 0;
+  var sinceAttempt = now - weatherAttemptAt;
+
+  if (weatherInFlight && sinceAttempt < WEATHER_INFLIGHT_STALE_MS) {
+    console.log('Weather refresh (' + reason + ') skipped: previous attempt still running');
+    return false;
+  }
+  if (weatherAttemptAt && sinceAttempt < WEATHER_MIN_SPACING_MS) {
+    console.log('Weather refresh (' + reason + ') skipped: last attempt '
+                + Math.round(sinceAttempt / 1000) + 's ago');
+    return false;
+  }
+  // 90 s of slack so an interval tick that lands just short of the configured
+  // spacing still counts as due. With weather off the cycle only carries the
+  // provider id and the tide refresh, so it simply follows the interval.
+  // Failed cycles retry after 5, 10, 20 minutes, then once per interval, so
+  // a setup that can never get weather costs the phone no more location or
+  // network work than the old interval timer did.
+  var retryMs = Math.min(intervalMs,
+                         WEATHER_RETRY_MS * Math.pow(2, Math.max(0, weatherFailures - 1)));
+  var due;
+  if (!settings.WEATHER_ENABLED) {
+    due = force || !weatherAttemptAt || sinceAttempt >= intervalMs - 90 * 1000;
+  } else if (weatherAttemptFailed) {
+    due = force || sinceAttempt >= retryMs;
+  } else {
+    due = force || !weatherAttemptAt || !okAt || (now - okAt >= intervalMs - 90 * 1000);
+  }
+  if (!due) {
+    console.log('Weather refresh (' + reason + ') skipped: not due');
+    return false;
+  }
+  console.log('Weather refresh (' + reason + ')');
+  refreshWeather(false);
+  return true;
+}
+
+function maybeRefreshCalendar(reason) {
+  var now = Date.now();
+  if (calendarAttemptAt && now - calendarAttemptAt < 9 * 60 * 1000) {
+    return false;
+  }
+  console.log('Calendar refresh (' + reason + ')');
+  refreshCalendar();
+  return true;
 }
 
 function unfoldIcs(text) {
@@ -3586,6 +3834,7 @@ function sendCalendarEvents(events, settings) {
 
 function refreshCalendar() {
   var settings = readSettings();
+  calendarAttemptAt = Date.now();
   if (!settings.CALENDAR_ENABLED) {
     return;
   }
@@ -3657,13 +3906,127 @@ function scheduleRefreshes() {
     clearInterval(multiTzTimer);
   }
 
-  weatherTimer = setInterval(refreshWeather, weatherMinutes * 60 * 1000);
+  weatherTimer = setInterval(function() {
+    maybeRefreshWeather('timer', false);
+  }, weatherMinutes * 60 * 1000);
   calendarTimer = setInterval(refreshCalendar, 10 * 60 * 1000);
   // Re-resolve secondary-timezone offsets periodically so a DST transition is
   // picked up within the interval without needing the config page reopened.
   multiTzTimer = setInterval(function() {
     sendMultiTzSetting(readSettings());
   }, 30 * 60 * 1000);
+}
+
+// ---------- settings-page weather status ----------
+function setClayTextItem(id, html) {
+  function scan(items) {
+    if (!items) return false;
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (item && item.id === id) {
+        item.defaultValue = html;
+        return true;
+      }
+      if (item && item.items && scan(item.items)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  scan(clay.config);
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function formatDiagTime(ms) {
+  var d = new Date(ms);
+  var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var hours = d.getHours();
+  var suffix = hours >= 12 ? 'PM' : 'AM';
+  var hour12 = hours % 12 || 12;
+  return months[d.getMonth()] + ' ' + d.getDate() + ', '
+      + hour12 + ':' + twoDigit(d.getMinutes()) + ' ' + suffix;
+}
+
+function weatherErrorHint(message) {
+  if (/permission/i.test(message)) {
+    return 'Fix: in the phone settings give the Pebble app Location permission with '
+        + 'Precise location turned on (Android: Settings, Apps, Pebble, Permissions, '
+        + 'Location), or set Location below to Manual coordinates.';
+  }
+  if (/denied/i.test(message)) {
+    return 'Fix: allow Location for the Pebble app (iOS Settings, Privacy and Security, '
+        + 'Location Services, Pebble), or set Location below to Manual coordinates.';
+  }
+  if (/not available|no suitable provider|never answered/i.test(message)) {
+    return 'Fix: turn on the phone location services, or keep them off and set '
+        + 'Location below to Manual coordinates.';
+  }
+  if (/HTTP|request failed|timeout|parse failed/i.test(message)) {
+    return 'The phone could not get a good answer from the weather service. '
+        + 'It retries automatically.';
+  }
+  return '';
+}
+
+function weatherStatusHtml() {
+  var diag = readWeatherDiag();
+  var okAt = Number(diag.okAt) || 0;
+  var errAt = Number(diag.lastErrorAt) || 0;
+  var lastError = diag.lastError || 'unknown error';
+  var lines = [];
+
+  if (!okAt && !errAt) {
+    return 'Weather status: no update has been attempted yet on this phone.';
+  }
+  if (okAt) {
+    var via = {
+      gps: 'using the phone location',
+      manual: 'using the manual coordinates',
+      zip: 'using the NWS ZIP',
+      cached: 'using the last known location'
+    }[diag.source] || '';
+    if (diag.source === 'cached' && diag.cachedAt) {
+      via += ' (saved ' + formatDiagTime(diag.cachedAt) + ')';
+    }
+    lines.push('Last weather update: ' + formatDiagTime(okAt) + (via ? ', ' + via + '.' : '.'));
+  } else {
+    lines.push('Weather has not updated yet on this phone.');
+  }
+  if (errAt) {
+    var hint = weatherErrorHint(lastError);
+    if (okAt && diag.source === 'cached') {
+      lines.push('Phone location is failing (' + escapeHtml(lastError) + ', '
+                 + formatDiagTime(errAt) + '), so weather is for the last place that worked.');
+    } else if (!okAt || errAt > okAt) {
+      lines.push('Last error: ' + escapeHtml(lastError) + ', ' + formatDiagTime(errAt) + '.');
+    } else {
+      lines.push('Last error (before that update): ' + escapeHtml(lastError) + ', '
+                 + formatDiagTime(errAt) + '.');
+      hint = '';
+    }
+    if (hint) {
+      lines.push(hint);
+    }
+  }
+  return lines.join('<br>');
+}
+
+function refreshRequestFromPayload(payload) {
+  if (!payload) return null;
+  if (typeof payload.REFRESH_REQUEST !== 'undefined') {
+    return payload.REFRESH_REQUEST;
+  }
+  if (typeof payload[keys.REFRESH_REQUEST] !== 'undefined') {
+    return payload[keys.REFRESH_REQUEST];
+  }
+  return null;
 }
 
 Pebble.addEventListener('ready', function() {
@@ -3679,7 +4042,22 @@ Pebble.addEventListener('ready', function() {
   scheduleRefreshes();
 });
 
+// The watch pings REFRESH_REQUEST every 15 minutes from its own tick handler
+// (see send_refresh_request in jy-time.c). Pebble's guidance is not to rely
+// on setInterval in PKJS; this is the refresh path that keeps working when
+// the phone runtime's JS timers stop firing. The gates above decide whether
+// anything is actually due.
+Pebble.addEventListener('appmessage', function(event) {
+  var request = refreshRequestFromPayload(event && event.payload);
+  if (request === null) {
+    return;
+  }
+  maybeRefreshWeather('watch ping ' + request, false);
+  maybeRefreshCalendar('watch ping');
+});
+
 Pebble.addEventListener('showConfiguration', function() {
+  setClayTextItem('weather-status', weatherStatusHtml());
   Pebble.openURL(clay.generateUrl());
 });
 
