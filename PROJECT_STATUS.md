@@ -1168,3 +1168,9 @@ Open:
 - Clay option "Large" for TIME_FONT withheld from this release (value 4 plumbing ships inert; the option comes back when the Codex font work lands, see `CODEX_HANDOFF_large_time_font.md`).
 - Emulator (emery, SDK 4.9.148): install first try, startup path clean (all settings sent, Open-Meteo fetched, "Weather sent"), face renders as before. A `pebble screenshot` during `pebble logs` drops the log socket (QemuInboundPacket.footer warnings, then "Connection to remote host was lost"); re-attach logs afterwards rather than running both at once.
 - Harness 13/13 (`node test/pkjs_weather_harness.js`). Clean `pebble build` on emery + gabbro. Version 1.51. PBW at `release-assets/simple-pixel-style-1.51.0-emery-gabbro.pbw`.
+
+## 1.52: "Large" time font option (2026-08-25, released on instruction)
+
+- New Time font option "Large" (TIME_FONT value 4): bundled Montserrat Bold digits at 56 px (`FONT_TIME_LARGE_56`, digits + colon only, +3 KB resources, +84 B RAM), the closest permissively licensed match to the Default Bitham/Gotham look. Default stays CASIO (value 1); nothing else on the face moves.
+- Codex delivered the visual slice per `CODEX_HANDOFF_large_time_font.md`: font resource entry, `s_font_time_large` load/unload beside the CASIO fonts, a Large branch in `draw_time_row_at` with its own draw frame (frame_y - 1, height TIME_FRAME_H + 10) and AM/PM anchored to the digit bottom like Roboto/LECO. 27 lines, in spec, scaffolding reverted. "10:08" measures 150x56 on emery, so the AM/PM label fits with 25 px spare; gabbro renders Large without clipping, no round fallback needed. Screenshots: `Current Screenshots/large-font/` (uncommitted, user curation).
+- Clay option re-added with the description sentence; pkjs clamp and both C decode sites already accepted 4 since 1.51. Harness 13/13. Clean `pebble build` emery + gabbro. PBW at `release-assets/simple-pixel-style-1.52.0-emery-gabbro.pbw`.

@@ -534,6 +534,7 @@ typedef enum {
 static CasioDarkShadowStyle s_casio_dark_shadow_style = CASIO_DARK_SHADOW_OFFSET;
 static GFont s_font_roboto;
 static GFont s_font_leco;
+static GFont s_font_time_large;
 static bool s_invert_weather = false;
 static bool s_invert_meeting_bar = false;
 static bool s_vibrate_on_disconnect = true;
@@ -1660,16 +1661,23 @@ static void draw_time_row_at(GContext *ctx, int frame_y, int visual_bottom) {
     font = s_font_roboto;
   } else if (s_time_font == TIME_FONT_LECO && s_font_leco) {
     font = s_font_leco;
+  } else if (s_time_font == TIME_FONT_LARGE && s_font_time_large) {
+    font = s_font_time_large;
   }
 
   const GRect time_frame =
       GRect(FACE_CONTENT_X, frame_y, FACE_CONTENT_W, TIME_FRAME_H);
+  const bool large =
+      s_time_font == TIME_FONT_LARGE && font == s_font_time_large;
+  const GRect draw_frame = large
+      ? GRect(FACE_CONTENT_X, frame_y - 1, FACE_CONTENT_W, TIME_FRAME_H + 10)
+      : time_frame;
   const int ampm_width = 20;
   const int ampm_height = 10;
   const int ampm_gap = 5;
 
   GSize time_size = graphics_text_layout_get_content_size(
-      s_time_buf, font, time_frame,
+      s_time_buf, font, draw_frame,
       GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter);
   int time_left = FACE_CONTENT_X + (FACE_CONTENT_W - time_size.w) / 2;
   int ampm_x = time_left - ampm_gap - ampm_width;
@@ -1677,13 +1685,14 @@ static void draw_time_row_at(GContext *ctx, int frame_y, int visual_bottom) {
     ampm_x = FACE_CONTENT_X;
   }
 
-  draw_text(ctx, s_time_buf, font, time_frame,
+  draw_text(ctx, s_time_buf, font, draw_frame,
             draw_fg_color(), GTextAlignmentCenter);
   if (s_ampm_buf[0] != '\0') {
     int ampm_anchor_bottom = visual_bottom;
-    if (s_time_font == TIME_FONT_ROBOTO || s_time_font == TIME_FONT_LECO) {
+    if (s_time_font == TIME_FONT_ROBOTO || s_time_font == TIME_FONT_LECO
+        || s_time_font == TIME_FONT_LARGE) {
       // Anchor AM/PM bottom to the digit bottom pixel for Roboto and ForecasWatch.
-      ampm_anchor_bottom = frame_y + time_size.h;
+      ampm_anchor_bottom = draw_frame.origin.y + time_size.h;
     }
     draw_ampm_label(ctx, s_ampm_buf, GPoint(ampm_x, ampm_anchor_bottom - ampm_height));
   }
@@ -7327,6 +7336,8 @@ static void window_load(Window *window) {
       fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_WV58A_DIGITS_70));
   s_font_casio_90 =
       fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_WV58A_DIGITS_90));
+  s_font_time_large =
+      fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_TIME_LARGE_56));
   s_wv58a_am_bitmap = gbitmap_create_with_resource(RESOURCE_ID_WV58A_AM);
   s_wv58a_pm_bitmap = gbitmap_create_with_resource(RESOURCE_ID_WV58A_PM);
   load_theme_bitmaps();
@@ -7373,6 +7384,10 @@ static void window_unload(Window *window) {
   if (s_font_casio_90) {
     fonts_unload_custom_font(s_font_casio_90);
     s_font_casio_90 = NULL;
+  }
+  if (s_font_time_large) {
+    fonts_unload_custom_font(s_font_time_large);
+    s_font_time_large = NULL;
   }
   layer_destroy(s_shake_overlay_layer);
   s_shake_overlay_layer = NULL;

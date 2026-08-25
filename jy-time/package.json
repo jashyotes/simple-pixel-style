@@ -1,7 +1,7 @@
 {
   "name": "simple-pixel-style",
   "author": "Josh Yates",
-  "version": "1.51",
+  "version": "1.52",
   "keywords": [
     "pebble-app"
   ],
@@ -515,6 +515,14 @@
           "compatibility": "2.7",
           "file": "fonts/DIGITAL_BOLD.TTF",
           "name": "FONT_WV58A_DIGITS_90",
+          "trackingAdjust": 0,
+          "type": "font"
+        },
+        {
+          "characterRegex": "[0-9:]",
+          "compatibility": "2.7",
+          "file": "fonts/Montserrat-Bold.ttf",
+          "name": "FONT_TIME_LARGE_56",
           "trackingAdjust": 0,
           "type": "font"
         },
