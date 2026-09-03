@@ -3210,10 +3210,11 @@ static GRect round_overlay_safe_frame(int margin, int y, int h) {
   return GRect(inset, y, SCREEN_W - (inset * 2), h);
 }
 
-// Round watches: the Large month & day list drawn on the full 260x260 circle.
-// PLACEHOLDER layout pending CODEX_HANDOFF_calendar_large_date_round.md:
-// title in the top arc, 3 headline rows at 58 px pitch from y=43, 5 numeric
-// rows at 38 px pitch from y=35, separators drawn as chords.
+// Round watches: the Large month & day list drawn on the full 260x260 circle
+// (tuned on the emulator 2026-09-03): title in the top arc (y 16 / 12), 3
+// headline rows at 58 px pitch from y=40, 5 numeric rows at 38 px pitch from
+// y=32, margin 10, separators drawn as chords 4 px (3 rows) or 2 px (5 rows)
+// above the next row. Outermost ink ends about 2 px inside the circle.
 static void calendar_draw_overlay_large_date_round(GContext *ctx) {
   const int row_count = s_calendar_shake_event_count == 5 ? 5 : 3;
   const bool five = row_count == 5;
@@ -3229,7 +3230,7 @@ static void calendar_draw_overlay_large_date_round(GContext *ctx) {
   }
 
   const int row_h = five ? 38 : 58;
-  int y = five ? 35 : 43;
+  int y = five ? 32 : 40;
   for (int i = 0; i < row_count; i++) {
     if (calendar_title_is_empty(calendar_title_for_index(i))) {
       continue;
