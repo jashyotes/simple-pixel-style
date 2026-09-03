@@ -358,6 +358,8 @@ typedef enum {
   // (Step history) working on upgrade. sanitize_shake_behavior falls 9 to Off.
   ShakeBehaviorStepHistory = 10,
   ShakeBehaviorNwsForecast = 11,
+  // Upcoming list with each event's month/day drawn large (user request).
+  ShakeBehaviorCalendarEventsLargeDate = 12,
 } ShakeBehavior;
 
 typedef enum {
@@ -491,6 +493,8 @@ static int s_distance_units = 0;
 static bool s_remove_leading_zero = false;
 // Calendar event dates (meeting bar + Upcoming shake overlay). All gated on
 // s_cal_event_dates_on; when off, event rendering is byte-identical to before.
+// The "Large month & day" Upcoming overlay is the one exception: it always
+// shows the date and only reads the order / leading-zero settings.
 static bool s_cal_event_dates_on = false;
 static bool s_cal_event_date_after_time = false;  // false = before time, true = after
 static bool s_cal_event_date_month_first = true;  // true = MM/DD, false = DD/MM
@@ -913,6 +917,7 @@ static ShakeBehavior sanitize_shake_behavior(int value) {
     case ShakeBehaviorTideChart:
     case ShakeBehaviorStepHistory:
     case ShakeBehaviorNwsForecast:
+    case ShakeBehaviorCalendarEventsLargeDate:
       return (ShakeBehavior)value;
     default:
       return ShakeBehaviorOff;
@@ -2901,6 +2906,75 @@ static void calendar_draw_overlay(GContext *ctx) {
   }
 }
 
+// "Next calendar events - Large month & day": the Upcoming list with each
+// event's date drawn large enough to read at a glance. Always shows the date
+// (the Show event dates toggle gates only the plain list and the meeting bar),
+// honors the date order and leading-zero settings and the 3 / 5 event count.
+// Layout per row: title as in the plain list; below it the date in a large
+// foreground-color Gothic (28 Bold at 3 rows, 18 Bold at 5) flush left, and
+// the countdown in the plain list's small muted Gothic flush right.
+static void calendar_draw_overlay_large_date(GContext *ctx) {
+  draw_overlay_title(ctx, "UPCOMING");
+
+  int row_count = s_calendar_shake_event_count == 5 ? 5 : 3;
+  int visible_count = 0;
+  for (int i = 0; i < row_count; i++) {
+    if (!calendar_title_is_empty(calendar_title_for_index(i))) {
+      visible_count++;
+    }
+  }
+
+  if (visible_count == 0) {
+    draw_text(ctx, s_empty_event_label, s_font_complication,
+              overlay_safe_frame(8, 96, 28),
+              theme_fg_color(), GTextAlignmentCenter);
+    return;
+  }
+
+  int row_h = row_count == 5 ? 38 : 54;
+  int y = row_count == 5 ? 27 : 34;
+  for (int i = 0; i < row_count; i++) {
+    const char *title = calendar_title_for_index(i);
+    const char *delta = calendar_delta_for_index(i);
+    if (calendar_title_is_empty(title)) {
+      continue;
+    }
+
+    draw_text(ctx, title, s_font_event, overlay_safe_frame(8, y, 22),
+              theme_fg_color(), GTextAlignmentLeft);
+    const char *delta_text = delta && delta[0] ? delta : "--";
+    char datestr[8];
+    format_event_date(s_meeting_start[i], datestr, sizeof(datestr));
+    GFont delta_font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+    if (datestr[0]) {
+      // Large date, foreground color, flush left under the title. Countdown
+      // stays small and muted, flush right, bottom-aligned to the date digits.
+      const bool five = row_count == 5;
+      GFont date_font = fonts_get_system_font(
+          five ? FONT_KEY_GOTHIC_18_BOLD : FONT_KEY_GOTHIC_28_BOLD);
+      draw_text(ctx, datestr, date_font,
+                overlay_safe_frame(8, y + (five ? 17 : 19), five ? 20 : 32),
+                theme_fg_color(), GTextAlignmentLeft);
+      draw_text(ctx, delta_text, delta_font,
+                overlay_safe_frame(8, y + (five ? 22 : 34), 18),
+                fitness_muted_text_color(), GTextAlignmentRight);
+    } else {
+      // No epoch for this slot (older companion build): countdown only,
+      // where the plain list draws it.
+      draw_text(ctx, delta_text, delta_font,
+                overlay_safe_frame(8, y + 19, 18),
+                fitness_muted_text_color(), GTextAlignmentLeft);
+    }
+
+    if (i < row_count - 1) {
+      graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
+      graphics_context_set_stroke_width(ctx, 1);
+      graphics_draw_line(ctx, GPoint(8, y + row_h - 2), GPoint(192, y + row_h - 2));
+    }
+    y += row_h;
+  }
+}
+
 static bool day_event_hour_busy(int day_offset, int hour) {
   int bitmap;
   if (day_offset < 0) {
@@ -4372,6 +4446,9 @@ static void shake_overlay_update_proc(Layer *layer, GContext *ctx) {
     case ShakeBehaviorNwsForecast:
       nws_forecast_draw_overlay(ctx);
       break;
+    case ShakeBehaviorCalendarEventsLargeDate:
+      calendar_draw_overlay_large_date(ctx);
+      break;
     case ShakeBehaviorOff:
     default:
       break;
@@ -4768,8 +4845,9 @@ static void format_meeting_prefix(int32_t epoch, char *buf, size_t len) {
 
 // Compose a "MM/DD" / "DD/MM" date for an event, honoring the order and
 // leading-zero settings. Writes "" when the epoch is missing/invalid. Shared by
-// the meeting bar and the Upcoming shake overlay; only called when
-// s_cal_event_dates_on is true.
+// the meeting bar and the Upcoming shake overlays; the meeting bar and the
+// plain Upcoming list call it only when s_cal_event_dates_on is true, the
+// Large month & day list always does.
 static void format_event_date(int32_t epoch, char *buf, size_t len) {
   if (epoch <= 0) {
     buf[0] = '\0';

@@ -177,6 +177,10 @@
             "value": "0"
           },
           {
+            "label": "Default (Large)",
+            "value": "4"
+          },
+          {
             "label": "CASIO style",
             "value": "1"
           },
@@ -187,13 +191,9 @@
           {
             "label": "LECO",
             "value": "3"
-          },
-          {
-            "label": "Large",
-            "value": "4"
           }
         ],
-        "description": "Default is the original Bitham bold serif. Large is the same look at a bigger size (bundled Montserrat Bold digits) for easier reading at a glance. CASIO style renders the time as WV-58A LCD digits with an optional shadow/backdrop treatment. Roboto is Pebble's built-in Roboto bold subset. LECO is Pebble's built-in LECO 32 bold numbers. Roboto and LECO anchor AM/PM bottom to the digit bottom. LECO is not available on round watches; it falls back to Default there."
+        "description": "Default is the original Bitham bold serif. Default (Large) is the same face with bigger digits for easier reading at a glance. CASIO style renders the time as WV-58A LCD digits with an optional shadow/backdrop treatment. Roboto is Pebble's built-in Roboto bold subset. LECO is Pebble's built-in LECO 32 bold numbers. Roboto and LECO anchor AM/PM bottom to the digit bottom. LECO is not available on round watches; it falls back to Default there."
       },
       {
         "type": "toggle",
@@ -804,7 +804,7 @@
         "messageKey": "CAL_EVENT_DATES_ON",
         "label": "Show event dates",
         "defaultValue": false,
-        "description": "Adds each event's date (e.g. 06/04) to the bottom event line and the Upcoming shake list."
+        "description": "Adds each event's date (e.g. 06/04) to the bottom event line and the Upcoming shake list. The Large month & day shake list always shows dates."
       },
       {
         "type": "select",
@@ -979,6 +979,10 @@
           {
             "label": "Next calendar events",
             "value": "calendar_events"
+          },
+          {
+            "label": "Next calendar events - Large month & day",
+            "value": "calendar_events_large_date"
           },
           {
             "label": "Your Day",

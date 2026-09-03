@@ -1,10 +1,10 @@
 # Pebble Appstore listing — Simple Pixel Style
 
-Last updated: 0.67
+Last updated: 1.53 (overlay list and counts; the other sections still date from 0.67)
 
 ## Short tagline (one line, for the Appstore card)
 
-Pebble Time 2 watchface with a pixel-art layout, three configurable complications, six shake-to-reveal overlays, and a full Light/Dark or per-section Color theme.
+Pebble Time 2 watchface with a pixel-art layout, three configurable complications, eleven shake-to-reveal overlays, and a full Light/Dark or per-section Color theme.
 
 ## Long description (Appstore body)
 
@@ -26,13 +26,18 @@ Pebble Time 2 (emery) watchface with a pixel-art base layout and a deep settings
 - Open-Meteo weather via PebbleKit JS — phone GPS or manual coordinates, Fahrenheit or Celsius, refresh every 15/30/60 minutes.
 - Multiple calendar support — two iCal/ICS feed URLs, configurable 24h / 48h / 7d lookahead, recurring events (including ordinal weekday rules like "second Tuesday"), and timezone-aware time labels.
 - Quiet Time mouse indicator on the top bar, opposite the AM/PM label.
-- Shake the wrist to reveal one of six overlays (or leave it off):
-  - Fitness rings — steps, active minutes, active calories with custom targets and ring colors.
-  - Next calendar events — three or five upcoming events with their countdowns.
-  - Your Day — visual timeline of busy hours across yesterday/today/tomorrow with optional half-hour granularity (events at X:00–X:29 fill the left half of the hour pip, events at X:30–X:59 fill the right half, full hours stay solid).
+- Shake the wrist to reveal one of eleven overlays (or leave it off):
+  - Fitness rings: steps, active minutes, active calories with custom targets and ring colors.
+  - Next calendar events: three or five upcoming events with their countdowns.
+  - Next calendar events - Large month & day: the same list with each event's month and day drawn large for reading at a glance.
+  - Your Day: visual timeline of busy hours across yesterday/today/tomorrow with optional half-hour granularity (events at X:00 to X:29 fill the left half of the hour pip, events at X:30 to X:59 fill the right half, full hours stay solid).
   - Detailed weather.
-  - Alt timezone — custom label and UTC offset (in minutes).
+  - Alt timezone: custom label and UTC offset (in minutes).
   - Big heart rate.
+  - Stocks & Crypto Prices: up to two Yahoo Finance tickers and one CoinGecko coin with their deltas; the layout adapts to one, two or three tickers.
+  - Tide chart: NOAA Tides & Currents station curve over a 24h or 48h window.
+  - Step history: the last seven days of steps, ending with today.
+  - NWS Forecast: 24h temperature and precipitation chart with the current period narrative, or a narrative-only style.
 - Customizable shake overlay duration (3 / 5 / 7 / 10 seconds).
 - Customizable "no-events" label for empty calendar states on the meeting bar, the Your Day Next: line, and the Upcoming overlay.
 
@@ -40,7 +45,7 @@ Android companion support is deferred and is not required for this Pebble Appsto
 
 ## GitHub repo "About" description (one line)
 
-Pebble Time 2 (emery) watchface — pixel-art layout, three configurable complications, six shake-to-reveal overlays (fitness, calendar, timeline, weather, alt timezone, heart rate), Open-Meteo weather and ICS calendar via PebbleKit JS, Light/Dark or per-section Color theme.
+Pebble Time 2 (emery) watchface — pixel-art layout, three configurable complications, eleven shake-to-reveal overlays (fitness, calendar, calendar with large dates, timeline, weather, alt timezone, heart rate, stocks & crypto, tides, step history, NWS forecast), Open-Meteo weather and ICS calendar via PebbleKit JS, Light/Dark or per-section Color theme.
 
 ## GitHub repo topics (suggested)
 

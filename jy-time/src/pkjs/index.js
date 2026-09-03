@@ -265,7 +265,8 @@ function customClay() {
     function syncShake() {
       var v = shakeItem.get();
       setGroupVisible(SHAKE_FITNESS_ITEM_KEYS, v === 'fitness_rings');
-      setGroupVisible(SHAKE_CALENDAR_ITEM_KEYS, v === 'calendar_events');
+      setGroupVisible(SHAKE_CALENDAR_ITEM_KEYS,
+          v === 'calendar_events' || v === 'calendar_events_large_date');
       setGroupVisible(SHAKE_YOURDAY_ITEM_KEYS, v === 'your_day');
       setGroupVisible(SHAKE_ALTTZ_ITEM_KEYS, v === 'alt_timezone');
       setGroupVisible(SHAKE_TIDE_ITEM_KEYS, v === 'tide_chart');
@@ -280,6 +281,7 @@ function customClay() {
       syncFitnessShared();
       syncYourDayMode();
       syncNwsZip();
+      syncCalEventDates();
     }
 
     function syncMultiTz() {
@@ -290,7 +292,14 @@ function customClay() {
     function syncCalEventDates() {
       if (!calEventDatesItem) return;
       var calOn = calendarEnabledItem ? !!calendarEnabledItem.get() : true;
-      setGroupVisible(CAL_EVENT_DATE_DEPENDENT_KEYS, calOn && !!calEventDatesItem.get());
+      var datesOn = !!calEventDatesItem.get();
+      setGroupVisible(CAL_EVENT_DATE_DEPENDENT_KEYS, calOn && datesOn);
+      // The Large month & day shake list always shows dates, so its order and
+      // leading-zero settings stay reachable while Show event dates is off.
+      // Date position is bottom-line only, so it stays with the toggle.
+      if (calOn && !datesOn && shakeItem.get() === 'calendar_events_large_date') {
+        setGroupVisible(['CAL_EVENT_DATE_ORDER', 'CAL_EVENT_DATE_NO_ZERO'], true);
+      }
     }
 
     function syncCalendarSection() {
@@ -541,7 +550,8 @@ var SHAKE_BEHAVIOR_IDS = {
   prices: 7,
   tide_chart: 8,
   step_history: 10,
-  nws_forecast: 11
+  nws_forecast: 11,
+  calendar_events_large_date: 12
 };
 
 function clamp(value, min, max) {
