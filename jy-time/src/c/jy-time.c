@@ -539,6 +539,9 @@ static CasioDarkShadowStyle s_casio_dark_shadow_style = CASIO_DARK_SHADOW_OFFSET
 static GFont s_font_roboto;
 static GFont s_font_leco;
 static GFont s_font_time_large;
+// Bottom pixel row of the Large digits as last drawn; the secondary
+// timezone text line anchors to it (see face_update_proc).
+static int s_large_time_ink_bottom = 0;
 static bool s_invert_weather = false;
 static bool s_invert_meeting_bar = false;
 static bool s_vibrate_on_disconnect = true;
@@ -1674,12 +1677,35 @@ static void draw_time_row_at(GContext *ctx, int frame_y, int visual_bottom) {
       GRect(FACE_CONTENT_X, frame_y, FACE_CONTENT_W, TIME_FRAME_H);
   const bool large =
       s_time_font == TIME_FONT_LARGE && font == s_font_time_large;
-  const GRect draw_frame = large
-      ? GRect(FACE_CONTENT_X, frame_y - 1, FACE_CONTENT_W, TIME_FRAME_H + 10)
-      : time_frame;
   const int ampm_width = 20;
   const int ampm_height = 10;
   const int ampm_gap = 5;
+
+  // Large digits sit lower than the Default ones. When the secondary
+  // timezone text line is on, lift them just enough for the line (4 px
+  // gap + 16 px row + 2 px clear of the weather band) to fit under the
+  // digit ink. Other fonts and the no-line case are untouched.
+  int large_lift = 0;
+  if (large) {
+    const bool tz_text_line = s_multi_tz_enabled && s_multi_tz_style == 0
+        && (s_multi_tz1_label[0] != '\0' || s_multi_tz2_label[0] != '\0');
+    if (tz_text_line) {
+      const GRect probe_frame =
+          GRect(FACE_CONTENT_X, frame_y - 1, FACE_CONTENT_W, TIME_FRAME_H + 10);
+      const GSize probe_size = graphics_text_layout_get_content_size(
+          s_time_buf, font, probe_frame,
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter);
+      const int ink_bottom = probe_frame.origin.y + probe_size.h;
+      const int needed = ink_bottom + 4 + 16 + 2 - weather_band_y();
+      if (needed > 0) {
+        large_lift = needed;
+      }
+    }
+  }
+  const GRect draw_frame = large
+      ? GRect(FACE_CONTENT_X, frame_y - 1 - large_lift, FACE_CONTENT_W,
+              TIME_FRAME_H + 10)
+      : time_frame;
 
   GSize time_size = graphics_text_layout_get_content_size(
       s_time_buf, font, draw_frame,
@@ -1700,6 +1726,10 @@ static void draw_time_row_at(GContext *ctx, int frame_y, int visual_bottom) {
       ampm_anchor_bottom = draw_frame.origin.y + time_size.h;
     }
     draw_ampm_label(ctx, s_ampm_buf, GPoint(ampm_x, ampm_anchor_bottom - ampm_height));
+  }
+
+  if (large) {
+    s_large_time_ink_bottom = draw_frame.origin.y + time_size.h;
   }
 
   draw_quiet_time_icon(ctx,
@@ -2906,14 +2936,233 @@ static void calendar_draw_overlay(GContext *ctx) {
   }
 }
 
+// SAMPLE, English only. Claude wires the date-language variants for
+// the chosen option.
+static const char *large_date_sample_month(int mon, bool upper) {
+  static const char *const lower[12] = {
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+  };
+  static const char *const caps[12] = {
+    "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+    "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
+  };
+  if (mon < 0 || mon > 11) return "";
+  return upper ? caps[mon] : lower[mon];
+}
+
+static const char *large_date_sample_wday(int wday) {
+  static const char *const days[7] = {
+    "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"
+  };
+  if (wday < 0 || wday > 6) return "";
+  return days[wday];
+}
+
+// SAMPLE SELECTOR (CODEX_HANDOFF_calendar_large_date_options.md):
+// 1 = Option A calendar block, 2 = Option B date headline,
+// 3 = Option C tightened numeric. Claude removes this after the pick.
+#define LARGE_DATE_SAMPLE_OPTION 1
+
+#if defined(PBL_ROUND)
+static void calendar_draw_overlay_large_date_a(GContext *ctx) {
+  draw_overlay_title(ctx, "UPCOMING");
+
+  int row_count = s_calendar_shake_event_count == 5 ? 5 : 3;
+  int visible_count = 0;
+  for (int i = 0; i < row_count; i++) {
+    if (!calendar_title_is_empty(calendar_title_for_index(i))) {
+      visible_count++;
+    }
+  }
+
+  if (visible_count == 0) {
+    draw_text(ctx, s_empty_event_label, s_font_complication,
+              overlay_safe_frame(8, 96, 28),
+              theme_fg_color(), GTextAlignmentCenter);
+    return;
+  }
+
+  int row_h = row_count == 5 ? 38 : 54;
+  int y = row_count == 5 ? 27 : 34;
+  for (int i = 0; i < row_count; i++) {
+    const char *title = calendar_title_for_index(i);
+    const char *delta = calendar_delta_for_index(i);
+    if (calendar_title_is_empty(title)) {
+      continue;
+    }
+
+    const char *delta_text = delta && delta[0] ? delta : "--";
+    const bool five = row_count == 5;
+    const GRect safe = overlay_safe_frame(8, y, five ? 34 : 50);
+    time_t tt = (time_t)s_meeting_start[i];
+    struct tm *lt = (s_meeting_start[i] > 0) ? localtime(&tt) : NULL;
+    if (lt) {
+      const int block_x = safe.origin.x;
+      const int block_w = 44;
+      const int col_x = safe.origin.x + 52;
+      const int col_w = safe.size.w - 52;
+      char day[4];
+      snprintf(day, sizeof(day), "%d", lt->tm_mday);
+      draw_text(ctx, large_date_sample_month(lt->tm_mon, true),
+                fonts_get_system_font(five ? FONT_KEY_GOTHIC_14
+                                           : FONT_KEY_GOTHIC_14_BOLD),
+                GRect(block_x, y + (five ? 0 : 2), block_w, five ? 14 : 16),
+                theme_fg_color(), GTextAlignmentCenter);
+      draw_text(ctx, day,
+                fonts_get_system_font(five ? FONT_KEY_GOTHIC_18_BOLD
+                                           : FONT_KEY_GOTHIC_28_BOLD),
+                GRect(block_x, y + (five ? 11 : 15), block_w, five ? 24 : 32),
+                theme_fg_color(), GTextAlignmentCenter);
+      draw_text(ctx, title, s_font_event,
+                GRect(col_x, y, col_w, five ? 20 : 22),
+                theme_fg_color(), GTextAlignmentLeft);
+      draw_text(ctx, delta_text,
+                fonts_get_system_font(five ? FONT_KEY_GOTHIC_14
+                                           : FONT_KEY_GOTHIC_14_BOLD),
+                GRect(col_x, y + (five ? 18 : 22), col_w, five ? 16 : 18),
+                fitness_muted_text_color(), GTextAlignmentLeft);
+    } else {
+      draw_text(ctx, title, s_font_event,
+                GRect(safe.origin.x, y, safe.size.w, 22),
+                theme_fg_color(), GTextAlignmentLeft);
+      draw_text(ctx, delta_text,
+                fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+                GRect(safe.origin.x, y + 19, safe.size.w, 18),
+                fitness_muted_text_color(), GTextAlignmentLeft);
+    }
+
+    if (i < row_count - 1) {
+      graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
+      graphics_context_set_stroke_width(ctx, 1);
+      graphics_draw_line(ctx, GPoint(8, y + row_h - 2), GPoint(192, y + row_h - 2));
+    }
+    y += row_h;
+  }
+}
+#endif
+
+static void calendar_draw_overlay_large_date_b(GContext *ctx) {
+  draw_overlay_title(ctx, "UPCOMING");
+
+  int row_count = s_calendar_shake_event_count == 5 ? 5 : 3;
+  int visible_count = 0;
+  for (int i = 0; i < row_count; i++) {
+    if (!calendar_title_is_empty(calendar_title_for_index(i))) {
+      visible_count++;
+    }
+  }
+
+  if (visible_count == 0) {
+    draw_text(ctx, s_empty_event_label, s_font_complication,
+              overlay_safe_frame(8, 96, 28),
+              theme_fg_color(), GTextAlignmentCenter);
+    return;
+  }
+
+  int row_h = row_count == 5 ? 38 : 54;
+  int y = row_count == 5 ? 27 : 34;
+  for (int i = 0; i < row_count; i++) {
+    const char *title = calendar_title_for_index(i);
+    const char *delta = calendar_delta_for_index(i);
+    if (calendar_title_is_empty(title)) {
+      continue;
+    }
+
+    const char *delta_text = delta && delta[0] ? delta : "--";
+    const bool five = row_count == 5;
+    const GRect safe = overlay_safe_frame(8, y, five ? 34 : 50);
+    const int sx = safe.origin.x;
+    const int sw = safe.size.w;
+    time_t tt = (time_t)s_meeting_start[i];
+    struct tm *lt = (s_meeting_start[i] > 0) ? localtime(&tt) : NULL;
+    if (lt) {
+      char date_text[12];
+      char event_time[12];
+      const char *month = large_date_sample_month(lt->tm_mon, false);
+      if (s_cal_event_date_month_first) {
+        snprintf(date_text, sizeof(date_text), "%s %d", month, lt->tm_mday);
+      } else {
+        snprintf(date_text, sizeof(date_text), "%d %s", lt->tm_mday, month);
+      }
+      if (s_military_time_enabled) {
+        strftime(event_time, sizeof(event_time), "%H:%M", lt);
+      } else {
+        strftime(event_time, sizeof(event_time), "%I:%M%p", lt);
+        if (event_time[0] == '0') {
+          memmove(event_time, event_time + 1, strlen(event_time));
+        }
+      }
+      GFont date_font = fonts_get_system_font(
+          five ? FONT_KEY_GOTHIC_18_BOLD : FONT_KEY_GOTHIC_28_BOLD);
+      GFont meta_font = fonts_get_system_font(
+          five ? FONT_KEY_GOTHIC_14 : FONT_KEY_GOTHIC_14_BOLD);
+      GFont event_time_font = fonts_get_system_font(
+          five ? FONT_KEY_GOTHIC_14_BOLD : FONT_KEY_GOTHIC_18_BOLD);
+      GFont title_font = five
+          ? s_font_event
+          : fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+      const GRect date_frame = GRect(sx, y + (five ? -1 : -2), sw, five ? 22 : 32);
+      GSize date_size = graphics_text_layout_get_content_size(
+          date_text, date_font, date_frame,
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+      const char *weekday = large_date_sample_wday(lt->tm_wday);
+      const GRect meta_measure = GRect(0, 0, sw, five ? 16 : 18);
+      GSize weekday_size = graphics_text_layout_get_content_size(
+          weekday, meta_font, meta_measure,
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+      GSize delta_size = graphics_text_layout_get_content_size(
+          delta_text, meta_font, meta_measure,
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+      const int meta_gap = five ? 6 : 8;
+      const int weekday_x = sx + date_size.w + meta_gap;
+      const int time_x = weekday_x + weekday_size.w + meta_gap;
+      const int time_right = sx + sw - delta_size.w - meta_gap;
+      const char *display_title = title;
+      if (i == 0) {
+        const char *title_separator = strstr(title, " | ");
+        if (title_separator) {
+          display_title = title_separator + 3;
+        }
+      }
+      draw_text(ctx, date_text, date_font, date_frame,
+                theme_fg_color(), GTextAlignmentLeft);
+      draw_text(ctx, weekday, meta_font,
+                GRect(weekday_x, y + (five ? 4 : 11), 40, five ? 16 : 18),
+                fitness_muted_text_color(), GTextAlignmentLeft);
+      draw_text(ctx, event_time, event_time_font,
+                GRect(time_x, y + (five ? 4 : 7), time_right - time_x,
+                      five ? 16 : 22),
+                theme_fg_color(), GTextAlignmentLeft);
+      draw_text(ctx, delta_text, meta_font,
+                GRect(sx, y + (five ? 4 : 11), sw, five ? 16 : 18),
+                fitness_muted_text_color(), GTextAlignmentRight);
+      draw_text(ctx, display_title, title_font,
+                GRect(sx, y + (five ? 16 : 24), sw, five ? 20 : 28),
+                theme_fg_color(), GTextAlignmentLeft);
+    } else {
+      draw_text(ctx, title, s_font_event, GRect(sx, y, sw, 22),
+                theme_fg_color(), GTextAlignmentLeft);
+      draw_text(ctx, delta_text,
+                fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+                GRect(sx, y + 19, sw, 18),
+                fitness_muted_text_color(), GTextAlignmentLeft);
+    }
+
+    if (i < row_count - 1) {
+      graphics_context_set_stroke_color(ctx, fitness_muted_text_color());
+      graphics_context_set_stroke_width(ctx, 1);
+      graphics_draw_line(ctx, GPoint(8, y + row_h - 2), GPoint(192, y + row_h - 2));
+    }
+    y += row_h;
+  }
+}
+
 // "Next calendar events - Large month & day": the Upcoming list with each
 // event's date drawn large enough to read at a glance. Always shows the date
 // (the Show event dates toggle gates only the plain list and the meeting bar),
 // honors the date order and leading-zero settings and the 3 / 5 event count.
-// Layout per row: title as in the plain list; below it the date in a large
-// foreground-color Gothic (28 Bold at 3 rows, 18 Bold at 5) flush left, and
-// the countdown in the plain list's small muted Gothic flush right.
-static void calendar_draw_overlay_large_date(GContext *ctx) {
+static void calendar_draw_overlay_large_date_c(GContext *ctx) {
   draw_overlay_title(ctx, "UPCOMING");
 
   int row_count = s_calendar_shake_event_count == 5 ? 5 : 3;
@@ -2945,19 +3194,27 @@ static void calendar_draw_overlay_large_date(GContext *ctx) {
     const char *delta_text = delta && delta[0] ? delta : "--";
     char datestr[8];
     format_event_date(s_meeting_start[i], datestr, sizeof(datestr));
-    GFont delta_font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+    const bool five = row_count == 5;
+    GFont delta_font = fonts_get_system_font(
+        five ? FONT_KEY_GOTHIC_14 : FONT_KEY_GOTHIC_14_BOLD);
     if (datestr[0]) {
-      // Large date, foreground color, flush left under the title. Countdown
-      // stays small and muted, flush right, bottom-aligned to the date digits.
-      const bool five = row_count == 5;
+      const GRect safe = overlay_safe_frame(8, y, five ? 34 : 50);
+      const int sx = safe.origin.x;
+      const int sw = safe.size.w;
       GFont date_font = fonts_get_system_font(
-          five ? FONT_KEY_GOTHIC_18_BOLD : FONT_KEY_GOTHIC_28_BOLD);
-      draw_text(ctx, datestr, date_font,
-                overlay_safe_frame(8, y + (five ? 17 : 19), five ? 20 : 32),
+          five ? FONT_KEY_GOTHIC_18_BOLD : FONT_KEY_GOTHIC_24_BOLD);
+      const GRect date_frame =
+          GRect(sx, y + (five ? 16 : 21), sw, five ? 22 : 28);
+      GSize date_size = graphics_text_layout_get_content_size(
+          datestr, date_font, date_frame,
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+      const int gap = five ? 8 : 10;
+      draw_text(ctx, datestr, date_font, date_frame,
                 theme_fg_color(), GTextAlignmentLeft);
       draw_text(ctx, delta_text, delta_font,
-                overlay_safe_frame(8, y + (five ? 22 : 34), 18),
-                fitness_muted_text_color(), GTextAlignmentRight);
+                GRect(sx + date_size.w + gap, y + (five ? 20 : 30),
+                      sw - date_size.w - gap, five ? 16 : 18),
+                fitness_muted_text_color(), GTextAlignmentLeft);
     } else {
       // No epoch for this slot (older companion build): countdown only,
       // where the plain list draws it.
@@ -2973,6 +3230,23 @@ static void calendar_draw_overlay_large_date(GContext *ctx) {
     }
     y += row_h;
   }
+}
+
+static void calendar_draw_overlay_large_date(GContext *ctx) {
+#if defined(PBL_ROUND)
+  switch (LARGE_DATE_SAMPLE_OPTION) {
+    case 2: calendar_draw_overlay_large_date_b(ctx); break;
+    case 3: calendar_draw_overlay_large_date_c(ctx); break;
+    default: calendar_draw_overlay_large_date_a(ctx); break;
+  }
+#else
+  // Emery pick: agenda headline for 3 rows, tightened numeric for 5 rows.
+  if (s_calendar_shake_event_count == 5) {
+    calendar_draw_overlay_large_date_c(ctx);
+  } else {
+    calendar_draw_overlay_large_date_b(ctx);
+  }
+#endif
 }
 
 static bool day_event_hour_busy(int day_offset, int hour) {
@@ -3621,7 +3895,7 @@ static void draw_multi_tz_line(GContext *ctx, int y) {
     format_tz_time(s_multi_tz2_offset_min, t2, sizeof(t2));
     snprintf(seg2, sizeof(seg2), "%s:%s", s_multi_tz2_label, t2);
     if (line[0] != '\0') {
-      strncat(line, "|", sizeof(line) - strlen(line) - 1);
+      strncat(line, " | ", sizeof(line) - strlen(line) - 1);
       strncat(line, seg2, sizeof(line) - strlen(line) - 1);
     } else {
       snprintf(line, sizeof(line), "%s", seg2);
@@ -4703,6 +4977,12 @@ static void face_update_proc(Layer *layer, GContext *ctx) {
       int line_anchor_bottom = TIME_VISUAL_BOTTOM + content_offset_y;
       if (s_time_font == TIME_FONT_CASIO) {
         line_anchor_bottom = time_frame_y + TIME_FRAME_H - 4;
+        if (line_anchor_bottom > weather_y - 20) {
+          line_anchor_bottom = weather_y - 20;
+        }
+      } else if (s_time_font == TIME_FONT_LARGE && s_font_time_large) {
+        // Large digits were lifted in draw_time_row_at so the line fits.
+        line_anchor_bottom = s_large_time_ink_bottom;
         if (line_anchor_bottom > weather_y - 20) {
           line_anchor_bottom = weather_y - 20;
         }
