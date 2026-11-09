@@ -435,6 +435,7 @@ var DEFAULT_SETTINGS = {
   INVERT_WEATHER: false,
   INVERT_MEETING_BAR: false,
   TOP_STEPS: true,
+  COMBINE_STEPS: false,
   VIBRATE_ON_DISCONNECT: true,
   VIBRATE_ON_MEETING_START: true,
   VERBOSE_WEATHER: false,
@@ -734,6 +735,7 @@ function sendLayoutSetting(settings) {
   dict[keys.INVERT_WEATHER] = settings.INVERT_WEATHER ? 1 : 0;
   dict[keys.INVERT_MEETING_BAR] = settings.INVERT_MEETING_BAR ? 1 : 0;
   dict[keys.TOP_STEPS] = settings.TOP_STEPS ? 1 : 0;
+  dict[keys.COMBINE_STEPS] = settings.COMBINE_STEPS ? 1 : 0;
   dict[keys.FITNESS_PIP_ROW_ON] = settings.FITNESS_PIP_ROW_ON ? 1 : 0;
   dict[keys.FITNESS_PIP_DIRECTION] = fitnessPipDirectionId(settings.FITNESS_PIP_DIRECTION);
   dict[keys.FITNESS_PIP_STYLE] = fitnessPipStyleId(settings.FITNESS_PIP_STYLE);
@@ -4028,6 +4030,85 @@ function weatherStatusHtml() {
   return lines.join('<br>');
 }
 
+// ---------- combined steps across watches ----------
+// The phone's per-app storage is shared by every watch running this face, so
+// each watch drops its own running total here under its watch token and reads
+// back the sum of the others for the same day. Display only on the watch;
+// HealthService on each watch is untouched. Only active when the Clay toggle
+// COMBINE_STEPS is on (the watch does not send MY_STEPS otherwise).
+var XWATCH_STEPS_KEY = 'xwatch-steps';
+var XWATCH_STEPS_KEEP_MS = 3 * 24 * 60 * 60 * 1000;
+
+function watchToken() {
+  try {
+    var token = Pebble.getWatchToken();
+    if (token) {
+      return String(token);
+    }
+  } catch (e) {
+    console.log('getWatchToken failed: ' + e);
+  }
+  return 'local';
+}
+
+function localDayStamp(date) {
+  return date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+}
+
+function readStepsStore() {
+  try {
+    var store = JSON.parse(localStorage.getItem(XWATCH_STEPS_KEY));
+    return store && typeof store === 'object' ? store : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function recordMySteps(steps, day) {
+  var store = readStepsStore();
+  var now = Date.now();
+  Object.keys(store).forEach(function(token) {
+    var entry = store[token];
+    if (!entry || typeof entry.t !== 'number' || now - entry.t > XWATCH_STEPS_KEEP_MS) {
+      delete store[token];
+    }
+  });
+  store[watchToken()] = { d: day, s: steps, t: now };
+  localStorage.setItem(XWATCH_STEPS_KEY, JSON.stringify(store));
+}
+
+function otherStepsFor(day) {
+  var store = readStepsStore();
+  var mine = watchToken();
+  var total = 0;
+  Object.keys(store).forEach(function(token) {
+    var entry = store[token];
+    if (token !== mine && entry && entry.d === day && entry.s > 0) {
+      total += Math.floor(entry.s);
+    }
+  });
+  return total;
+}
+
+function sendOtherSteps(day) {
+  var dict = {};
+  dict[keys.OTHER_STEPS] = otherStepsFor(day);
+  sendToWatch(dict, 'Other-watch steps');
+}
+
+function stepsSyncFromPayload(payload) {
+  if (!payload) return null;
+  var steps = typeof payload.MY_STEPS !== 'undefined' ? payload.MY_STEPS : payload[keys.MY_STEPS];
+  if (typeof steps === 'undefined') return null;
+  var day = typeof payload.MY_STEPS_DATE !== 'undefined' ? payload.MY_STEPS_DATE : payload[keys.MY_STEPS_DATE];
+  steps = Math.max(0, Math.floor(Number(steps) || 0));
+  day = Math.floor(Number(day) || 0);
+  if (!day) {
+    day = localDayStamp(new Date());
+  }
+  return { steps: steps, day: day };
+}
+
 function refreshRequestFromPayload(payload) {
   if (!payload) return null;
   if (typeof payload.REFRESH_REQUEST !== 'undefined') {
@@ -4047,6 +4128,9 @@ Pebble.addEventListener('ready', function() {
   sendTideSetting(settings);
   sendPricesSetting(settings);
   sendMultiTzSetting(settings);
+  if (settings.COMBINE_STEPS) {
+    sendOtherSteps(localDayStamp(new Date()));
+  }
   refreshWeather(true);
   refreshCalendar();
   scheduleRefreshes();
@@ -4058,7 +4142,14 @@ Pebble.addEventListener('ready', function() {
 // the phone runtime's JS timers stop firing. The gates above decide whether
 // anything is actually due.
 Pebble.addEventListener('appmessage', function(event) {
-  var request = refreshRequestFromPayload(event && event.payload);
+  var payload = event && event.payload;
+  var stepsSync = stepsSyncFromPayload(payload);
+  if (stepsSync) {
+    recordMySteps(stepsSync.steps, stepsSync.day);
+    sendOtherSteps(stepsSync.day);
+    return;
+  }
+  var request = refreshRequestFromPayload(payload);
   if (request === null) {
     return;
   }
@@ -4084,6 +4175,9 @@ Pebble.addEventListener('webviewclosed', function(event) {
   sendTideSetting(settings);
   sendPricesSetting(settings);
   sendMultiTzSetting(settings);
+  if (settings.COMBINE_STEPS) {
+    sendOtherSteps(localDayStamp(new Date()));
+  }
   refreshWeather(true);
   refreshCalendar();
   scheduleRefreshes();

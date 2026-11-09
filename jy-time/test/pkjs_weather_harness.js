@@ -85,7 +85,7 @@ function makeEnv(opts) {
     sent: [],
     openedUrls: [],
     listeners: {},
-    storage: {},
+    storage: opts.storage || {},
     routes: [],
     geoMode: opts.geoMode || { coords: { latitude: 40.7128, longitude: -74.006 } },
     sendModes: opts.sendModes || [],
@@ -191,7 +191,8 @@ function makeEnv(opts) {
       return 1;
     },
     openURL: function(url) { env.openedUrls.push(url); },
-    getActiveWatchInfo: function() { return { platform: 'emery' }; }
+    getActiveWatchInfo: function() { return { platform: 'emery' }; },
+    getWatchToken: function() { return opts.watchToken || 'token-a'; }
   };
 
   var RealDate = Date;
@@ -447,6 +448,68 @@ scenario('interval timer still refreshes on its own', function(check) {
 });
 
 // ---------- summary ----------
+// ---------- combined steps across watches ----------
+function dayStamp(ms) {
+  var d = new Date(ms);
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+}
+
+scenario('combined steps: toggle off sends COMBINE_STEPS=0 and no OTHER_STEPS', function(check) {
+  var env = makeEnv({ watchToken: 'watch-a' });
+  env.start({});
+  check(env.sentWith(KEYS.OTHER_STEPS).length === 0, 'no OTHER_STEPS with the toggle off');
+  var layout = env.sentWith(KEYS.COMBINE_STEPS);
+  check(layout.length === 1 && layout[0][KEYS.COMBINE_STEPS] === 0, 'layout dict carries COMBINE_STEPS=0');
+  env.emit('appmessage', { payload: { REFRESH_REQUEST: 1 } });
+  env.clock.advance(200);
+  check(env.sentWith(KEYS.OTHER_STEPS).length === 0, 'a refresh ping is not mistaken for a steps message');
+});
+
+scenario('combined steps: each watch records its total and hears the other watch back', function(check) {
+  var shared = {};
+  var a = makeEnv({ storage: shared, watchToken: 'watch-a' });
+  a.start({ COMBINE_STEPS: true });
+  var today = dayStamp(a.clock.now);
+  var first = a.sentWith(KEYS.OTHER_STEPS);
+  check(first.length === 1 && first[0][KEYS.OTHER_STEPS] === 0, 'launch with nothing stored sends OTHER_STEPS=0');
+
+  a.emit('appmessage', { payload: { MY_STEPS: 5000, MY_STEPS_DATE: today } });
+  a.clock.advance(200);
+  var store = JSON.parse(shared['xwatch-steps'] || '{}');
+  check(store['watch-a'] && store['watch-a'].s === 5000 && store['watch-a'].d === today, 'A total stored under its own token');
+  var aReplies = a.sentWith(KEYS.OTHER_STEPS);
+  check(aReplies.length === 2 && aReplies[1][KEYS.OTHER_STEPS] === 0, 'A hears 0 while it is the only watch');
+
+  var b = makeEnv({ storage: shared, watchToken: 'watch-b' });
+  b.start({ COMBINE_STEPS: true });
+  var bReady = b.sentWith(KEYS.OTHER_STEPS);
+  check(bReady.length === 1 && bReady[0][KEYS.OTHER_STEPS] === 5000, 'B gets A\'s 5000 on launch, got ' + JSON.stringify(bReady));
+  b.emit('appmessage', { payload: { MY_STEPS: 3000, MY_STEPS_DATE: today } });
+  b.clock.advance(200);
+  var bReplies = b.sentWith(KEYS.OTHER_STEPS);
+  check(bReplies.length === 2 && bReplies[1][KEYS.OTHER_STEPS] === 5000, 'B still hears 5000 after recording its own 3000');
+
+  a.emit('appmessage', { payload: { MY_STEPS: 5100, MY_STEPS_DATE: today } });
+  a.clock.advance(200);
+  aReplies = a.sentWith(KEYS.OTHER_STEPS);
+  check(aReplies.length === 3 && aReplies[2][KEYS.OTHER_STEPS] === 3000, 'A hears B\'s 3000, never its own');
+  store = JSON.parse(shared['xwatch-steps']);
+  check(store['watch-a'].s === 5100 && store['watch-b'].s === 3000, 'both totals kept side by side');
+});
+
+scenario('combined steps: another day\'s total is not added', function(check) {
+  var shared = {};
+  var a = makeEnv({ storage: shared, watchToken: 'watch-a' });
+  a.start({ COMBINE_STEPS: true });
+  var today = dayStamp(a.clock.now);
+  a.emit('appmessage', { payload: { MY_STEPS: 4000, MY_STEPS_DATE: today - 1 } });
+  a.clock.advance(200);
+  var b = makeEnv({ storage: shared, watchToken: 'watch-b' });
+  b.start({ COMBINE_STEPS: true });
+  var bReady = b.sentWith(KEYS.OTHER_STEPS);
+  check(bReady.length === 1 && bReady[0][KEYS.OTHER_STEPS] === 0, 'a total stamped with another day is ignored');
+});
+
 var failed = results.filter(function(r) { return r.failures.length; });
 process.stdout.write('\n' + (results.length - failed.length) + '/' + results.length + ' scenarios passed\n');
 process.exit(failed.length ? 1 : 0);

@@ -68,6 +68,9 @@
 #define PERSIST_KEY_CASIO_DARK_SHADOW_STYLE 282
 #define PERSIST_KEY_VIBRATE_ON_MEETING_START 283
 #define PERSIST_KEY_LAST_MEETING_VIBE_START 284
+#define PERSIST_KEY_COMBINE_STEPS 285
+#define PERSIST_KEY_OTHER_STEPS 286
+#define PERSIST_KEY_OTHER_STEPS_DAY 287
 #define PERSIST_KEY_VERBOSE_WEATHER_STYLE 117
 #define PERSIST_KEY_LIGHT_MODE     118
 #define PERSIST_KEY_INVERT_TOP_BAR 119
@@ -556,6 +559,18 @@ static bool s_fitness_ring_calories_on = true;
 static ColorSection s_draw_section = ColorSectionBase;
 static int s_steps_count = 0;
 static int s_fitness_steps_value = 0;
+// Combined step count across two watches (optional, off by default).
+// The phone keeps each watch's running total for today; OTHER_STEPS is the
+// sum of every other watch's total for the day stamp we hold. Display only:
+// HealthService itself stays per watch.
+static bool s_combine_steps = false;
+static int s_own_steps = 0;            // this watch's HealthService total
+static int s_other_steps = 0;          // other watch(es) total, from the phone
+static int s_other_steps_day = 0;      // YYYYMMDD the other total belongs to
+static int s_last_sent_steps = -1;     // own total last pushed to the phone
+static time_t s_last_steps_send_t = 0;
+static bool s_steps_sync_due = true;   // first tick after launch / reconnect
+#define STEPS_SYNC_MIN_INTERVAL_S 120
 static int s_fitness_active_minutes_value = 0;
 static int s_fitness_active_calories_value = 0;
 static int s_fitness_distance_meters_value = 0;
@@ -689,6 +704,7 @@ static ComplicationType s_complication_slots[COMPLICATION_COUNT] = {
 
 static void apply_light_mode(bool enabled);
 static void update_stats(void);
+static int other_steps_today(void);
 static void format_temp_with_degree(char *buf, size_t len, bool known, int value);
 static void format_event_date(int32_t epoch, char *buf, size_t len);
 
@@ -1252,7 +1268,7 @@ static void fitness_read_health_values(void) {
   HealthValue active_calories = health_service_sum_today(HealthMetricActiveKCalories);
   HealthValue distance_meters = health_service_sum_today(HealthMetricWalkedDistanceMeters);
 
-  s_fitness_steps_value = steps > 0 ? (int)steps : 0;
+  s_fitness_steps_value = (steps > 0 ? (int)steps : 0) + other_steps_today();
   s_fitness_active_minutes_value = active_seconds > 0 ? (int)(active_seconds / 60) : 0;
   s_fitness_active_calories_value = active_calories > 0 ? (int)active_calories : 0;
   s_fitness_distance_meters_value = distance_meters > 0 ? (int)distance_meters : 0;
@@ -5373,12 +5389,31 @@ static void fire_goal_vibe(void) {
   }
 }
 
+// Local calendar day as YYYYMMDD; the stamp the other-watch total is keyed by.
+static int local_day_stamp(void) {
+  time_t now_t = time(NULL);
+  struct tm *now_tm = localtime(&now_t);
+  if (!now_tm) return 0;
+  return (now_tm->tm_year + 1900) * 10000 + (now_tm->tm_mon + 1) * 100 +
+         now_tm->tm_mday;
+}
+
+// Other watch's steps for today, or 0 when the feature is off or the stored
+// total is from another day (midnight rolls it off without a message).
+static int other_steps_today(void) {
+  if (!s_combine_steps || s_other_steps <= 0) return 0;
+  if (s_other_steps_day != local_day_stamp()) return 0;
+  return s_other_steps;
+}
+
 static void update_stats(void) {
 #if defined(PBL_HEALTH)
   int steps = (int) health_service_sum_today(HealthMetricStepCount);
   HealthValue bpm = health_service_peek_current_value(HealthMetricHeartRateBPM);
 
   if (steps < 0) steps = 0;
+  s_own_steps = steps;
+  steps += other_steps_today();
   s_steps_count = steps;
 
   // Goal-reached vibe: fires once per calendar day when steps first cross
@@ -5411,6 +5446,7 @@ static void update_stats(void) {
     snprintf(s_bpm_buf, sizeof(s_bpm_buf), "--");
   }
 #else
+  s_own_steps = 0;
   s_steps_count = 0;
   snprintf(s_steps_buf, sizeof(s_steps_buf), "--");
   snprintf(s_bpm_buf, sizeof(s_bpm_buf), "--");
@@ -5443,6 +5479,47 @@ static void send_refresh_request(uint8_t reason) {
   }
 }
 
+// Pushes this watch's own total for today to the phone so a second watch
+// running this face can add it. Only when the feature is on and the phone is
+// connected. A busy outbox just leaves the send due for the next minute.
+static void send_steps_sync(void) {
+  if (!s_combine_steps || !s_phone_connected) {
+    return;
+  }
+  DictionaryIterator *iter = NULL;
+  AppMessageResult result = app_message_outbox_begin(&iter);
+  if (result != APP_MSG_OK || !iter) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Steps sync skipped, outbox busy: %d",
+            (int)result);
+    return;
+  }
+  dict_write_int32(iter, MESSAGE_KEY_MY_STEPS, s_own_steps);
+  dict_write_int32(iter, MESSAGE_KEY_MY_STEPS_DATE, local_day_stamp());
+  dict_write_end(iter);
+  result = app_message_outbox_send();
+  if (result != APP_MSG_OK) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "Steps sync send failed: %d", (int)result);
+    return;
+  }
+  s_last_sent_steps = s_own_steps;
+  s_last_steps_send_t = time(NULL);
+  s_steps_sync_due = false;
+}
+
+// Cadence: first tick after launch or reconnect, then whenever the own
+// total changed and at least STEPS_SYNC_MIN_INTERVAL_S has passed.
+static void maybe_send_steps_sync(void) {
+  if (!s_combine_steps || !s_phone_connected) {
+    return;
+  }
+  bool changed = s_own_steps != s_last_sent_steps;
+  time_t now = time(NULL);
+  if (s_steps_sync_due ||
+      (changed && now - s_last_steps_send_t >= STEPS_SYNC_MIN_INTERVAL_S)) {
+    send_steps_sync();
+  }
+}
+
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   (void)units_changed;
   update_time_date(tick_time);
@@ -5451,6 +5528,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   if (tick_time->tm_min % 15 == 0) {
     send_refresh_request(1);
   }
+  maybe_send_steps_sync();
 }
 
 static void battery_handler(BatteryChargeState charge) {
@@ -5460,6 +5538,9 @@ static void battery_handler(BatteryChargeState charge) {
 static void connection_handler(bool connected) {
   bool was_connected = s_phone_connected;
   s_phone_connected = connected;
+  if (connected && !was_connected) {
+    s_steps_sync_due = true;
+  }
   if (!connected) {
     if (was_connected && s_vibrate_on_disconnect) {
       vibes_double_pulse();
@@ -6061,6 +6142,27 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   if (t) {
     s_w800_steps_top_enabled = t->value->int32 != 0;
     persist_write_bool(PERSIST_KEY_TOP_STEPS, s_w800_steps_top_enabled);
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_COMBINE_STEPS);
+  if (t) {
+    bool on = t->value->int32 != 0;
+    if (on != s_combine_steps) {
+      s_combine_steps = on;
+      persist_write_bool(PERSIST_KEY_COMBINE_STEPS, s_combine_steps);
+      s_steps_sync_due = true;
+      update_stats();
+    }
+  }
+
+  t = dict_find(iter, MESSAGE_KEY_OTHER_STEPS);
+  if (t) {
+    int v = (int)t->value->int32;
+    s_other_steps = v > 0 ? v : 0;
+    s_other_steps_day = local_day_stamp();
+    persist_write_int(PERSIST_KEY_OTHER_STEPS, s_other_steps);
+    persist_write_int(PERSIST_KEY_OTHER_STEPS_DAY, s_other_steps_day);
+    update_stats();
   }
 
   t = dict_find(iter, MESSAGE_KEY_FITNESS_PIP_ROW_ON);
@@ -6856,6 +6958,15 @@ static void load_persisted(void) {
       s_forecast_start_t > 0 && s_forecast_last_update_t > 0;
   if (persist_exists(PERSIST_KEY_TOP_STEPS)) {
     s_w800_steps_top_enabled = persist_read_bool(PERSIST_KEY_TOP_STEPS);
+  }
+  if (persist_exists(PERSIST_KEY_COMBINE_STEPS)) {
+    s_combine_steps = persist_read_bool(PERSIST_KEY_COMBINE_STEPS);
+  }
+  if (persist_exists(PERSIST_KEY_OTHER_STEPS)) {
+    s_other_steps = persist_read_int(PERSIST_KEY_OTHER_STEPS);
+  }
+  if (persist_exists(PERSIST_KEY_OTHER_STEPS_DAY)) {
+    s_other_steps_day = persist_read_int(PERSIST_KEY_OTHER_STEPS_DAY);
   }
   if (persist_exists(PERSIST_KEY_FITNESS_PIP_ROW_ON)) {
     s_fitness_pip_row_enabled = persist_read_bool(PERSIST_KEY_FITNESS_PIP_ROW_ON);

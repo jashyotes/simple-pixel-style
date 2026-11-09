@@ -1,5 +1,24 @@
 # Simple Pixel Style — Pebble Time 2 Watchface Project Status
 
+## ▶ Release 1.55 — 2026-11-09: optional combined step count across two watches
+
+Released on instruction (Josh: "Please do"). Version 1.54 -> 1.55 in package.json and both package-lock.json fields; defaults unchanged apart from the new COMBINE_STEPS toggle (false in all three places). PBW: `release-assets/simple-pixel-style-1.55.0-emery-gabbro.pbw`. Josh uploads to the Pebble Appstore. Release commit "Release simple-pixel-style 1.55" on main, pushed.
+
+### Feature notes (written at implementation, same day)
+
+Josh wears one Pebble on a leather band and a second on a silicone band for the treadmill; the face now has an optional "Combine steps from my other watch" toggle (Layout section, right after the Top W800 step counter, OFF by default) so the day total carries across both watches.
+
+How it works:
+- Each watch counts its own steps in firmware; nothing can inject the other watch's steps into HealthService. The merge is display-only and goes through the phone: the Pebble app keeps one per-watchface settings store shared by every paired watch (verified in coredevices/mobileapp, see FUTURE_FEATURES.md), so the face on the connected watch writes its own total there under its watch token and reads back the sum of the other tokens for the same day.
+- Watch -> phone: MY_STEPS + MY_STEPS_DATE (YYYYMMDD) on the first minute tick after launch or reconnect, then whenever the own total changed and >= 2 minutes passed. Skipped silently when the outbox is busy (the :00/:15/:30/:45 weather ping wins), retried next minute. Sent only when the toggle is on and the phone is connected.
+- Phone -> watch: OTHER_STEPS, sent on launch and after the settings page closes (toggle on), and in reply to every MY_STEPS. Records older than 3 days are pruned; a record stamped with another day is never added.
+- Watch display: s_steps_count = own + other, so the W800 top counter, pip row, steps bubble, goal vibe and the fitness-ring values all follow. The other-watch total and its day stamp persist (keys 286/287) so a face restart without the phone keeps the number; a stored total from another day reads as 0 at midnight with no message needed. Toggle off = every path returns own steps only, exactly as before.
+- Limits (told to Josh once): the other watch's number is as of its last connection; both watches worn at once double-count; the watch's built-in Health app and the Step history overlay's past days stay per watch (today's bar is combined).
+
+Files: package.json (4 message keys appended at the END so every existing numeric key is unchanged: COMBINE_STEPS, MY_STEPS, MY_STEPS_DATE, OTHER_STEPS), src/c/jy-time.c (persist keys 285-287, local_day_stamp/other_steps_today, send_steps_sync/maybe_send_steps_sync, inbox + init reads, connection_handler marks a sync due), src/pkjs/index.js (DEFAULT_SETTINGS.COMBINE_STEPS=false, layout dict carries it, 'xwatch-steps' store keyed by Pebble.getWatchToken() with 'local' fallback), src/pkjs/config.json (toggle), test/pkjs_weather_harness.js (fake getWatchToken + shared storage option, 3 new scenarios).
+
+Verification: harness 16/16 (13 existing + 3 new); three-place default audit 102 keys, 0 drift; `pebble clean && pebble build` emery + gabbro OK (emery RAM footprint 56,930 B of 128 KB). Emulator smoke (emery): first `pebble install --emulator emery` hung for 150 s (no wipe); after `pebble wipe` it installed in one go and the face renders exactly as before with the toggle off (top bar, pip row, date, time, bubbles, event line). Four compiler warnings, all pre-existing (format-truncation at the weather/step buffers, unused forecast_x_for_time). Build output: jy-time/build/jy-time.pbw. Released the same day as 1.55 (see the heading above).
+
 ## ▶ Pixel Watch Style 1.0 saved — 2026-05-08
 
 Approved baseline snapshot:
