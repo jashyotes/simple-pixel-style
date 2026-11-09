@@ -33,3 +33,5 @@ jy-time-companion/app/local.properties
 /screenshot-*.png
 /pebble_screenshot_*.png
 /font-size-options-*.png
+
+.claude/
