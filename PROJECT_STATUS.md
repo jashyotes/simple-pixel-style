@@ -1,5 +1,9 @@
 # Simple Pixel Style — Pebble Time 2 Watchface Project Status
 
+## ▶ Release 1.56 — 2026-11-09: version-only rebuild of 1.55 (store upload fix)
+
+Josh installed "1.55" from the store and the toggle was missing. The store's 1.55 release (published 16:07 UTC) serves a PBW whose appinfo says 1.54 and whose JS has no COMBINE_STEPS: the wrong file was uploaded (the portal takes the version label from the form, not from the PBW). Same code as 1.55, version 1.55 -> 1.56 in package.json and both package-lock.json fields, clean build emery + gabbro OK, PBW `release-assets/simple-pixel-style-1.56.0-emery-gabbro.pbw` (864,995 bytes, appinfo 1.56, toggle label present in its JS). Emulator smoke skipped: byte-identical code, version string only. Check for next time: `curl -s https://appstore-api.repebble.com/api/v1/apps/uuid/<uuid>` -> latest_release.pbw_file, download it and read appinfo.json versionLabel.
+
 ## ▶ Release 1.55 — 2026-11-09: optional combined step count across two watches
 
 Released on instruction (Josh: "Please do"). Version 1.54 -> 1.55 in package.json and both package-lock.json fields; defaults unchanged apart from the new COMBINE_STEPS toggle (false in all three places). PBW: `release-assets/simple-pixel-style-1.55.0-emery-gabbro.pbw`. Josh uploads to the Pebble Appstore. Release commit "Release simple-pixel-style 1.55" on main, pushed.
