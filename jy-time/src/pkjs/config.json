@@ -369,6 +369,11 @@
         "description": "Adds today's steps from any other Pebble running this watchface on this phone, so swapping watches keeps one daily total. The other watch's number updates each time that watch connects. The watch's own Health app stays per watch."
       },
       {
+        "type": "text",
+        "id": "steps-sync-status",
+        "defaultValue": ""
+      },
+      {
         "type": "toggle",
         "messageKey": "BATTERY_NUMBER_LARGE",
         "label": "Larger battery number",

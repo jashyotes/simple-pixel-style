@@ -4038,6 +4038,82 @@ function weatherStatusHtml() {
 // COMBINE_STEPS is on (the watch does not send MY_STEPS otherwise).
 var XWATCH_STEPS_KEY = 'xwatch-steps';
 var XWATCH_STEPS_KEEP_MS = 3 * 24 * 60 * 60 * 1000;
+var XWATCH_STEPS_DIAG_KEY = 'xwatch-steps-diag';
+
+// Diagnostics shown on the settings page under the toggle: what this phone
+// last heard from this watch, what it last sent back, and every stored total.
+function readStepsDiag() {
+  try {
+    var diag = JSON.parse(localStorage.getItem(XWATCH_STEPS_DIAG_KEY));
+    return diag && typeof diag === 'object' ? diag : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function updateStepsDiag(patch) {
+  var diag = readStepsDiag();
+  Object.keys(patch).forEach(function(key) { diag[key] = patch[key]; });
+  try {
+    localStorage.setItem(XWATCH_STEPS_DIAG_KEY, JSON.stringify(diag));
+  } catch (e) {
+    console.log('steps diag write failed: ' + e);
+  }
+}
+
+function shortToken(token) {
+  token = String(token || '');
+  return token.length > 8 ? token.slice(0, 8) : token;
+}
+
+function formatStepsDay(day) {
+  day = Number(day) || 0;
+  if (!day) return 'unknown day';
+  var m = Math.floor(day / 100) % 100;
+  var d = day % 100;
+  var names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return (names[m - 1] || '?') + ' ' + d;
+}
+
+function stepsSyncStatusHtml(settings) {
+  if (!settings || !settings.COMBINE_STEPS) {
+    return 'Step sync is off. Turn the toggle on, then save and reopen this page to see its status.';
+  }
+  var diag = readStepsDiag();
+  var mine = watchToken();
+  var store = readStepsStore();
+  var lines = [];
+  lines.push('This watch: id ' + escapeHtml(shortToken(mine))
+             + (mine === 'local' ? ' (the phone did not give this watch an id, so two watches cannot be told apart)' : '') + '.');
+  if (diag.lastRecvAt) {
+    lines.push('Last total this watch reported: ' + (Number(diag.lastRecvSteps) || 0) + ' steps for '
+               + formatStepsDay(diag.lastRecvDay) + ', ' + formatDiagTime(diag.lastRecvAt) + '.');
+  } else {
+    lines.push('This watch has not reported a total to this phone yet.');
+  }
+  if (diag.lastSentAt) {
+    lines.push('Last sent to this watch: ' + (Number(diag.lastSentOther) || 0) + ' steps from other watches, '
+               + formatDiagTime(diag.lastSentAt) + '.');
+  } else {
+    lines.push('Nothing has been sent to this watch yet.');
+  }
+  var tokens = Object.keys(store);
+  if (!tokens.length) {
+    lines.push('Stored totals: none yet.');
+  } else {
+    var parts = tokens.map(function(token) {
+      var entry = store[token] || {};
+      return escapeHtml(shortToken(token)) + (token === mine ? ' (this watch)' : '') + ': '
+             + (Number(entry.s) || 0) + ' steps, ' + formatStepsDay(entry.d)
+             + (entry.t ? ', ' + formatDiagTime(entry.t) : '');
+    });
+    lines.push('Stored totals: ' + parts.join('; ') + '.');
+    if (tokens.length === 1 && tokens[0] === mine) {
+      lines.push('Only this watch has reported so far. The other watch reports while it is the one connected to the phone.');
+    }
+  }
+  return lines.join('<br>');
+}
 
 function watchToken() {
   try {
@@ -4091,9 +4167,11 @@ function otherStepsFor(day) {
 }
 
 function sendOtherSteps(day) {
+  var other = otherStepsFor(day);
   var dict = {};
-  dict[keys.OTHER_STEPS] = otherStepsFor(day);
+  dict[keys.OTHER_STEPS] = other;
   sendToWatch(dict, 'Other-watch steps');
+  updateStepsDiag({ lastSentOther: other, lastSentDay: day, lastSentAt: Date.now() });
 }
 
 function stepsSyncFromPayload(payload) {
@@ -4146,6 +4224,7 @@ Pebble.addEventListener('appmessage', function(event) {
   var stepsSync = stepsSyncFromPayload(payload);
   if (stepsSync) {
     recordMySteps(stepsSync.steps, stepsSync.day);
+    updateStepsDiag({ lastRecvSteps: stepsSync.steps, lastRecvDay: stepsSync.day, lastRecvAt: Date.now() });
     sendOtherSteps(stepsSync.day);
     return;
   }
@@ -4159,6 +4238,7 @@ Pebble.addEventListener('appmessage', function(event) {
 
 Pebble.addEventListener('showConfiguration', function() {
   setClayTextItem('weather-status', weatherStatusHtml());
+  setClayTextItem('steps-sync-status', stepsSyncStatusHtml(readSettings()));
   Pebble.openURL(clay.generateUrl());
 });
 

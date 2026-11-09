@@ -6150,8 +6150,14 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     if (on != s_combine_steps) {
       s_combine_steps = on;
       persist_write_bool(PERSIST_KEY_COMBINE_STEPS, s_combine_steps);
+    }
+    update_stats();
+    if (on) {
+      // Settings arrive once per phone-side start, so answer with our own
+      // total right away: the phone is connected and its JS is ready. The
+      // reply (OTHER_STEPS) lands a moment later.
       s_steps_sync_due = true;
-      update_stats();
+      send_steps_sync();
     }
   }
 
@@ -6884,9 +6890,14 @@ static void inbox_dropped_handler(AppMessageResult reason, void *context) {
 
 static void outbox_failed_handler(DictionaryIterator *iter,
                                   AppMessageResult reason, void *context) {
-  (void)iter;
   (void)context;
   APP_LOG(APP_LOG_LEVEL_WARNING, "AppMessage outbox failed: %d", (int)reason);
+  // A rejected steps report (phone JS not ready yet, typically right after a
+  // reconnect) is retried on the next minute tick instead of waiting for the
+  // own total to change.
+  if (iter && dict_find(iter, MESSAGE_KEY_MY_STEPS)) {
+    s_steps_sync_due = true;
+  }
 }
 
 static void load_persisted(void) {

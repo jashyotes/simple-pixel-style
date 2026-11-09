@@ -1,5 +1,17 @@
 # Simple Pixel Style — Pebble Time 2 Watchface Project Status
 
+## ▶ Release 1.57 — 2026-11-09: step-sync status readout + connect handshake + retry
+
+Josh (both watches on 1.56, toggle on): "steps from my watches aren't syncing". Emulator end-to-end on 1.56 passed (storage seeded via dbm.dumb with COMBINE_STEPS=true and a fake other-watch record of 4321: the face showed 4,321 on the W800 counter within seconds, the watch's own report was stored under the emulator token, the reply was sent), so the code path works and the failure is specific to the Core Devices phone app or the usage flow. Candidates that cannot be seen from here: both watches getting the same watch token (serial-based hash), the second watch never being the connected one (the app connects one watch at a time and keeps the first in range), or a storage persist race between PKJS sessions.
+
+Changes (same feature, no behaviour change with the toggle off):
+- Settings page: a "steps-sync-status" text item right under the toggle shows this watch's id (first 8 chars of the watch token, "local" = the phone gave none), the last total this watch reported and when, the last OTHER_STEPS sent to it, and every stored total by id with day and time. The diag record lives in localStorage key xwatch-steps-diag.
+- Watch: when the Layout settings arrive with COMBINE_STEPS=1 (once per phone-side start, so the phone JS is ready), the watch answers with its own total immediately instead of waiting for the minute tick; a rejected MY_STEPS (outbox_failed with that key) marks the sync due again so the next tick retries.
+
+PBW `release-assets/simple-pixel-style-1.57.0-emery-gabbro.pbw`. Harness 17/17. Default audit clean. Emulator e2e repeated on 1.57: Layout setting sent 10:45:50, OTHER_STEPS from ready 10:45:51 and the handshake reply (watch answered the settings with MY_STEPS) also 10:45:51; the face showed 4,321 (fake other watch) on the W800 counter. Reading the pypkjs dbm after a pkill gives truncated values (stale .dir index); read the raw .dat instead.
+
+Reading the readout: id "local" on either watch = token missing; identical ids on both watches = the phone cannot tell them apart (needs a different key, e.g. the pairing/serial via getActiveWatchInfo, or a server); "has not reported" on the connected watch = the watch->phone message is not arriving; both reported but "Stored totals" shows only one id after swapping = storage not shared/persisted between sessions.
+
 ## ▶ Release 1.56 — 2026-11-09: version-only rebuild of 1.55 (store upload fix)
 
 Josh installed "1.55" from the store and the toggle was missing. The store's 1.55 release (published 16:07 UTC) serves a PBW whose appinfo says 1.54 and whose JS has no COMBINE_STEPS: the wrong file was uploaded (the portal takes the version label from the form, not from the PBW). Same code as 1.55, version 1.55 -> 1.56 in package.json and both package-lock.json fields, clean build emery + gabbro OK, PBW `release-assets/simple-pixel-style-1.56.0-emery-gabbro.pbw` (864,995 bytes, appinfo 1.56, toggle label present in its JS). Emulator smoke skipped: byte-identical code, version string only. Check for next time: `curl -s https://appstore-api.repebble.com/api/v1/apps/uuid/<uuid>` -> latest_release.pbw_file, download it and read appinfo.json versionLabel.

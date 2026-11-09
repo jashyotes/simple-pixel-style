@@ -495,6 +495,21 @@ scenario('combined steps: each watch records its total and hears the other watch
   check(aReplies.length === 3 && aReplies[2][KEYS.OTHER_STEPS] === 3000, 'A hears B\'s 3000, never its own');
   store = JSON.parse(shared['xwatch-steps']);
   check(store['watch-a'].s === 5100 && store['watch-b'].s === 3000, 'both totals kept side by side');
+
+  a.emit('showConfiguration', {});
+  var page = decodeURIComponent(a.openedUrls[a.openedUrls.length - 1].replace(/^data:text\/html,/, ''));
+  check(page.indexOf('This watch: id watch-a') !== -1, 'settings page names this watch');
+  check(page.indexOf('Last total this watch reported: 5100 steps') !== -1, 'settings page shows the last reported total');
+  check(page.indexOf('Last sent to this watch: 3000 steps') !== -1, 'settings page shows what was sent back');
+  check(page.indexOf('watch-b: 3000 steps') !== -1, 'settings page lists the other watch total');
+});
+
+scenario('combined steps: settings page explains the off state', function(check) {
+  var env = makeEnv({ watchToken: 'watch-a' });
+  env.start({});
+  env.emit('showConfiguration', {});
+  var page = decodeURIComponent(env.openedUrls[env.openedUrls.length - 1].replace(/^data:text\/html,/, ''));
+  check(page.indexOf('Step sync is off') !== -1, 'off-state text present');
 });
 
 scenario('combined steps: another day\'s total is not added', function(check) {
