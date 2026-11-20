@@ -1,6 +1,17 @@
 # Simple Pixel Style — Pebble Time 2 Watchface Project Status
 
+## README refresh, 2026-11-20: GitHub page text brought from 0.49 to 1.57 (no code change)
+
+The repository's front page still described version 0.49 (README.md last changed with the 0.49 release on 2026-05-14) while the store serves 1.57 and the store listing links to this repository as its source. README.md now describes 1.57: both watch platforms, the settings as they stand in `jy-time/src/pkjs/config.json`, the eleven shake overlays, a link to the store listing, the two store loop GIFs shown inline, a layout tree rooted at the repository, and build commands that work from a clone.
+// Feature list written from config.json at 1.57 (labels and option lists) and `release-assets/APPSTORE_DESCRIPTION.md` (overlay wording). Watch names from the SDK hardware table: emery = Pebble Time 2, gabbro = Pebble Round 2.
+// Store link https://apps.repebble.com/95e29b8577814a36a22799ef checked: page title "Pixel Style w. Calendar - Pebble Appstore"; the store API reports latest release 1.57 for emery and gabbro.
+// `node test/pkjs_weather_harness.js` ran 17/17 on this tree before the README named it.
+// Not changed: source, version, the repository's About line ("Pebble Watch Face") and topics. The 1.56 and 1.57 PBW copies are not in `release-assets/` (newest there is 1.55.0); the README points to the store for the current build.
+// Committed with this entry: the 1.57 outcome note below, which had sat uncommitted since 2026-11-09. Left uncommitted as before: the screenshot and design-mockup deletions and the untracked handoff files.
+
 ## ▶ Release 1.57 — 2026-11-09: step-sync status readout + connect handshake + retry
+
+Outcome: Josh confirmed the same day that steps sync between both watches on 1.57 ("It works!"). 1.56 did not sync on the phone app while the emulator passed, so the fix was most likely the connect handshake (the watch answers the settings message with its total while the phone JS is known to be ready) and/or the retry after a rejected report; on 1.56 the first report after a reconnect could be rejected before the phone JS was ready and then wait for a step change plus two minutes.
 
 Josh (both watches on 1.56, toggle on): "steps from my watches aren't syncing". Emulator end-to-end on 1.56 passed (storage seeded via dbm.dumb with COMBINE_STEPS=true and a fake other-watch record of 4321: the face showed 4,321 on the W800 counter within seconds, the watch's own report was stored under the emulator token, the reply was sent), so the code path works and the failure is specific to the Core Devices phone app or the usage flow. Candidates that cannot be seen from here: both watches getting the same watch token (serial-based hash), the second watch never being the connected one (the app connects one watch at a time and keeps the first in range), or a storage persist race between PKJS sessions.
 
