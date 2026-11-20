@@ -747,7 +747,7 @@ Two unrelated bug fixes bundled in a single release.
 
 **Calendar TZIDs Detroit / Toronto / London / Paris.** PebbleKit JS `timezoneOffsetMinutes` only recognized New York / Chicago / Denver / Phoenix / Los Angeles / Sydney. Other TZIDs fell through to local-floating interpretation, so a Detroit 4pm Nikki invite shown to a Central-timezone phone displayed as 4pm Central instead of 3pm Central. Added Detroit and Toronto as Eastern Time aliases, plus a shared `isEuropeanDst` helper for London (UTC+0/+1) and Paris (UTC+1/+2). EU DST transition rule is last Sunday of March 01:00 UTC through last Sunday of October 01:00 UTC.
 
-The private ICS feeds for `joshtyates@gmail.com` and `josh@uniqueand.com` were pulled to `/home/jates/calendar-debug/` (outside any git repo) to confirm the diagnosis against real data. They are not tracked or pushed.
+Both private ICS feeds were pulled to `/home/jates/calendar-debug/` (outside any git repo) to confirm the diagnosis against real data. They are not tracked or pushed.
 
 ## 1.21 shipped — 2026-05-28
 
