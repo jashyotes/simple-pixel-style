@@ -504,8 +504,9 @@ static bool s_cal_event_date_month_first = true;  // true = MM/DD, false = DD/MM
 static bool s_cal_event_date_no_zero = false;     // strip leading zeros (date only)
 // Date bar language: 0 = English (default, unchanged), 1 = Japanese full
 // (6月2日 火曜日), 2 = Japanese compact (6月2日（火）), 3 = French full
-// (mardi 2 juin). Kanji render via the firmware CJK fallback (same as event
-// titles); French accented Latin renders via the system Gothic font.
+// (mardi 2 juin), 4 = German full (Dienstag, 2. Juni). Kanji render via the
+// firmware CJK fallback (same as event titles); French/German accented
+// Latin renders via the system Gothic font.
 static uint8_t s_date_language = 0;
 // Multi-timezone display. Inactive zones carry an empty label. Offsets and
 // labels are resolved on the phone (the watch has no timezone database) and
@@ -2967,7 +2968,8 @@ static void calendar_draw_overlay(GContext *ctx) {
 
 // "Next calendar events - Large month & day" helpers. Month, weekday and
 // start-time text follow the Date language setting (0 English, 1/2 Japanese,
-// 3 French) like the date bar does; English honors the date-order setting.
+// 3 French, 4 German) like the date bar does; English honors the date-order
+// setting.
 static void large_date_headline(const struct tm *lt, char *buf, size_t len) {
   if (s_date_language == 1 || s_date_language == 2) {
     snprintf(buf, len, "%d月%d日", lt->tm_mon + 1, lt->tm_mday);
@@ -2979,6 +2981,14 @@ static void large_date_headline(const struct tm *lt, char *buf, size_t len) {
       "juil.", "août", "sept.", "oct.", "nov.", "déc."
     };
     snprintf(buf, len, "%d %s", lt->tm_mday, fr_months[lt->tm_mon]);
+    return;
+  }
+  if (s_date_language == 4) {
+    static const char *const de_months[12] = {
+      "Jan", "Feb", "März", "Apr", "Mai", "Juni",
+      "Juli", "Aug", "Sep", "Okt", "Nov", "Dez"
+    };
+    snprintf(buf, len, "%d. %s", lt->tm_mday, de_months[lt->tm_mon]);
     return;
   }
   static const char *const en_months[12] = {
@@ -3007,6 +3017,12 @@ static const char *large_date_weekday(int wday) {
       "DIM", "LUN", "MAR", "MER", "JEU", "VEN", "SAM"
     };
     return fr[wday];
+  }
+  if (s_date_language == 4) {
+    static const char *const de[7] = {
+      "SO", "MO", "DI", "MI", "DO", "FR", "SA"
+    };
+    return de[wday];
   }
   static const char *const en[7] = {
     "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"
@@ -5066,6 +5082,18 @@ static void update_time_date(struct tm *t) {
     };
     snprintf(s_date_buf, sizeof(s_date_buf), "%s %d %s",
              fr_days[t->tm_wday], t->tm_mday, fr_months[t->tm_mon]);
+  } else if (s_date_language == 4) {
+    // German full date, e.g. "Dienstag, 2. Juni". Umlauts (März) render via
+    // the system Gothic font; no bundled font required.
+    static const char *de_days[] = {
+      "Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"
+    };
+    static const char *de_months[] = {
+      "Januar", "Februar", "März", "April", "Mai", "Juni",
+      "Juli", "August", "September", "Oktober", "November", "Dezember"
+    };
+    snprintf(s_date_buf, sizeof(s_date_buf), "%s, %d. %s",
+             de_days[t->tm_wday], t->tm_mday, de_months[t->tm_mon]);
   } else {
     static const char *days[] = {
       "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
@@ -6052,7 +6080,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   t = dict_find(iter, MESSAGE_KEY_DATE_LANGUAGE);
   if (t) {
     int dl = (int)t->value->int32;
-    s_date_language = (uint8_t)((dl >= 0 && dl <= 3) ? dl : 0);
+    s_date_language = (uint8_t)((dl >= 0 && dl <= 4) ? dl : 0);
     persist_write_int(PERSIST_KEY_DATE_LANGUAGE, s_date_language);
     time_t now = time(NULL);
     struct tm *lt = localtime(&now);

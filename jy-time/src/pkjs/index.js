@@ -726,7 +726,8 @@ function sendLayoutSetting(settings) {
   dict[keys.REMOVE_LEADING_ZERO] = settings.REMOVE_LEADING_ZERO ? 1 : 0;
   dict[keys.DATE_LANGUAGE] = settings.DATE_LANGUAGE === 'ja' ? 1
       : (settings.DATE_LANGUAGE === 'ja_compact' ? 2
-      : (settings.DATE_LANGUAGE === 'fr' ? 3 : 0));
+      : (settings.DATE_LANGUAGE === 'fr' ? 3
+      : (settings.DATE_LANGUAGE === 'de' ? 4 : 0)));
   dict[keys.BATTERY_NUMBER_LARGE] = settings.BATTERY_NUMBER_LARGE ? 1 : 0;
   dict[keys.DISTANCE_UNITS] = distanceUnitsId(settings);
   dict[keys.TIME_FONT] = numberSetting(settings.TIME_FONT, 0, 0, 4);
